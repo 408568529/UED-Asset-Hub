@@ -5,13 +5,13 @@ import { categories } from "@/data/mock/categories";
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-40 border-b border-white/60 bg-white/80 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3">
+    <header className="sticky top-0 z-40 border-b border-black/10 bg-[#f6f4ee]/88 backdrop-blur-xl">
+      <div className="brand-container flex items-center justify-between gap-4 py-4">
         <Link href="/" className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-foreground text-sm font-bold text-white">U</span>
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-sm font-black text-white">U</span>
           <span>
-            <span className="block text-sm font-bold leading-4">UED Asset Hub</span>
-            <span className="block text-xs text-muted-foreground">Design Asset Community</span>
+            <span className="block text-sm font-black uppercase leading-4 tracking-normal">UED Asset Hub</span>
+            <span className="block text-[11px] uppercase text-muted-foreground">Design Asset Community</span>
           </span>
         </Link>
 
@@ -20,12 +20,12 @@ export function Header() {
             <Link
               key={category.id}
               href={`/category/${category.id}`}
-              className="rounded-full px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              className="rounded-full px-3 py-2 text-[13px] uppercase text-muted-foreground transition hover:bg-black hover:text-white"
             >
               {category.name}
             </Link>
           ))}
-          <Link href="/topics" className="rounded-full px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground">
+          <Link href="/topics" className="rounded-full px-3 py-2 text-[13px] uppercase text-muted-foreground transition hover:bg-black hover:text-white">
             专题
           </Link>
         </nav>

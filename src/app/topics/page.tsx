@@ -12,8 +12,8 @@ export default async function TopicsPage() {
         <p className="mt-4 max-w-2xl text-base leading-8 text-muted-foreground">围绕项目、规范、AI 工作流和团队经验组织内容，让资产从“单篇笔记”变成“学习路径”。</p>
       </div>
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {topics.map((topic) => (
-          <TopicCard key={topic.id} topic={topic} />
+        {topics.map((topic, index) => (
+          <TopicCard key={topic.id} topic={topic} index={index + 1} />
         ))}
       </div>
     </div>

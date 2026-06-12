@@ -3,14 +3,14 @@
 @tailwind utilities;
 
 :root {
-  --background: 44 42% 98%;
-  --foreground: 224 35% 12%;
-  --border: 220 18% 88%;
-  --muted: 210 20% 94%;
-  --muted-foreground: 218 12% 44%;
-  --primary: 220 84% 52%;
+  --background: 42 24% 96%;
+  --foreground: 0 0% 6%;
+  --border: 0 0% 86%;
+  --muted: 42 14% 91%;
+  --muted-foreground: 0 0% 42%;
+  --primary: 77 88% 56%;
   --primary-foreground: 0 0% 100%;
-  --accent: 166 74% 44%;
+  --accent: 0 0% 8%;
   --accent-foreground: 210 40% 98%;
 }
 
@@ -25,9 +25,8 @@ html {
 body {
   min-height: 100vh;
   color: hsl(var(--foreground));
-  background:
-    radial-gradient(circle at top left, rgba(68, 118, 255, 0.16), transparent 34rem),
-    linear-gradient(180deg, #fbfaf7 0%, #f6f8fb 42%, #ffffff 100%);
+  background: #f6f4ee;
+  font-feature-settings: "kern";
 }
 
 a {
@@ -36,5 +35,14 @@ a {
 }
 
 ::selection {
-  background: rgba(54, 102, 248, 0.18);
+  background: rgba(216, 243, 106, 0.55);
+}
+
+.brand-container {
+  width: min(100% - 40px, 1440px);
+  margin-inline: auto;
+}
+
+.hairline {
+  border-top: 1px solid rgba(12, 12, 12, 0.14);
 }

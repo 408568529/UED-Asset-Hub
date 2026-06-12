@@ -14,11 +14,11 @@ export function Button({ className, variant = "primary", size = "md", asChild, .
   return (
     <Comp
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-full font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:pointer-events-none disabled:opacity-50",
-        variant === "primary" && "bg-foreground text-white shadow-card hover:-translate-y-0.5 hover:bg-foreground/90",
-        variant === "secondary" && "bg-white text-foreground shadow-card hover:-translate-y-0.5 hover:bg-white/90",
-        variant === "outline" && "border border-border bg-white/70 text-foreground hover:border-primary/35 hover:bg-white",
-        variant === "ghost" && "text-foreground hover:bg-muted",
+        "inline-flex items-center justify-center gap-2 rounded-full font-semibold transition duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:pointer-events-none disabled:opacity-50",
+        variant === "primary" && "bg-foreground text-white hover:-translate-y-0.5 hover:bg-foreground/90",
+        variant === "secondary" && "bg-white text-foreground hover:-translate-y-0.5 hover:bg-primary",
+        variant === "outline" && "border border-black/15 bg-transparent text-foreground hover:border-foreground hover:bg-foreground hover:text-white",
+        variant === "ghost" && "text-foreground hover:bg-black hover:text-white",
         size === "sm" && "h-9 px-3 text-sm",
         size === "md" && "h-10 px-4 text-sm",
         size === "lg" && "h-12 px-6 text-base",

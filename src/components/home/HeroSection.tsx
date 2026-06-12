@@ -1,58 +1,61 @@
+"use client";
+
 import Link from "next/link";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { SearchBox } from "@/components/search/SearchBox";
 
 export function HeroSection() {
   return (
-    <section className="relative overflow-hidden">
-      <div className="mx-auto grid max-w-7xl gap-10 px-5 py-16 md:grid-cols-[1.05fr_0.95fr] md:items-center md:py-20">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/70 px-4 py-2 text-sm text-muted-foreground shadow-card backdrop-blur">
-            <Sparkles size={16} className="text-primary" />
-            Design Asset Community
+    <section className="relative overflow-hidden border-b border-black/10">
+      <div className="brand-container py-20 md:py-28">
+        <motion.div
+          initial={{ opacity: 0, y: 28 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: "easeOut" }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-4 border-y border-black/15 py-4 text-xs font-bold uppercase text-muted-foreground">
+            <span>Design Asset Community</span>
+            <span>Collect / Curate / Reuse</span>
           </div>
-          <h1 className="mt-6 max-w-3xl text-5xl font-black leading-[1.02] tracking-normal text-foreground md:text-7xl">
-            让团队资产像内容一样被发现
+          <h1 className="mt-10 max-w-7xl text-[64px] font-black uppercase leading-[0.86] tracking-normal text-foreground md:text-[118px] xl:text-[148px]">
+            Create. Collect. Reuse.
           </h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">
-            汇聚 Vibe Product、SOP、组件规范、项目沉淀和 Prompt，让设计经验以卡片、专题和 AI 问答的方式被浏览、收藏与复用。
-          </p>
-          <div className="mt-8 max-w-2xl">
-            <SearchBox />
+          <div className="mt-10 grid gap-8 md:grid-cols-[1fr_520px] md:items-end">
+            <p className="max-w-2xl text-xl leading-8 text-foreground md:text-2xl">
+              统一沉淀设计资产，让经验被复用，让知识持续增长。
+            </p>
+            <div className="md:justify-self-end">
+              <SearchBox />
+            </div>
           </div>
-          <div className="mt-6 flex flex-wrap gap-3">
+          <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild>
               <Link href="/topics">
                 浏览专题
                 <ArrowRight size={16} />
               </Link>
             </Button>
-            <Button asChild variant="secondary">
+            <Button asChild variant="outline">
               <Link href="/search">进入 AI 搜索</Link>
             </Button>
           </div>
-        </div>
+        </motion.div>
 
-        <div className="grid gap-4">
-          <div className="rounded-[2rem] bg-[#111827] p-5 text-white shadow-card">
-            <p className="text-sm text-white/60">Today featured</p>
-            <h2 className="mt-3 text-3xl font-bold">Portal改版沉淀</h2>
-            <p className="mt-4 text-sm leading-6 text-white/70">从导航、信息架构到组件范式，沉淀为可被复用的设计体系。</p>
+        <div className="mt-16 grid gap-4 border-t border-black/15 pt-5 md:grid-cols-[1.3fr_0.7fr_0.7fr]">
+          <div className="min-h-64 bg-[#0c0c0c] p-7 text-white">
+            <p className="text-xs font-bold uppercase text-white/45">Featured Case</p>
+            <h2 className="mt-12 max-w-xl text-5xl font-black uppercase leading-none">Portal Design System</h2>
+            <p className="mt-5 max-w-md text-sm leading-6 text-white/58">从导航、信息架构到组件范式，沉淀为可被复用的团队设计体系。</p>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-[1.5rem] bg-white p-5 shadow-card">
-              <p className="text-3xl font-black">18</p>
-              <p className="mt-1 text-sm text-muted-foreground">精选资产</p>
-            </div>
-            <div className="rounded-[1.5rem] bg-[#d8f36a] p-5 shadow-card">
-              <p className="text-3xl font-black">5</p>
-              <p className="mt-1 text-sm text-foreground/70">专题策展</p>
-            </div>
+          <div className="min-h-64 border border-black/15 p-7">
+            <p className="text-7xl font-black leading-none">18</p>
+            <p className="mt-6 text-sm uppercase text-muted-foreground">Curated Assets</p>
           </div>
-          <div className="rounded-[1.5rem] border border-white/70 bg-white/80 p-5 shadow-card">
-            <p className="text-sm font-medium">AI Ask UED</p>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">“查询条件设计规范有哪些？” “云资金账户限制集做过什么方案？”</p>
+          <div className="min-h-64 bg-primary p-7">
+            <p className="text-7xl font-black leading-none">05</p>
+            <p className="mt-6 text-sm uppercase text-foreground/65">Featured Topics</p>
           </div>
         </div>
       </div>
