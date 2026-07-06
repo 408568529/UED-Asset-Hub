@@ -59,8 +59,11 @@ data/
 │     └─ 版本号/
 │        └─ skill.zip
 ├─ standard-sop/
+│  └─ .gitkeep
 ├─ component-spec/
+│  └─ .gitkeep
 ├─ vibe-product/
+│  └─ .gitkeep
 └─ uploads/
    └─ unclassified/
 ```
@@ -82,6 +85,14 @@ NEXT_PUBLIC_ADMIN_PASSWORD=admin123
 
 代码更新和内容数据建议分开管理：代码通过 Git 同步，真实内容保存在公共电脑的 `DATA_DIR` 中。
 为方便迁移，上传文件路径保存为相对 `DATA_DIR` 的路径，例如 `skill-center/xxx/v1.0.0/skill.zip`。
+
+通用上传接口会按模块保存文件：
+
+- `assetModule=product` → `vibe-product/资产名称/文件名`
+- `assetModule=component` → `component-spec/资产名称/文件名`
+- `assetModule=sop` → `standard-sop/资产名称/文件名`
+- `assetModule=skill` → `skill-center/资产名称/文件名`
+- 未选择模块 → `uploads/unclassified/文件名`
 
 ## V1.2 管理流程
 

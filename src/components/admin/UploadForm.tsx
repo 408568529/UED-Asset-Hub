@@ -34,6 +34,15 @@ export function UploadForm() {
       <LabeledField label="选择文件">
         <Input name="file" type="file" required className="rounded-2xl py-2" />
       </LabeledField>
+      <LabeledField label="归属模块（可选）">
+        <select name="assetModule" className="h-11 w-full border border-border bg-white px-4 text-sm outline-none">
+          <option value="">未归类上传</option>
+          <option value="product">Vibe Product</option>
+          <option value="component">组件规范</option>
+          <option value="sop">标准 SOP</option>
+          <option value="skill">Skill Center</option>
+        </select>
+      </LabeledField>
       <LabeledField label="关联资产ID（可选）">
         <Input name="relatedAssetId" placeholder="例如：design-review-sop" />
       </LabeledField>
