@@ -9,6 +9,8 @@ import { promptService } from "@/services/promptService";
 import { skillService } from "@/services/skillService";
 import { sopService } from "@/services/sopService";
 
+export const dynamic = "force-dynamic";
+
 export default async function HomePage() {
   const [modules, products, components, sops, skills, fonts, prompts] = await Promise.all([
     moduleService.getOpenModuleSummaries(),
