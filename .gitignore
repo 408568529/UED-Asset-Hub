@@ -5,6 +5,11 @@ node_modules/
 out/
 dist/
 
+# Runtime business data should live outside Git.
+data/
+!data.example/
+!data.example/**
+
 .env
 .env.local
 .env.*.local

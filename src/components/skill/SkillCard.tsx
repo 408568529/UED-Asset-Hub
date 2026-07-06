@@ -6,12 +6,12 @@ import type { Skill } from "@/types/skill";
 
 export function SkillCard({ skill }: { skill: Skill }) {
   return (
-    <article className="border-t border-foreground/10 py-8">
+    <article className="border-b border-foreground/[0.08] py-10 transition hover:bg-white/55 md:-mx-6 md:px-6">
       <div className="grid gap-5 md:grid-cols-[1fr_auto] md:items-start">
         <div>
           <p className="font-mono text-xs text-muted-foreground">Updated {skill.updatedAt.slice(0, 10)} · {skill.category}</p>
           <Link href={`/skills/${skill.id}`}>
-            <h2 className="mt-4 text-3xl font-black leading-tight transition hover:text-muted-foreground md:text-4xl">{skill.name}</h2>
+            <h2 className="mt-4 text-2xl font-black leading-tight transition hover:text-muted-foreground">{skill.name}</h2>
           </Link>
           <p className="mt-4 max-w-2xl text-base leading-8 text-muted-foreground">{skill.description}</p>
           <div className="mt-5 flex flex-wrap gap-2">
@@ -20,12 +20,12 @@ export function SkillCard({ skill }: { skill: Skill }) {
             ))}
           </div>
         </div>
-        <div className="flex flex-col gap-4 md:items-end">
+        <div className="flex flex-col gap-4 md:items-end md:pt-8">
           <div className="font-mono text-xs text-muted-foreground md:text-right">
             <p>{skill.version}</p>
             <p className="mt-2">{skill.downloadCount} downloads</p>
           </div>
-          <div className="flex flex-wrap gap-2 md:justify-end">
+          <div className="flex flex-wrap gap-3 md:justify-end">
             <Button asChild variant="outline">
               <Link href={`/skills/${skill.id}`}>
                 查看说明

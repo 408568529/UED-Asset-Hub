@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AdminNavActions } from "@/components/layout/AdminNavActions";
-import { openModules } from "@/config/modules";
+import { ModuleNav } from "@/components/layout/ModuleNav";
 
 export function Header() {
   return (
@@ -14,17 +14,7 @@ export function Header() {
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-1 lg:flex">
-          {Object.entries(openModules).map(([id, module]) => (
-            <Link
-              key={id}
-              href={module.href}
-              className="rounded-full px-3 py-2 text-sm text-muted-foreground transition hover:bg-foreground hover:text-white"
-            >
-              {module.name}
-            </Link>
-          ))}
-        </nav>
+        <ModuleNav />
 
         <AdminNavActions />
       </div>

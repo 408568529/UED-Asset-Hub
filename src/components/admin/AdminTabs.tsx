@@ -12,7 +12,7 @@ export function AdminTabs() {
   return (
     <nav className="mt-10 flex flex-wrap gap-2 border-t border-foreground/10 pt-5">
       {tabs.map((tab) => (
-        <Link key={tab.href} href={tab.href} className="rounded-full border border-foreground/10 px-4 py-2 text-sm transition hover:border-foreground hover:bg-foreground hover:text-white">
+        <Link key={tab.href} href={tab.href} className="inline-flex h-10 min-w-24 items-center justify-center rounded-full border border-foreground/[0.08] px-4 text-sm font-bold transition hover:border-foreground hover:bg-foreground hover:text-white">
           {tab.label}
         </Link>
       ))}

@@ -13,6 +13,8 @@
   --accent: 0 0% 7%;
   --accent-foreground: 0 0% 98%;
   --radius: 0px;
+  --divider-section: rgba(0, 0, 0, 0.06);
+  --divider-content: rgba(0, 0, 0, 0.08);
 }
 
 * {
@@ -30,7 +32,7 @@ html {
 body {
   min-height: 100vh;
   color: hsl(var(--foreground));
-  background: #f7f6f0;
+  background: #f8f7f1;
   font-feature-settings: "kern";
 }
 

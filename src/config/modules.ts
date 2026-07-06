@@ -24,5 +24,17 @@ export const openModules: Record<OpenModuleId, { name: string; description: stri
     description: "团队 AI Skill、Prompt Pack、工作流模板和 MCP 配置中心。",
     href: "/skills",
     tone: "skill"
+  },
+  fonts: {
+    name: "Font Library",
+    description: "团队字体资源、授权说明、版本和下载入口。",
+    href: "/fonts",
+    tone: "font"
+  },
+  prompts: {
+    name: "Prompt Library",
+    description: "团队 AI Prompt Marketplace，沉淀可复制复用的提示词资产。",
+    href: "/prompts",
+    tone: "prompt"
   }
 };

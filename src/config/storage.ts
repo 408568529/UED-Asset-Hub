@@ -8,6 +8,8 @@ export const storageFolders = {
   component: "component-spec",
   sop: "standard-sop",
   skill: "skill-center",
+  font: "font-library",
+  prompt: "prompt-library",
   uploads: "uploads"
 } as const;
 

@@ -7,19 +7,19 @@ export default async function ComponentsPage({ searchParams }: { searchParams: P
   const components = await componentSpecService.getComponents(q);
 
   return (
-    <main className="mx-auto max-w-7xl px-5 py-14 md:py-20">
+    <main className="mx-auto max-w-7xl px-5 py-20 md:py-28">
       <div className="grid gap-8 md:grid-cols-[1fr_360px] md:items-end">
         <div>
           <p className="font-mono text-sm uppercase tracking-[0.22em] text-muted-foreground">Component Specs</p>
-          <h1 className="mt-6 max-w-4xl text-3xl font-black leading-tight">组件规范资产库</h1>
+          <h1 className="mt-6 max-w-5xl text-2xl font-black leading-tight md:text-3xl">组件规范资产库</h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">集中管理组件规范、设计文件和规范文档链接。</p>
         </div>
-        <form action="/components" className="rounded-full border border-foreground/15 bg-white p-2">
+        <form action="/components" className="bg-white p-1 shadow-[0_18px_60px_rgba(0,0,0,0.05)]">
           <Input name="q" defaultValue={q} placeholder="搜索组件名称或介绍" className="border-0 bg-transparent focus:ring-0" />
         </form>
       </div>
 
-      <section className="mt-14">
+      <section className="mt-24">
         {components.map((component) => (
           <ComponentSpecCard key={component.id} component={component} />
         ))}
