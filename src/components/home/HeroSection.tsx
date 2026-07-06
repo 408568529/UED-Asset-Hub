@@ -11,8 +11,8 @@ export function HeroSection({ modules }: { modules: ModuleSummary[] }) {
   const totalCount = modules.reduce((sum, module) => sum + module.count, 0);
 
   return (
-    <section className="relative overflow-hidden border-b border-foreground/10">
-      <div className="mx-auto max-w-7xl px-5 pb-16 pt-20 md:pb-24 md:pt-28">
+    <section className="relative overflow-hidden border-b border-black/[0.06]">
+      <div className="mx-auto max-w-7xl px-5 pb-24 pt-24 md:pb-32 md:pt-32">
         <div className="grid gap-12 lg:grid-cols-[1fr_360px] lg:items-end">
           <motion.div initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}>
             <p className="font-mono text-xs uppercase tracking-[0.24em] text-muted-foreground">Design Asset Community</p>
@@ -42,7 +42,7 @@ export function HeroSection({ modules }: { modules: ModuleSummary[] }) {
             initial={{ opacity: 0, y: 28 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
-            className="border-t border-foreground/15 pt-6 lg:border-l lg:border-t-0 lg:pl-8"
+            className="border-t border-black/[0.06] pt-6 lg:border-l lg:border-t-0 lg:pl-8"
           >
             <p className="font-mono text-xs uppercase tracking-[0.22em] text-muted-foreground">Studio Index</p>
             <div className="mt-8 grid grid-cols-2 gap-8 lg:grid-cols-1">

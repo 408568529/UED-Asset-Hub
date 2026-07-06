@@ -4,7 +4,7 @@ import { getFileType, saveUploadFile } from "@/lib/fileUpload";
 import { uploadRecordService } from "@/services/uploadRecordService";
 import type { UploadRecord } from "@/types/audit";
 
-const uploadModules = ["product", "component", "sop", "skill"] as const;
+const uploadModules = ["product", "component", "sop", "skill", "font", "prompt"] as const;
 
 function getAssetModule(value: FormDataEntryValue | null): UploadRecord["assetModule"] {
   const assetModule = String(value ?? "");

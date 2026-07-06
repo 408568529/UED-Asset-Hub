@@ -112,7 +112,7 @@ export function SkillForm({ skill }: { skill?: Skill }) {
         <Textarea name="description" required defaultValue={skill?.description} placeholder="请输入 Skill 介绍" rows={4} />
       </LabeledField>
       <LabeledField label="分类">
-        <select name="category" defaultValue={skill?.category ?? "Other"} className="h-11 w-full border border-border bg-white px-4 text-sm outline-none">
+        <select name="category" defaultValue={skill?.category ?? "Other"} className="h-12 w-full border border-foreground/[0.08] bg-white px-4 text-sm outline-none focus:border-foreground/25">
           {categories.map((category) => (
             <option key={category} value={category}>{category}</option>
           ))}

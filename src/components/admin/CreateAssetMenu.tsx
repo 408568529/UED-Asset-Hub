@@ -7,6 +7,8 @@ import { ChevronDown } from "lucide-react";
 const actions = [
   { href: "/admin/products/new", label: "Vibe Product", description: "新增团队自研工具" },
   { href: "/admin/skills/new", label: "Skill Center", description: "上传团队 Skill ZIP 包" },
+  { href: "/admin/fonts/new", label: "Font Library", description: "上传字体资源和版本" },
+  { href: "/admin/prompts/new", label: "Prompt Library", description: "新增可复用 Prompt" },
   { href: "/admin/components/new", label: "组件规范", description: "新增组件规范资产" },
   { href: "/admin/sops/new", label: "标准 SOP", description: "新增流程与协作规范" }
 ];
@@ -29,7 +31,7 @@ export function CreateAssetMenu() {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex h-11 items-center justify-center gap-2 bg-foreground px-5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-foreground/90"
+        className="inline-flex h-11 min-w-28 items-center justify-center gap-2 bg-foreground px-5 text-sm font-bold leading-none text-white transition hover:-translate-y-0.5 hover:bg-foreground/90"
       >
         新建资产
         <ChevronDown size={16} />

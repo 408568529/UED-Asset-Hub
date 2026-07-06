@@ -22,7 +22,7 @@ export function DeleteConfirmDialog({
         <p className="mt-2 text-sm leading-7 text-red-600">删除后不可恢复。</p>
         <div className="mt-8 flex justify-end gap-3">
           <Button type="button" variant="outline" onClick={onCancel}>取消</Button>
-          <button type="button" onClick={onConfirm} className="h-10 bg-red-600 px-4 text-sm font-bold text-white transition hover:bg-red-700">
+          <button type="button" onClick={onConfirm} className="h-11 min-w-28 bg-red-600 px-5 text-sm font-bold leading-none text-white transition hover:bg-red-700">
             确认删除
           </button>
         </div>

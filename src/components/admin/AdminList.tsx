@@ -7,11 +7,13 @@ import { useRouter } from "next/navigation";
 import { DeleteConfirmDialog } from "@/components/admin/DeleteConfirmDialog";
 import { getAdminPassword } from "@/lib/adminSession";
 import type { ComponentSpec } from "@/types/componentSpec";
+import type { FontAsset } from "@/types/font";
 import type { Product } from "@/types/product";
+import type { PromptAsset } from "@/types/prompt";
 import type { Skill } from "@/types/skill";
 import type { Sop } from "@/types/sop";
 
-type Category = "all" | "product" | "skill" | "component" | "sop";
+type Category = "all" | "product" | "skill" | "font" | "prompt" | "component" | "sop";
 type SortMode = "latest" | "created" | "title";
 
 type AdminAssetRow = {
@@ -32,11 +34,13 @@ const filters: { id: Category; label: string }[] = [
   { id: "all", label: "全部" },
   { id: "product", label: "Vibe Product" },
   { id: "skill", label: "Skill Center" },
+  { id: "font", label: "Font Library" },
+  { id: "prompt", label: "Prompt Library" },
   { id: "component", label: "组件规范" },
   { id: "sop", label: "标准 SOP" }
 ];
 
-function toRows(products: Product[], components: ComponentSpec[], sops: Sop[], skills: Skill[]): AdminAssetRow[] {
+function toRows(products: Product[], components: ComponentSpec[], sops: Sop[], skills: Skill[], fonts: FontAsset[], prompts: PromptAsset[]): AdminAssetRow[] {
   return [
     ...products.map((product) => ({
       id: product.id,
@@ -89,6 +93,32 @@ function toRows(products: Product[], components: ComponentSpec[], sops: Sop[], s
       viewHref: `/skills/${skill.id}`,
       editHref: `/admin/skills/${skill.id}`,
       deleteApi: `/api/skills/${skill.id}`
+    })),
+    ...fonts.map((font) => ({
+      id: font.id,
+      title: font.name,
+      description: font.description,
+      tags: font.tags,
+      category: "font" as const,
+      categoryLabel: "Font Library",
+      updatedAt: font.updatedAt,
+      createdAt: font.createdAt,
+      viewHref: `/fonts/${font.id}`,
+      editHref: `/admin/fonts/${font.id}`,
+      deleteApi: `/api/fonts/${font.id}`
+    })),
+    ...prompts.map((prompt) => ({
+      id: prompt.id,
+      title: prompt.name,
+      description: prompt.summary,
+      tags: prompt.tags,
+      category: "prompt" as const,
+      categoryLabel: "Prompt Library",
+      updatedAt: prompt.updatedAt,
+      createdAt: prompt.createdAt,
+      viewHref: `/prompts/${prompt.id}`,
+      editHref: `/admin/prompts/${prompt.id}`,
+      deleteApi: `/api/prompts/${prompt.id}`
     }))
   ];
 }
@@ -98,12 +128,16 @@ export function AdminList({
   components,
   sops,
   skills,
+  fonts,
+  prompts,
   children
 }: {
   products: Product[];
   components: ComponentSpec[];
   sops: Sop[];
   skills: Skill[];
+  fonts: FontAsset[];
+  prompts: PromptAsset[];
   children?: ReactNode;
 }) {
   const router = useRouter();
@@ -115,7 +149,7 @@ export function AdminList({
 
   const rows = useMemo(() => {
     const lowerKeyword = keyword.trim().toLowerCase();
-    return toRows(products, components, sops, skills)
+    return toRows(products, components, sops, skills, fonts, prompts)
       .filter((row) => (category === "all" ? true : row.category === category))
       .filter((row) => {
         if (!lowerKeyword) return true;
@@ -126,7 +160,7 @@ export function AdminList({
         if (sortMode === "created") return +new Date(a.createdAt || 0) - +new Date(b.createdAt || 0);
         return +new Date(b.updatedAt || 0) - +new Date(a.updatedAt || 0);
       });
-  }, [category, components, keyword, products, skills, sops, sortMode]);
+  }, [category, components, fonts, keyword, products, prompts, skills, sops, sortMode]);
 
   async function confirmDelete() {
     if (!deleteTarget) return;
@@ -146,8 +180,8 @@ export function AdminList({
               key={filter.id}
               type="button"
               onClick={() => setCategory(filter.id)}
-              className={`border px-4 py-2 text-sm font-bold transition ${
-                category === filter.id ? "border-foreground bg-foreground text-white" : "border-foreground/10 text-muted-foreground hover:border-foreground hover:text-foreground"
+              className={`h-10 min-w-24 border px-4 text-sm font-bold transition ${
+                category === filter.id ? "border-foreground bg-foreground text-white" : "border-foreground/[0.08] text-muted-foreground hover:border-foreground hover:text-foreground"
               }`}
             >
               {filter.label}
@@ -159,12 +193,12 @@ export function AdminList({
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
             placeholder="搜索资产名称 / 介绍 / 标签"
-            className="h-11 border border-foreground/10 bg-white px-4 text-sm outline-none focus:border-foreground"
+            className="h-12 border border-foreground/[0.08] bg-white px-4 text-sm outline-none focus:border-foreground/25"
           />
           <select
             value={sortMode}
             onChange={(event) => setSortMode(event.target.value as SortMode)}
-            className="h-11 border border-foreground/10 bg-white px-4 text-sm outline-none focus:border-foreground"
+            className="h-12 border border-foreground/[0.08] bg-white px-4 text-sm outline-none focus:border-foreground/25"
           >
             <option value="latest">最新更新</option>
             <option value="created">最早创建</option>

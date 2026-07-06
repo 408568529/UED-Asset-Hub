@@ -34,7 +34,7 @@ export function PublishForm() {
         </label>
         <label className="space-y-2">
           <span className="text-sm font-medium">分类</span>
-          <select className="h-11 w-full rounded-full border border-border bg-white px-4 text-sm outline-none">
+          <select className="h-12 w-full rounded-full border border-foreground/[0.08] bg-white px-4 text-sm outline-none focus:border-foreground/25">
             {categories.map((category) => (
               <option key={category.id} value={category.id}>{category.name}</option>
             ))}
@@ -42,7 +42,7 @@ export function PublishForm() {
         </label>
         <label className="space-y-2">
           <span className="text-sm font-medium">专题</span>
-          <select className="h-11 w-full rounded-full border border-border bg-white px-4 text-sm outline-none">
+          <select className="h-12 w-full rounded-full border border-foreground/[0.08] bg-white px-4 text-sm outline-none focus:border-foreground/25">
             {topics.map((topic) => (
               <option key={topic.id} value={topic.id}>{topic.title}</option>
             ))}

@@ -1,6 +1,6 @@
 # UED Asset Hub
 
-UED Asset Hub 是面向设计团队的内容型资产社区 MVP。V0.1 前台开放 Vibe Product 和组件规范，专题、知识库、Prompt 等能力先保留页面和扩展结构，不放入口。
+UED Asset Hub 是面向设计团队的内容型资产社区 MVP。当前前台开放 Vibe Product、Skill Center、Font Library、Prompt Library、组件规范和标准 SOP，后台集中管理新增、编辑、删除和上传。
 
 ## 启动
 
@@ -28,16 +28,17 @@ npm run build
 src/app/                 Next.js App Router 页面
 src/components/          页面组件、卡片、搜索、AI 入口和布局
 src/config/api.ts        API 与 mock 开关配置
-src/config/storage.ts    本地数据目录和管理员密码配置
+src/config/storage.ts    本地数据目录配置
 src/lib/request.ts       未来真实 API 请求封装
 src/lib/storage/         本地 JSON 存储抽象
 src/types/               Asset、Topic、User、AI 等核心类型
-data/                    本地元数据与上传文件
+data/                    本地运行数据，已被 Git 忽略
+data.example/            新服务器初始化数据模板
 src/data/mock/           本地 mock 数据
 src/services/            页面唯一依赖的数据服务层
 ```
 
-页面不要直接读取本地 JSON 文件。V0.1 的 Product 和组件规范通过 `productService`、`componentSpecService`、`moduleService` 获取数据。
+页面不要直接读取本地 JSON 文件。Product、Skill、Font、Prompt、组件规范和标准 SOP 都通过对应 `service` 与 `moduleService` 获取数据。
 
 ## V0.1 本地存储
 
@@ -51,6 +52,9 @@ data/
 │  ├─ sops.json
 │  ├─ skills.json
 │  ├─ skill-versions.json
+│  ├─ fonts.json
+│  ├─ font-versions.json
+│  ├─ prompts.json
 │  ├─ logs.json
 │  ├─ uploads.json
 │  └─ versions.json
@@ -58,6 +62,12 @@ data/
 │  └─ Skill 名称/
 │     └─ 版本号/
 │        └─ skill.zip
+├─ font-library/
+│  └─ 字体名称/
+│     └─ 版本号/
+│        └─ 原始字体文件名
+├─ prompt-library/
+│  └─ .gitkeep
 ├─ standard-sop/
 │  └─ .gitkeep
 ├─ component-spec/
@@ -68,12 +78,34 @@ data/
    └─ unclassified/
 ```
 
-部署到公共电脑时，建议把真实数据目录放在代码仓库外，避免 `git pull` 或重新 clone 时覆盖数据：
+`data/` 是运行时真实数据目录，已经被 `.gitignore` 忽略，不再进入 Git。
+
+部署到公共电脑时，必须把真实数据目录放在代码仓库外，避免 `git pull` 或重新 clone 时影响数据：
 
 ```env
 DATA_DIR=/UED-Asset-Hub-Storage/data
 NEXT_PUBLIC_ADMIN_USERNAME=admin
 NEXT_PUBLIC_ADMIN_PASSWORD=admin123
+```
+
+Windows 主机示例：
+
+```env
+DATA_DIR=D:/UED-Asset-Hub/data
+```
+
+首次部署空主机时，可以用 `data.example/` 初始化真实数据目录：
+
+```bash
+mkdir -p /UED-Asset-Hub-Storage/data
+cp -R data.example/* /UED-Asset-Hub-Storage/data/
+```
+
+Windows PowerShell 示例：
+
+```powershell
+New-Item -ItemType Directory -Force D:\UED-Asset-Hub\data
+Copy-Item -Recurse .\data.example\* D:\UED-Asset-Hub\data\
 ```
 
 首页模块数量来自本地数据实时统计：
@@ -82,6 +114,8 @@ NEXT_PUBLIC_ADMIN_PASSWORD=admin123
 - `组件规范` 数量读取 `meta/components.json`
 - `标准 SOP` 数量读取 `meta/sops.json`
 - `Skill Center` 数量读取 `meta/skills.json`
+- `Font Library` 数量读取 `meta/fonts.json`
+- `Prompt Library` 数量读取 `meta/prompts.json`
 
 代码更新和内容数据建议分开管理：代码通过 Git 同步，真实内容保存在公共电脑的 `DATA_DIR` 中。
 为方便迁移，上传文件路径保存为相对 `DATA_DIR` 的路径，例如 `skill-center/xxx/v1.0.0/skill.zip`。
@@ -102,7 +136,14 @@ npm install
 npm run build
 ```
 
-只要 `.env.local` 中的 `DATA_DIR` 指向仓库外的 `/UED-Asset-Hub-Storage/data`，代码更新不会覆盖服务器上的真实数据。
+只要 `.env.local` 中的 `DATA_DIR` 指向仓库外的 `/UED-Asset-Hub-Storage/data` 或 `D:/UED-Asset-Hub/data`，代码更新不会覆盖服务器上的真实数据。
+
+更新代码前建议先备份真实数据：
+
+```powershell
+$ts = Get-Date -Format "yyyyMMdd-HHmmss"
+Compress-Archive -Path "D:\UED-Asset-Hub\data" -DestinationPath "D:\UED-Asset-Hub\data-backup-$ts.zip"
+```
 
 通用上传接口会按模块保存文件：
 
@@ -110,6 +151,8 @@ npm run build
 - `assetModule=component` → `component-spec/资产名称/文件名`
 - `assetModule=sop` → `standard-sop/资产名称/文件名`
 - `assetModule=skill` → `skill-center/资产名称/文件名`
+- `assetModule=font` → `font-library/资产名称/文件名`
+- `assetModule=prompt` → `prompt-library/资产名称/文件名`
 - 未选择模块 → `uploads/unclassified/文件名`
 
 ## V1.2 管理流程
@@ -180,6 +223,18 @@ NEXT_PUBLIC_API_BASE_URL=https://your-api.example.com
 - `POST /api/components`
 - `PUT /api/components/:id`
 - `DELETE /api/components/:id`
+- `GET /api/fonts`
+- `POST /api/fonts`
+- `PUT /api/fonts/:id`
+- `DELETE /api/fonts/:id`
+- `GET /api/fonts/:id/versions`
+- `POST /api/fonts/:id/versions`
+- `GET /api/fonts/:id/download`
+- `GET /api/prompts`
+- `POST /api/prompts`
+- `PUT /api/prompts/:id`
+- `DELETE /api/prompts/:id`
+- `POST /api/prompts/:id/copy`
 - `GET /api/logs`
 - `POST /api/logs`
 - `GET /api/uploads`
@@ -244,6 +299,10 @@ OPENAI_MODEL=
 - `/` 首页
 - `/products` Vibe Product
 - `/skills` Skill Center
+- `/fonts` Font Library
+- `/fonts/[id]` 字体详情
+- `/prompts` Prompt Library
+- `/prompts/[id]` Prompt 详情
 - `/components` 组件规范
 - `/sops` 标准 SOP
 - `/admin/login` 管理登录
@@ -255,6 +314,10 @@ OPENAI_MODEL=
 - `/admin/skills/new` 新建 Skill
 - `/admin/skills/[id]` 编辑 Skill
 - `/admin/skills/[id]/versions/new` 上传 Skill 新版本
+- `/admin/fonts/new` 新建字体
+- `/admin/fonts/[id]` 编辑字体 / 上传字体新版本
+- `/admin/prompts/new` 新建 Prompt
+- `/admin/prompts/[id]` 编辑 Prompt
 - `/admin/sops/new` 新建 SOP
 - `/admin/sops/[id]` 编辑 SOP
 - `/admin/logs` 更新日志
