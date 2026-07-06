@@ -32,7 +32,7 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
               <Badge key={tag.id}>{tag.name}</Badge>
             ))}
           </div>
-          <h1 className="mt-5 max-w-4xl text-4xl font-black leading-tight md:text-6xl">{asset.title}</h1>
+          <h1 className="mt-5 max-w-4xl text-3xl font-black leading-tight">{asset.title}</h1>
           <p className="mt-4 max-w-3xl text-lg leading-8 text-muted-foreground">{asset.excerpt}</p>
           <div className="mt-6 flex flex-col gap-4 border-y border-border py-5 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-3">

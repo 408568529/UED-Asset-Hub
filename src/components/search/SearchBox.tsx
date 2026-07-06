@@ -15,15 +15,15 @@ export function SearchBox({ placeholder = "搜索 Portal、组件规范、Prompt
   }
 
   return (
-    <form onSubmit={submit} className="flex w-full items-center gap-2 rounded-full border border-white/80 bg-white p-2 shadow-card">
+    <form onSubmit={submit} className="flex w-full items-center gap-2 rounded-full border border-foreground/15 bg-[#fffefa] p-2">
       <Search className="ml-3 text-muted-foreground" size={20} />
       <input
         value={keyword}
         onChange={(event) => setKeyword(event.target.value)}
         placeholder={placeholder}
-        className="min-w-0 flex-1 bg-transparent px-2 text-sm outline-none md:text-base"
+        className="min-w-0 flex-1 bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground/70 md:text-base"
       />
-      <Button type="submit" size="lg">搜索</Button>
+      <Button type="submit" size="lg" variant="secondary">搜索</Button>
     </form>
   );
 }

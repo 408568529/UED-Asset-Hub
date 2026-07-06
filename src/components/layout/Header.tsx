@@ -1,48 +1,32 @@
 import Link from "next/link";
-import { Search, Sparkles } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { categories } from "@/data/mock/categories";
+import { AdminNavActions } from "@/components/layout/AdminNavActions";
+import { openModules } from "@/config/modules";
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-40 border-b border-white/60 bg-white/80 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3">
+    <header className="sticky top-0 z-40 border-b border-foreground/10 bg-[#f7f6f0]/82 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4">
         <Link href="/" className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-foreground text-sm font-bold text-white">U</span>
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-sm font-bold text-white">U</span>
           <span>
-            <span className="block text-sm font-bold leading-4">UED Asset Hub</span>
-            <span className="block text-xs text-muted-foreground">Design Asset Community</span>
+            <span className="block text-sm font-black leading-4 tracking-normal">UED Asset Hub</span>
+            <span className="block font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Asset Studio</span>
           </span>
         </Link>
 
         <nav className="hidden items-center gap-1 lg:flex">
-          {categories.map((category) => (
+          {Object.entries(openModules).map(([id, module]) => (
             <Link
-              key={category.id}
-              href={`/category/${category.id}`}
-              className="rounded-full px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              key={id}
+              href={module.href}
+              className="rounded-full px-3 py-2 text-sm text-muted-foreground transition hover:bg-foreground hover:text-white"
             >
-              {category.name}
+              {module.name}
             </Link>
           ))}
-          <Link href="/topics" className="rounded-full px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground">
-            专题
-          </Link>
         </nav>
 
-        <div className="flex items-center gap-2">
-          <Button asChild variant="ghost" size="icon" className="hidden sm:inline-flex" aria-label="搜索">
-            <Link href="/search">
-              <Search size={18} />
-            </Link>
-          </Button>
-          <Button asChild size="sm">
-            <Link href="/publish">
-              <Sparkles size={16} />
-              发布资产
-            </Link>
-          </Button>
-        </div>
+        <AdminNavActions />
       </div>
     </header>
   );

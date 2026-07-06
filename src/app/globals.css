@@ -3,19 +3,24 @@
 @tailwind utilities;
 
 :root {
-  --background: 44 42% 98%;
-  --foreground: 224 35% 12%;
-  --border: 220 18% 88%;
-  --muted: 210 20% 94%;
-  --muted-foreground: 218 12% 44%;
-  --primary: 220 84% 52%;
+  --background: 48 33% 97%;
+  --foreground: 0 0% 7%;
+  --border: 0 0% 86%;
+  --muted: 45 12% 92%;
+  --muted-foreground: 0 0% 42%;
+  --primary: 77 90% 56%;
   --primary-foreground: 0 0% 100%;
-  --accent: 166 74% 44%;
-  --accent-foreground: 210 40% 98%;
+  --accent: 0 0% 7%;
+  --accent-foreground: 0 0% 98%;
+  --radius: 0px;
 }
 
 * {
   box-sizing: border-box;
+}
+
+[class*="rounded-"] {
+  border-radius: var(--radius) !important;
 }
 
 html {
@@ -25,9 +30,8 @@ html {
 body {
   min-height: 100vh;
   color: hsl(var(--foreground));
-  background:
-    radial-gradient(circle at top left, rgba(68, 118, 255, 0.16), transparent 34rem),
-    linear-gradient(180deg, #fbfaf7 0%, #f6f8fb 42%, #ffffff 100%);
+  background: #f7f6f0;
+  font-feature-settings: "kern";
 }
 
 a {
@@ -36,5 +40,5 @@ a {
 }
 
 ::selection {
-  background: rgba(54, 102, 248, 0.18);
+  background: rgba(211, 244, 62, 0.55);
 }
