@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { resolveDataPath } from "@/config/storage";
 import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { operationLogService } from "@/services/operationLogService";
 import type { DeleteResult, MutationResult } from "@/types/serviceResult";
@@ -269,6 +270,6 @@ export const skillService = {
   },
 
   async readPackage(packagePath: string) {
-    return fs.readFile(packagePath);
+    return fs.readFile(resolveDataPath(packagePath));
   }
 };

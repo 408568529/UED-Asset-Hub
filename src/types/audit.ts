@@ -19,6 +19,7 @@ export interface UploadRecord {
   id: string;
   fileName: string;
   fileType: "md" | "image" | "json" | "other";
+  assetModule?: "product" | "component" | "sop" | "skill";
   relatedAssetId?: string;
   relatedAssetName?: string;
   operator: string;
