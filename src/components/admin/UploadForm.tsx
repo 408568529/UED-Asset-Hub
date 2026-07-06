@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { FormToast } from "@/components/admin/FormToast";
 import { LabeledField } from "@/components/admin/LabeledField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,7 @@ import { getAdminPassword } from "@/lib/adminSession";
 export function UploadForm() {
   const router = useRouter();
   const [message, setMessage] = useState("");
+  const [toast, setToast] = useState<{ message: string; tone?: "success" | "error" } | null>(null);
 
   async function submit(formData: FormData) {
     const response = await fetch("/api/uploads", {
@@ -22,15 +24,19 @@ export function UploadForm() {
     });
 
     if (!response.ok) {
-      setMessage("上传失败，请稍后重试。");
+      const result = await response.json().catch(() => ({})) as { message?: string };
+      setMessage(result.message ?? "上传失败，请稍后重试。");
+      setToast({ message: result.message ?? "上传失败，请稍后重试。", tone: "error" });
       return;
     }
 
-    router.push("/admin/uploads");
+    setToast({ message: "文件上传成功。" });
+    window.setTimeout(() => router.push("/admin/uploads"), 700);
   }
 
   return (
     <form action={submit} className="mt-10 max-w-2xl space-y-5 border-t border-foreground/10 pt-8">
+      {toast ? <FormToast message={toast.message} tone={toast.tone} /> : null}
       <LabeledField label="选择文件">
         <Input name="file" type="file" required className="rounded-2xl py-2" />
       </LabeledField>
