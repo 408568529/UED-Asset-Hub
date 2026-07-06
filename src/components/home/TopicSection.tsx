@@ -1,23 +1,26 @@
-import Link from "next/link";
 import { TopicCard } from "@/components/topic/TopicCard";
-import { Button } from "@/components/ui/button";
+import { Reveal } from "@/components/motion/Reveal";
+import { SectionHeading } from "@/components/home/SectionHeading";
 import type { Topic } from "@/types/topic";
 
 export function TopicSection({ topics }: { topics: Topic[] }) {
   return (
-    <section className="mx-auto max-w-7xl px-5 py-10">
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <h2 className="text-3xl font-black">专题精选</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">把零散资产组织成可阅读、可学习、可复用的主题路径。</p>
-        </div>
-        <Button asChild variant="outline">
-          <Link href="/topics">全部专题</Link>
-        </Button>
-      </div>
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {topics.slice(0, 3).map((topic) => (
-          <TopicCard key={topic.id} topic={topic} />
+    <section className="mx-auto max-w-7xl px-5 py-16 md:py-24">
+      <Reveal>
+        <SectionHeading
+          index="02"
+          eyebrow="Featured Topics"
+          title="专题像作品集一样展开"
+          description="把零散资产组织成有策展逻辑的主题路径，让团队经验更容易被浏览和复用。"
+          href="/topics"
+          action="全部专题"
+        />
+      </Reveal>
+      <div className="grid gap-10 lg:grid-cols-2">
+        {topics.slice(0, 4).map((topic, index) => (
+          <Reveal key={topic.id} delay={index * 0.05}>
+            <TopicCard topic={topic} index={index} />
+          </Reveal>
         ))}
       </div>
     </section>

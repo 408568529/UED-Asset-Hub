@@ -15,18 +15,18 @@ export function AskUEDBox() {
   }
 
   return (
-    <section className="rounded-[2rem] border border-foreground/10 bg-foreground p-6 text-white shadow-card">
-      <div className="flex items-center gap-2 text-sm text-white/70">
+    <section className="rounded-[2.5rem] bg-foreground p-8 text-white md:p-12">
+      <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-white/60">
         <Sparkles size={18} />
         AI Ask UED
       </div>
-      <h2 className="mt-3 text-2xl font-bold">问团队资产，而不是重新翻群聊</h2>
-      <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+      <h2 className="mt-6 max-w-4xl text-4xl font-black leading-[1.02] md:text-6xl">问团队资产，而不是重新翻群聊</h2>
+      <div className="mt-8 flex flex-col gap-3 sm:flex-row">
         <input
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
           placeholder="例如：查询条件设计规范有哪些？"
-          className="min-w-0 flex-1 rounded-full border border-white/15 bg-white/10 px-4 py-3 text-sm text-white outline-none placeholder:text-white/45"
+          className="min-w-0 flex-1 rounded-full border border-white/15 bg-white/10 px-5 py-4 text-base text-white outline-none placeholder:text-white/45 focus:border-primary/70"
         />
         <Button type="button" variant="secondary" onClick={ask}>Ask</Button>
       </div>

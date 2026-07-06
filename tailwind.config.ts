@@ -22,6 +22,17 @@ const config: Config = {
       },
       boxShadow: {
         card: "0 18px 60px rgba(25, 30, 44, 0.08)"
+      },
+      borderRadius: {
+        DEFAULT: "var(--radius)",
+        none: "0px",
+        sm: "var(--radius)",
+        md: "var(--radius)",
+        lg: "var(--radius)",
+        xl: "var(--radius)",
+        "2xl": "var(--radius)",
+        "3xl": "var(--radius)",
+        full: "var(--radius)"
       }
     }
   },
