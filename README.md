@@ -32,7 +32,7 @@ src/config/storage.ts    本地数据目录和管理员密码配置
 src/lib/request.ts       未来真实 API 请求封装
 src/lib/storage/         本地 JSON 存储抽象
 src/types/               Asset、Topic、User、AI 等核心类型
-data/                    V0.1 本地 JSON 数据
+data/                    本地元数据与上传文件
 src/data/mock/           本地 mock 数据
 src/services/            页面唯一依赖的数据服务层
 ```
@@ -41,17 +41,28 @@ src/services/            页面唯一依赖的数据服务层
 
 ## V0.1 本地存储
 
-本期不引入数据库，数据默认读取项目内 `data/`：
+本期不引入数据库，数据默认读取 `DATA_DIR`。目录按「项目本地存储目录 / 模块 / 具体内容」组织：
 
 ```txt
-data/products.json
-data/components.json
-data/sops.json
-data/skills.json
-data/skill-versions.json
-data/logs.json
-data/uploads.json
-data/versions.json
+data/
+├─ meta/
+│  ├─ products.json
+│  ├─ components.json
+│  ├─ sops.json
+│  ├─ skills.json
+│  ├─ skill-versions.json
+│  ├─ logs.json
+│  ├─ uploads.json
+│  └─ versions.json
+├─ skill-center/
+│  └─ Skill 名称/
+│     └─ 版本号/
+│        └─ skill.zip
+├─ standard-sop/
+├─ component-spec/
+├─ vibe-product/
+└─ uploads/
+   └─ unclassified/
 ```
 
 部署到公共电脑时，建议在 `.env.local` 配置固定目录：
@@ -64,12 +75,13 @@ NEXT_PUBLIC_ADMIN_PASSWORD=admin123
 
 首页模块数量来自本地数据实时统计：
 
-- `Vibe Product` 数量读取 `products.json`
-- `组件规范` 数量读取 `components.json`
-- `标准 SOP` 数量读取 `sops.json`
-- `Skill Center` 数量读取 `skills.json`
+- `Vibe Product` 数量读取 `meta/products.json`
+- `组件规范` 数量读取 `meta/components.json`
+- `标准 SOP` 数量读取 `meta/sops.json`
+- `Skill Center` 数量读取 `meta/skills.json`
 
 代码更新和内容数据建议分开管理：代码通过 Git 同步，真实内容保存在公共电脑的 `DATA_DIR` 中。
+为方便迁移，上传文件路径保存为相对 `DATA_DIR` 的路径，例如 `skill-center/xxx/v1.0.0/skill.zip`。
 
 ## V1.2 管理流程
 

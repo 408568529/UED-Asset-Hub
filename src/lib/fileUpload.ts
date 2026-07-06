@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { DATA_DIR } from "@/config/storage";
+import { DATA_DIR, storageFolders } from "@/config/storage";
 
 export function getFileType(fileName: string) {
   const ext = path.extname(fileName).toLowerCase();
@@ -15,11 +15,12 @@ export function sanitizeFileName(fileName: string) {
 }
 
 export async function saveUploadFile(file: File) {
-  const uploadDir = path.join(DATA_DIR, "upload-files");
+  const relativeDir = path.join(storageFolders.uploads, "unclassified");
+  const uploadDir = path.join(DATA_DIR, relativeDir);
   await fs.mkdir(uploadDir, { recursive: true });
   const safeName = `${Date.now()}-${sanitizeFileName(file.name)}`;
   const filePath = path.join(uploadDir, safeName);
   const buffer = Buffer.from(await file.arrayBuffer());
   await fs.writeFile(filePath, buffer);
-  return filePath;
+  return path.join(relativeDir, safeName);
 }
