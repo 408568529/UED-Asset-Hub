@@ -33,7 +33,16 @@ export async function POST(request: Request) {
   const file = formData.get("package");
   if (!(file instanceof File) || !isZipFile(file)) return NextResponse.json({ message: "Skill package must be a ZIP file" }, { status: 400 });
   const input = getInput(formData);
-  const packagePath = await saveSkillPackage(file, input.name, input.version);
-  const result = await skillService.createSkill(input, packagePath, file);
-  return NextResponse.json(result, { status: 201 });
+  let packagePath = "";
+  try {
+    packagePath = await saveSkillPackage(file, input.name, input.version);
+    const result = await skillService.createSkill(input, packagePath, file);
+    return NextResponse.json(result, { status: 201 });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json(
+      { message: packagePath ? "文件已保存，但 Skill 记录写入失败，请检查 DATA_DIR 权限。" : "Skill 文件保存失败，请检查 DATA_DIR 权限。" },
+      { status: 500 }
+    );
+  }
 }

@@ -28,18 +28,27 @@ export async function POST(request: Request) {
 
   const assetModule = getAssetModule(formData.get("assetModule"));
   const relatedAssetName = String(formData.get("relatedAssetName") ?? "") || undefined;
-  const storagePath = await saveUploadFile(file, { module: assetModule, assetName: relatedAssetName });
-  const record = await uploadRecordService.createUpload({
-    fileName: file.name,
-    fileType: getFileType(file.name),
-    assetModule,
-    relatedAssetId: String(formData.get("relatedAssetId") ?? "") || undefined,
-    relatedAssetName,
-    operator: "admin",
-    status: "success",
-    summary: String(formData.get("summary") ?? "") || "文件已上传到本地存储。",
-    storagePath
-  });
+  let storagePath = "";
+  try {
+    storagePath = await saveUploadFile(file, { module: assetModule, assetName: relatedAssetName });
+    const record = await uploadRecordService.createUpload({
+      fileName: file.name,
+      fileType: getFileType(file.name),
+      assetModule,
+      relatedAssetId: String(formData.get("relatedAssetId") ?? "") || undefined,
+      relatedAssetName,
+      operator: "admin",
+      status: "success",
+      summary: String(formData.get("summary") ?? "") || "文件已上传到本地存储。",
+      storagePath
+    });
 
-  return NextResponse.json(record, { status: 201 });
+    return NextResponse.json(record, { status: 201 });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json(
+      { message: storagePath ? "文件已保存，但上传记录写入失败，请检查 DATA_DIR 权限。" : "文件保存失败，请检查 DATA_DIR 权限。" },
+      { status: 500 }
+    );
+  }
 }

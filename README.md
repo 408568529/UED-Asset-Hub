@@ -68,10 +68,10 @@ data/
    └─ unclassified/
 ```
 
-部署到公共电脑时，建议在 `.env.local` 配置固定目录：
+部署到公共电脑时，建议把真实数据目录放在代码仓库外，避免 `git pull` 或重新 clone 时覆盖数据：
 
 ```env
-DATA_DIR=/UED-Asset-Hub/data
+DATA_DIR=/UED-Asset-Hub-Storage/data
 NEXT_PUBLIC_ADMIN_USERNAME=admin
 NEXT_PUBLIC_ADMIN_PASSWORD=admin123
 ```
@@ -85,6 +85,24 @@ NEXT_PUBLIC_ADMIN_PASSWORD=admin123
 
 代码更新和内容数据建议分开管理：代码通过 Git 同步，真实内容保存在公共电脑的 `DATA_DIR` 中。
 为方便迁移，上传文件路径保存为相对 `DATA_DIR` 的路径，例如 `skill-center/xxx/v1.0.0/skill.zip`。
+
+推荐服务器目录：
+
+```txt
+/UED-Asset-Hub-App/          # Git clone 的代码目录
+/UED-Asset-Hub-Storage/data/ # 真实业务数据目录，不进 Git
+```
+
+后续只更新平台代码时，在代码目录执行：
+
+```bash
+cd /UED-Asset-Hub-App
+git pull
+npm install
+npm run build
+```
+
+只要 `.env.local` 中的 `DATA_DIR` 指向仓库外的 `/UED-Asset-Hub-Storage/data`，代码更新不会覆盖服务器上的真实数据。
 
 通用上传接口会按模块保存文件：
 

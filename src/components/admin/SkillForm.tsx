@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { FormToast } from "@/components/admin/FormToast";
 import { LabeledField } from "@/components/admin/LabeledField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,12 @@ export function SkillForm({ skill }: { skill?: Skill }) {
   const router = useRouter();
   const isEdit = Boolean(skill);
   const [message, setMessage] = useState("");
+  const [toast, setToast] = useState<{ message: string; tone?: "success" | "error" | "warning" } | null>(null);
+
+  function showToast(nextToast: { message: string; tone?: "success" | "error" | "warning" }) {
+    setToast(nextToast);
+    window.setTimeout(() => setToast(null), 2400);
+  }
 
   async function submit(formData: FormData) {
     if (isEdit && skill) {
@@ -41,7 +48,9 @@ export function SkillForm({ skill }: { skill?: Skill }) {
       });
 
       if (!response.ok) {
-        setMessage("保存失败，请稍后重试。");
+        const result = await response.json().catch(() => ({})) as { message?: string };
+        setMessage(result.message ?? "保存失败，请稍后重试。");
+        showToast({ message: result.message ?? "保存失败，请稍后重试。", tone: "error" });
         return;
       }
 
@@ -58,12 +67,21 @@ export function SkillForm({ skill }: { skill?: Skill }) {
           body: versionFormData
         });
         if (!versionResponse.ok) {
-          setMessage("元数据已保存，但 ZIP 上传失败，请确认文件为 ZIP。");
+          const result = await versionResponse.json().catch(() => ({})) as { message?: string };
+          setMessage(result.message ?? "元数据已保存，但 ZIP 上传失败，请确认文件为 ZIP。");
+          showToast({ message: result.message ?? "元数据已保存，但 ZIP 上传失败，请确认文件为 ZIP。", tone: "error" });
+          return;
+        }
+        const versionResult = await versionResponse.json().catch(() => ({})) as { warning?: string };
+        if (versionResult.warning) {
+          showToast({ message: versionResult.warning, tone: "warning" });
+          window.setTimeout(() => router.push(`/skills/${skill.id}`), 900);
           return;
         }
       }
 
-      router.push(hasPackage ? `/skills/${skill.id}` : "/admin");
+      showToast({ message: hasPackage ? "Skill 版本上传成功。" : "Skill 信息保存成功。" });
+      window.setTimeout(() => router.push(hasPackage ? `/skills/${skill.id}` : "/admin"), 700);
       return;
     }
 
@@ -74,14 +92,19 @@ export function SkillForm({ skill }: { skill?: Skill }) {
     });
 
     if (!response.ok) {
-      setMessage(isEdit ? "保存失败，请稍后重试。" : "上传失败，请确认文件为 ZIP。");
+      const result = await response.json().catch(() => ({})) as { message?: string };
+      setMessage(result.message ?? (isEdit ? "保存失败，请稍后重试。" : "上传失败，请确认文件为 ZIP。"));
+      showToast({ message: result.message ?? (isEdit ? "保存失败，请稍后重试。" : "上传失败，请确认文件为 ZIP。"), tone: "error" });
       return;
     }
-    router.push("/admin");
+    const result = await response.json().catch(() => ({})) as { warning?: string };
+    showToast({ message: result.warning ?? "Skill 上传成功。", tone: result.warning ? "warning" : "success" });
+    window.setTimeout(() => router.push("/admin"), 700);
   }
 
   return (
     <form action={submit} className="mt-10 max-w-2xl space-y-5 border-t border-foreground/10 pt-8">
+      {toast ? <FormToast message={toast.message} tone={toast.tone} /> : null}
       <LabeledField label="Skill 名称">
         <Input name="name" required defaultValue={skill?.name} placeholder="请输入 Skill 名称" />
       </LabeledField>

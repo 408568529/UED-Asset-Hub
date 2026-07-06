@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import { resolveDataPath } from "@/config/storage";
 import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { operationLogService } from "@/services/operationLogService";
+import { uploadRecordService } from "@/services/uploadRecordService";
 import type { DeleteResult, MutationResult } from "@/types/serviceResult";
 import type { Skill, SkillInput, SkillVersion } from "@/types/skill";
 
@@ -31,7 +32,7 @@ async function captureWarning(action: () => Promise<void>) {
     await action();
   } catch (error) {
     console.error(error);
-    return "Skill 操作已完成，但日志记录写入失败。";
+    return "Skill 操作已完成，但附属记录写入失败。";
   }
   return undefined;
 }
@@ -95,6 +96,17 @@ export const skillService = {
         operator,
         diffSummary: [`上传版本 ${skill.version}`, `文件名：${file.name}`, `文件大小：${file.size} bytes`]
       });
+      await uploadRecordService.createUpload({
+        fileName: file.name,
+        fileType: "other",
+        assetModule: "skill",
+        relatedAssetId: skill.id,
+        relatedAssetName: skill.name,
+        operator,
+        status: "success",
+        summary: `上传 Skill Center 资产 ${skill.version}`,
+        storagePath: packagePath
+      });
     });
     return { data: skill, warning };
   },
@@ -121,7 +133,7 @@ export const skillService = {
     return { data: skill, warning };
   },
 
-  async addVersion(skillId: string, versionName: string, packagePath: string, file: File, changeLog: string, readme: string, operator = "admin") {
+  async addVersion(skillId: string, versionName: string, packagePath: string, file: File, changeLog: string, readme: string, operator = "admin"): Promise<MutationResult<SkillVersion> | null> {
     const skills = await readJsonFile<Skill[]>(SKILLS_FILE, []);
     const versions = await readJsonFile<SkillVersion[]>(VERSIONS_FILE, []);
     const index = skills.findIndex((skill) => skill.id === skillId);
@@ -151,7 +163,7 @@ export const skillService = {
     skills[index] = skill;
     await writeJsonFile(SKILLS_FILE, skills);
     await writeJsonFile(VERSIONS_FILE, [version, ...versions]);
-    await captureWarning(async () => {
+    const warning = await captureWarning(async () => {
       await operationLogService.createLog({
         type: "version",
         title: `更新 Skill 版本：${skill.name} ${versionName}`,
@@ -162,11 +174,22 @@ export const skillService = {
         operator,
         diffSummary: [skill.changeLog]
       });
+      await uploadRecordService.createUpload({
+        fileName: file.name,
+        fileType: "other",
+        assetModule: "skill",
+        relatedAssetId: skill.id,
+        relatedAssetName: skill.name,
+        operator,
+        status: "success",
+        summary: `上传 Skill 新版本 ${versionName}`,
+        storagePath: packagePath
+      });
     });
-    return version;
+    return { data: version, warning };
   },
 
-  async overwriteCurrentVersion(skillId: string, versionName: string, packagePath: string, file: File, changeLog: string, readme: string, operator = "admin") {
+  async overwriteCurrentVersion(skillId: string, versionName: string, packagePath: string, file: File, changeLog: string, readme: string, operator = "admin"): Promise<MutationResult<Skill> | null> {
     const skills = await readJsonFile<Skill[]>(SKILLS_FILE, []);
     const versions = await readJsonFile<SkillVersion[]>(VERSIONS_FILE, []);
     const index = skills.findIndex((skill) => skill.id === skillId);
@@ -216,7 +239,7 @@ export const skillService = {
     }
 
     await writeJsonFile(SKILLS_FILE, skills);
-    await captureWarning(async () => {
+    const warning = await captureWarning(async () => {
       await operationLogService.createLog({
         type: "update",
         title: `覆盖上传 Skill：${skill.name} ${versionName}`,
@@ -227,8 +250,19 @@ export const skillService = {
         operator,
         diffSummary: [skill.changeLog, `文件名：${file.name}`, `文件大小：${file.size} bytes`]
       });
+      await uploadRecordService.createUpload({
+        fileName: file.name,
+        fileType: "other",
+        assetModule: "skill",
+        relatedAssetId: skill.id,
+        relatedAssetName: skill.name,
+        operator,
+        status: "success",
+        summary: `覆盖上传 Skill 当前版本 ${versionName}`,
+        storagePath: packagePath
+      });
     });
-    return skill;
+    return { data: skill, warning };
   },
 
   async incrementDownload(skillId: string, versionId?: string) {
