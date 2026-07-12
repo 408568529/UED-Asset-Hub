@@ -1,12 +1,29 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { DATA_DIR, TRAINING_MEDIA_DIR, shouldMigrateLegacyTrainingMedia, storageFolders } from "@/config/storage";
+import { DATA_DIR, TRAINING_LIBRARY_DIR, TRAINING_MEDIA_DIR, TRAINING_UPLOAD_DIR, shouldMigrateLegacyTrainingMedia, storageFolders } from "@/config/storage";
 import { sanitizeFileName, sanitizePathName } from "@/lib/fileUpload";
 import type { TrainingServerFile, TrainingVideoInput } from "@/types/training";
 
 const videoExtensions = new Set([".mp4", ".webm", ".mov", ".m4v", ".ogg"]);
 const coverExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 const legacyTrainingMediaDir = path.join(DATA_DIR, "training-media");
+const uploadedPrefix = "uploaded:";
+
+async function ensureTrainingMediaLayout() {
+  if (shouldMigrateLegacyTrainingMedia) {
+    const [legacy, target] = await Promise.all([fs.stat(legacyTrainingMediaDir).catch(() => null), fs.stat(TRAINING_MEDIA_DIR).catch(() => null)]);
+    if (legacy?.isDirectory() && !target) await fs.rename(legacyTrainingMediaDir, TRAINING_MEDIA_DIR);
+  }
+  await fs.mkdir(TRAINING_MEDIA_DIR, { recursive: true });
+  await fs.mkdir(TRAINING_UPLOAD_DIR, { recursive: true });
+  await fs.mkdir(TRAINING_LIBRARY_DIR, { recursive: true });
+  for (const entry of await fs.readdir(TRAINING_MEDIA_DIR, { withFileTypes: true })) {
+    if (["uploaded", "library"].includes(entry.name)) continue;
+    const source = path.join(TRAINING_MEDIA_DIR, entry.name);
+    const target = path.join(TRAINING_LIBRARY_DIR, entry.name);
+    if (!(await fs.stat(target).catch(() => null))) await fs.rename(source, target);
+  }
+}
 
 function assertInside(root: string, target: string) {
   const relative = path.relative(root, target);
@@ -23,17 +40,17 @@ export function isSupportedCover(file: File) {
 
 export async function prepareTrainingUploadPath(input: TrainingVideoInput, videoId: string, fileName: string) {
   if (!isSupportedVideoName(fileName)) throw new Error("仅支持 MP4、WebM、MOV、M4V 或 OGG 视频。");
+  await ensureTrainingMediaLayout();
   const relativeDir = path.join(
-    storageFolders.training,
     sanitizePathName(input.groupName),
     sanitizePathName(videoId)
   );
-  const absoluteDir = path.join(DATA_DIR, relativeDir);
-  assertInside(path.join(DATA_DIR, storageFolders.training), absoluteDir);
+  const absoluteDir = path.join(TRAINING_UPLOAD_DIR, relativeDir);
+  assertInside(TRAINING_UPLOAD_DIR, absoluteDir);
   await fs.mkdir(absoluteDir, { recursive: true });
   const safeFileName = sanitizeFileName(fileName) || "training-video.mp4";
   return {
-    relativePath: path.join(relativeDir, safeFileName),
+    relativePath: `${uploadedPrefix}${path.join(relativeDir, safeFileName)}`,
     absolutePath: path.join(absoluteDir, safeFileName),
     temporaryPath: path.join(absoluteDir, `${safeFileName}.uploading`)
   };
@@ -50,20 +67,24 @@ export async function saveTrainingCover(videoId: string, videoPath: string, file
     await fs.writeFile(absolutePath, Buffer.from(await file.arrayBuffer()));
     return path.join(relativeDir, fileName);
   }
-  const absoluteVideoPath = path.join(DATA_DIR, videoPath);
-  assertInside(path.join(DATA_DIR, storageFolders.training), absoluteVideoPath);
-  const relativeDir = path.dirname(videoPath);
+  const absoluteVideoPath = resolveTrainingVideoPath(videoPath);
+  const relativeDir = videoPath.startsWith(uploadedPrefix) ? `${uploadedPrefix}${path.dirname(videoPath.slice(uploadedPrefix.length))}` : path.dirname(videoPath);
   const absoluteDir = path.dirname(absoluteVideoPath);
   const fileName = `cover${path.extname(file.name).toLowerCase()}`;
   await fs.writeFile(path.join(absoluteDir, fileName), Buffer.from(await file.arrayBuffer()));
-  return path.join(relativeDir, fileName);
+  return relativeDir.startsWith(uploadedPrefix) ? `${relativeDir}/${fileName}` : path.join(relativeDir, fileName);
 }
 
 export function resolveTrainingVideoPath(storedPath: string) {
   if (storedPath.startsWith("server-local:")) {
     const relativePath = storedPath.slice("server-local:".length);
-    const absolutePath = path.resolve(TRAINING_MEDIA_DIR, relativePath);
-    assertInside(path.resolve(TRAINING_MEDIA_DIR), absolutePath);
+    const absolutePath = path.resolve(TRAINING_LIBRARY_DIR, relativePath);
+    assertInside(path.resolve(TRAINING_LIBRARY_DIR), absolutePath);
+    return absolutePath;
+  }
+  if (storedPath.startsWith(uploadedPrefix)) {
+    const absolutePath = path.resolve(TRAINING_UPLOAD_DIR, storedPath.slice(uploadedPrefix.length));
+    assertInside(path.resolve(TRAINING_UPLOAD_DIR), absolutePath);
     return absolutePath;
   }
   const absolutePath = path.resolve(DATA_DIR, storedPath);
@@ -72,6 +93,11 @@ export function resolveTrainingVideoPath(storedPath: string) {
 }
 
 export function resolveTrainingCoverPath(storedPath: string) {
+  if (storedPath.startsWith(uploadedPrefix)) {
+    const absolutePath = path.resolve(TRAINING_UPLOAD_DIR, storedPath.slice(uploadedPrefix.length));
+    assertInside(path.resolve(TRAINING_UPLOAD_DIR), absolutePath);
+    return absolutePath;
+  }
   const absolutePath = path.resolve(DATA_DIR, storedPath);
   assertInside(path.resolve(DATA_DIR, storageFolders.training), absolutePath);
   return absolutePath;
@@ -92,15 +118,8 @@ export async function removeLinkedServerFile(videoPath: string) {
 }
 
 export async function listTrainingServerFiles(): Promise<TrainingServerFile[]> {
-  if (shouldMigrateLegacyTrainingMedia) {
-    const [legacy, target] = await Promise.all([
-      fs.stat(legacyTrainingMediaDir).catch(() => null),
-      fs.stat(TRAINING_MEDIA_DIR).catch(() => null)
-    ]);
-    if (legacy?.isDirectory() && !target) await fs.rename(legacyTrainingMediaDir, TRAINING_MEDIA_DIR);
-  }
-  await fs.mkdir(TRAINING_MEDIA_DIR, { recursive: true });
-  const root = path.resolve(TRAINING_MEDIA_DIR);
+  await ensureTrainingMediaLayout();
+  const root = path.resolve(TRAINING_LIBRARY_DIR);
   const pending = [root];
   const files: TrainingServerFile[] = [];
   while (pending.length) {
@@ -125,10 +144,11 @@ export async function listTrainingServerFiles(): Promise<TrainingServerFile[]> {
 }
 
 export async function getLinkedServerFile(relativePath: string) {
-  const absolutePath = path.resolve(TRAINING_MEDIA_DIR, relativePath);
-  assertInside(path.resolve(TRAINING_MEDIA_DIR), absolutePath);
+  await ensureTrainingMediaLayout();
+  const absolutePath = path.resolve(TRAINING_LIBRARY_DIR, relativePath);
+  assertInside(path.resolve(TRAINING_LIBRARY_DIR), absolutePath);
   if (!isSupportedVideoName(absolutePath)) throw new Error("文件格式不受支持。");
   const stat = await fs.stat(absolutePath);
   if (!stat.isFile()) throw new Error("服务器文件不存在。");
-  return { absolutePath, fileName: path.basename(absolutePath), fileSize: stat.size, storedPath: `server-local:${path.relative(TRAINING_MEDIA_DIR, absolutePath)}` };
+  return { absolutePath, fileName: path.basename(absolutePath), fileSize: stat.size, storedPath: `server-local:${path.relative(TRAINING_LIBRARY_DIR, absolutePath)}` };
 }

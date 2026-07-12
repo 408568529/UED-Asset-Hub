@@ -8,6 +8,8 @@ const configuredTrainingMediaDir = process.env.TRAINING_MEDIA_DIR;
 export const TRAINING_MEDIA_DIR = configuredTrainingMediaDir && path.resolve(configuredTrainingMediaDir) !== path.resolve(legacyTrainingMediaDir)
   ? configuredTrainingMediaDir
   : path.join(path.dirname(DATA_DIR), "training-media");
+export const TRAINING_UPLOAD_DIR = path.join(TRAINING_MEDIA_DIR, "uploaded");
+export const TRAINING_LIBRARY_DIR = path.join(TRAINING_MEDIA_DIR, "library");
 export const shouldMigrateLegacyTrainingMedia = !configuredTrainingMediaDir || path.resolve(configuredTrainingMediaDir) === path.resolve(legacyTrainingMediaDir);
 
 export const storageFolders = {
