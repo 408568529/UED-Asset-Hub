@@ -7,6 +7,8 @@ import { productService } from "@/services/productService";
 import { promptService } from "@/services/promptService";
 import { skillService } from "@/services/skillService";
 import { sopService } from "@/services/sopService";
+import { testEnvironmentService } from "@/services/testEnvironmentService";
+import { trainingService } from "@/services/trainingService";
 import type { ModuleSummary } from "@/types/module";
 
 export const moduleService = {
@@ -18,6 +20,8 @@ export const moduleService = {
       skillCount,
       fontCount,
       promptCount,
+      trainingCount,
+      testEnvironmentCount,
       productFileCount,
       componentFileCount,
       sopFileCount,
@@ -31,6 +35,8 @@ export const moduleService = {
       skillService.countSkills(),
       fontService.countFonts(),
       promptService.countPrompts(),
+      trainingService.countVideos(),
+      testEnvironmentService.countEnvironments(),
       countStoredEntries(storageFolders.product),
       countStoredEntries(storageFolders.component),
       countStoredEntries(storageFolders.sop),
@@ -45,7 +51,9 @@ export const moduleService = {
       { id: "sops", ...openModules.sops, count: Math.max(sopCount, sopFileCount) },
       { id: "skills", ...openModules.skills, count: Math.max(skillCount, skillFileCount) },
       { id: "fonts", ...openModules.fonts, count: Math.max(fontCount, fontFileCount) },
-      { id: "prompts", ...openModules.prompts, count: Math.max(promptCount, promptFileCount) }
+      { id: "prompts", ...openModules.prompts, count: Math.max(promptCount, promptFileCount) },
+      { id: "training", ...openModules.training, count: trainingCount },
+      { id: "testEnvironments", ...openModules.testEnvironments, count: testEnvironmentCount }
     ];
   }
 };

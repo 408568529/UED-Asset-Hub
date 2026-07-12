@@ -6,15 +6,26 @@
   --background: 48 33% 97%;
   --foreground: 0 0% 7%;
   --border: 0 0% 86%;
+  --input: 0 0% 82%;
   --muted: 45 12% 92%;
   --muted-foreground: 0 0% 42%;
   --primary: 77 90% 56%;
   --primary-foreground: 0 0% 100%;
   --accent: 0 0% 7%;
   --accent-foreground: 0 0% 98%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
   --radius: 0px;
+  --control-height-sm: 2rem;
+  --control-height-md: 2.5rem;
+  --control-height-lg: 3rem;
+  --folder-tone-1: 72 20% 91%;
+  --folder-tone-2: 48 24% 91%;
+  --folder-tone-3: 87 28% 91%;
+  --folder-tone-4: 205 18% 91%;
   --divider-section: rgba(0, 0, 0, 0.06);
   --divider-content: rgba(0, 0, 0, 0.08);
+  --site-gutter: clamp(1.25rem, 3vw, 2.5rem);
 }
 
 * {
@@ -33,7 +44,10 @@ body {
   min-height: 100vh;
   color: hsl(var(--foreground));
   background: #f8f7f1;
+  font-family: Inter, "SF Pro Display", "SF Pro Text", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
   font-feature-settings: "kern";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 a {
@@ -43,4 +57,29 @@ a {
 
 ::selection {
   background: rgba(211, 244, 62, 0.55);
+}
+
+:focus-visible {
+  outline: 1px solid hsl(var(--foreground));
+  outline-offset: 2px;
+}
+
+[data-ui-control]:focus-visible {
+  outline: none;
+  outline-offset: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

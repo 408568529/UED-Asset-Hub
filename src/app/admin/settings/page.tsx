@@ -1,5 +1,5 @@
 import { AdminGuard } from "@/components/admin/AdminGuard";
-import { AdminTabs } from "@/components/admin/AdminTabs";
+import { AdminWorkspace } from "@/components/admin/AdminWorkspace";
 
 export default function AdminSettingsPage() {
   return (
@@ -8,7 +8,7 @@ export default function AdminSettingsPage() {
         <p className="font-mono text-sm uppercase tracking-[0.22em] text-muted-foreground">Settings</p>
         <h1 className="mt-6 max-w-4xl text-3xl font-black leading-tight">系统设置</h1>
         <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">第一期保留配置入口，后续可接入账号、存储目录、AI 服务和上传策略。</p>
-        <AdminTabs />
+        <AdminWorkspace><p className="text-sm text-muted-foreground">配置入口将在后续真实后端接入时按模块补充。</p></AdminWorkspace>
       </main>
     </AdminGuard>
   );

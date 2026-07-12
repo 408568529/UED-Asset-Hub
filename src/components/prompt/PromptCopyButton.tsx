@@ -31,7 +31,7 @@ async function copyText(content: string) {
   }
 }
 
-export function PromptCopyButton({ promptId, content }: { promptId: string; content: string }) {
+export function PromptCopyButton({ promptId, content, onCopied }: { promptId: string; content: string; onCopied?: () => void }) {
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
 
@@ -40,7 +40,8 @@ export function PromptCopyButton({ promptId, content }: { promptId: string; cont
     setIsError(!copied);
     setMessage(copied ? "Prompt 已复制到剪贴板" : "复制失败，请手动复制");
     if (copied) {
-      fetch(`/api/prompts/${promptId}/copy`, { method: "POST" }).catch(() => undefined);
+      const response = await fetch(`/api/prompts/${promptId}/copy`, { method: "POST" }).catch(() => null);
+      if (response?.ok) onCopied?.();
     }
     window.setTimeout(() => setMessage(""), 1800);
   }

@@ -4,10 +4,12 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { FormToast } from "@/components/admin/FormToast";
 import { LabeledField } from "@/components/admin/LabeledField";
+import { TagMultiSelectField } from "@/components/admin/TagMultiSelectField";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { getAdminPassword } from "@/lib/adminSession";
 import type { PromptAsset, PromptDifficulty, PromptModel, PromptOutputType } from "@/types/prompt";
 
 const models: PromptModel[] = ["ChatGPT", "Codex", "Claude", "Cursor", "Gemini", "DeepSeek"];
@@ -55,7 +57,7 @@ export function PromptForm({ prompt }: { prompt?: PromptAsset }) {
 
     const response = await fetch(isEdit ? `/api/prompts/${prompt?.id}` : "/api/prompts", {
       method: isEdit ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json", "x-admin-password": getAdminPassword() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
 
@@ -99,7 +101,7 @@ export function PromptForm({ prompt }: { prompt?: PromptAsset }) {
         <div className="grid gap-2 sm:grid-cols-3">
           {models.map((model) => (
             <label key={model} className="border border-foreground/10 bg-white p-3 text-sm font-bold">
-              <input name="models" type="checkbox" value={model} defaultChecked={(prompt?.models ?? ["ChatGPT", "Codex"]).includes(model)} className="mr-2" />
+              <Checkbox name="models" value={model} defaultChecked={(prompt?.models ?? ["ChatGPT", "Codex"]).includes(model)} className="mr-2 align-[-2px]" />
               {model}
             </label>
           ))}
@@ -109,22 +111,22 @@ export function PromptForm({ prompt }: { prompt?: PromptAsset }) {
         <div className="grid gap-2 sm:grid-cols-4">
           {outputTypes.map((outputType) => (
             <label key={outputType} className="border border-foreground/10 bg-white p-3 text-sm font-bold">
-              <input name="outputTypes" type="checkbox" value={outputType} defaultChecked={(prompt?.outputTypes ?? ["Markdown"]).includes(outputType)} className="mr-2" />
+              <Checkbox name="outputTypes" value={outputType} defaultChecked={(prompt?.outputTypes ?? ["Markdown"]).includes(outputType)} className="mr-2 align-[-2px]" />
               {outputType}
             </label>
           ))}
         </div>
       </LabeledField>
       <LabeledField label="难度">
-        <select name="difficulty" defaultValue={prompt?.difficulty ?? "初级"} className="h-12 w-full border border-foreground/[0.08] bg-white px-4 text-sm outline-none focus:border-foreground/25">
+        <Select name="difficulty" defaultValue={prompt?.difficulty ?? "初级"}>
           {difficulties.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty}</option>)}
-        </select>
+        </Select>
       </LabeledField>
       <LabeledField label="使用场景">
-        <Input name="scenarios" required defaultValue={(prompt?.scenarios ?? []).join(", ")} placeholder="用逗号分隔，例如：PRD生成, React, 代码生成" />
+        <TagMultiSelectField type="prompt-usage" name="scenarios" defaultValue={prompt?.scenarios} />
       </LabeledField>
       <LabeledField label="标签">
-        <Input name="tags" defaultValue={(prompt?.tags ?? []).join(", ")} placeholder="用逗号分隔，例如：PRD, Codex, 页面生成" />
+        <TagMultiSelectField type="prompt-tag" name="tags" defaultValue={prompt?.tags} />
       </LabeledField>
       <LabeledField label="封面链接（可选）">
         <Input name="cover" defaultValue={prompt?.cover} placeholder="请输入封面图链接" />

@@ -1,9 +1,21 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { DATA_DIR, META_DIR } from "@/config/storage";
 
 async function ensureDataDir() {
   await fs.mkdir(META_DIR, { recursive: true });
+}
+
+const writeQueues = new Map<string, Promise<void>>();
+
+function enqueueWrite(fileName: string, action: () => Promise<void>) {
+  const previous = writeQueues.get(fileName) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(action);
+  writeQueues.set(fileName, next);
+  return next.finally(() => {
+    if (writeQueues.get(fileName) === next) writeQueues.delete(fileName);
+  });
 }
 
 export async function readJsonFile<T>(fileName: string, fallback: T): Promise<T> {
@@ -33,10 +45,15 @@ export async function readJsonFile<T>(fileName: string, fallback: T): Promise<T>
 }
 
 export async function writeJsonFile<T>(fileName: string, data: T): Promise<void> {
-  await ensureDataDir();
-  const filePath = path.join(META_DIR, fileName);
-  const tempPath = `${filePath}.tmp`;
-
-  await fs.writeFile(tempPath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
-  await fs.rename(tempPath, filePath);
+  await enqueueWrite(fileName, async () => {
+    await ensureDataDir();
+    const filePath = path.join(META_DIR, fileName);
+    const tempPath = `${filePath}.${randomUUID()}.tmp`;
+    try {
+      await fs.writeFile(tempPath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+      await fs.rename(tempPath, filePath);
+    } finally {
+      await fs.rm(tempPath, { force: true }).catch(() => undefined);
+    }
+  });
 }

@@ -6,8 +6,8 @@ import { FormToast } from "@/components/admin/FormToast";
 import { LabeledField } from "@/components/admin/LabeledField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { getAdminPassword } from "@/lib/adminSession";
 
 export function UploadForm() {
   const router = useRouter();
@@ -17,9 +17,6 @@ export function UploadForm() {
   async function submit(formData: FormData) {
     const response = await fetch("/api/uploads", {
       method: "POST",
-      headers: {
-        "x-admin-password": getAdminPassword()
-      },
       body: formData
     });
 
@@ -38,10 +35,10 @@ export function UploadForm() {
     <form action={submit} className="mt-10 max-w-2xl space-y-5 border-t border-foreground/10 pt-8">
       {toast ? <FormToast message={toast.message} tone={toast.tone} /> : null}
       <LabeledField label="选择文件">
-        <Input name="file" type="file" required className="rounded-2xl py-2" />
+        <Input name="file" type="file" required />
       </LabeledField>
       <LabeledField label="归属模块（可选）">
-        <select name="assetModule" className="h-12 w-full border border-foreground/[0.08] bg-white px-4 text-sm outline-none focus:border-foreground/25">
+        <Select name="assetModule">
           <option value="">未归类上传</option>
           <option value="product">Vibe Product</option>
           <option value="component">组件规范</option>
@@ -49,7 +46,7 @@ export function UploadForm() {
           <option value="skill">Skill Center</option>
           <option value="font">Font Library</option>
           <option value="prompt">Prompt Library</option>
-        </select>
+        </Select>
       </LabeledField>
       <LabeledField label="关联资产ID（可选）">
         <Input name="relatedAssetId" placeholder="例如：design-review-sop" />

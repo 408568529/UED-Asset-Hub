@@ -1,4 +1,6 @@
 import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { storageFolders } from "@/config/storage";
+import { removeStoredModuleEntry } from "@/lib/storage/deleteStoredEntry";
 import { operationLogService } from "@/services/operationLogService";
 import type { DeleteResult, MutationResult } from "@/types/serviceResult";
 import type { Sop, SopInput } from "@/types/sop";
@@ -104,6 +106,7 @@ export const sopService = {
     if (nextSops.length === sops.length) return { deleted: false };
     await writeJsonFile(FILE_NAME, nextSops);
     const warning = await captureWarning(async () => {
+      await removeStoredModuleEntry(storageFolders.sop, sop?.name);
       await operationLogService.createLog({
         type: "delete",
         title: `删除 SOP：${sop?.name ?? id}`,

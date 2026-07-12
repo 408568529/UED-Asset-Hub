@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
-import { resolveDataPath } from "@/config/storage";
+import { resolveDataPath, storageFolders } from "@/config/storage";
 import { getFontFormat } from "@/lib/fontStorage";
+import { removeStoredAssetFoldersFromPaths } from "@/lib/storage/deleteStoredEntry";
 import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { operationLogService } from "@/services/operationLogService";
 import { uploadRecordService } from "@/services/uploadRecordService";
@@ -205,11 +206,19 @@ export const fontService = {
 
   async deleteFont(id: string, operator = "admin"): Promise<DeleteResult> {
     const fonts = await readJsonFile<FontAsset[]>(FONTS_FILE, []);
+    const versions = await readJsonFile<FontVersion[]>(FONT_VERSIONS_FILE, []);
     const font = fonts.find((item) => item.id === id);
+    const fontVersions = versions.filter((version) => version.fontId === id);
     const nextFonts = fonts.filter((item) => item.id !== id);
     if (nextFonts.length === fonts.length) return { deleted: false };
     await writeJsonFile(FONTS_FILE, nextFonts);
+    await writeJsonFile(FONT_VERSIONS_FILE, versions.filter((version) => version.fontId !== id));
     const warning = await captureWarning(async () => {
+      await removeStoredAssetFoldersFromPaths(
+        storageFolders.font,
+        [font?.filePath, ...fontVersions.map((version) => version.filePath)],
+        font?.name
+      );
       await operationLogService.createLog({
         type: "delete",
         title: `删除字体：${font?.name ?? id}`,

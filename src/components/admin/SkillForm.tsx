@@ -4,10 +4,12 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { FormToast } from "@/components/admin/FormToast";
 import { LabeledField } from "@/components/admin/LabeledField";
+import { TagMultiSelectField } from "@/components/admin/TagMultiSelectField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Radio } from "@/components/ui/radio";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { getAdminPassword } from "@/lib/adminSession";
 import type { Skill, SkillCategory } from "@/types/skill";
 
 const categories: SkillCategory[] = ["Codex", "Claude", "Cursor", "Prompt", "Workflow", "MCP", "Other"];
@@ -21,6 +23,7 @@ export function SkillForm({ skill }: { skill?: Skill }) {
   const isEdit = Boolean(skill);
   const [message, setMessage] = useState("");
   const [toast, setToast] = useState<{ message: string; tone?: "success" | "error" | "warning" } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   function showToast(nextToast: { message: string; tone?: "success" | "error" | "warning" }) {
     setToast(nextToast);
@@ -28,19 +31,24 @@ export function SkillForm({ skill }: { skill?: Skill }) {
   }
 
   async function submit(formData: FormData) {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    setMessage("");
+    try {
     if (isEdit && skill) {
       const packageFile = formData.get("package");
       const hasPackage = packageFile instanceof File && packageFile.size > 0;
       const response = await fetch(`/api/skills/${skill.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", "x-admin-password": getAdminPassword() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: String(formData.get("name") ?? ""),
           description: String(formData.get("description") ?? ""),
           cover: String(formData.get("cover") ?? ""),
           category: String(formData.get("category") ?? "Other"),
           version: skill.version,
-          author: String(formData.get("author") ?? "admin"),
+          authorName: String(formData.get("authorName") ?? "").trim() || "未填写作者",
+          usageScenarios: parseTags(formData.get("usageScenarios")),
           tags: parseTags(formData.get("tags")),
           readme: String(formData.get("readme") ?? ""),
           changeLog: String(formData.get("changeLog") ?? "上传新版本")
@@ -63,7 +71,6 @@ export function SkillForm({ skill }: { skill?: Skill }) {
         versionFormData.set("changeLog", String(formData.get("changeLog") ?? "上传新版本"));
         const versionResponse = await fetch(`/api/skills/${skill.id}/versions`, {
           method: "POST",
-          headers: { "x-admin-password": getAdminPassword() },
           body: versionFormData
         });
         if (!versionResponse.ok) {
@@ -87,7 +94,7 @@ export function SkillForm({ skill }: { skill?: Skill }) {
 
     const response = await fetch("/api/skills", {
       method: isEdit ? "PUT" : "POST",
-      headers: isEdit ? { "Content-Type": "application/json", "x-admin-password": getAdminPassword() } : { "x-admin-password": getAdminPassword() },
+      headers: isEdit ? { "Content-Type": "application/json" } : undefined,
       body: formData
     });
 
@@ -100,49 +107,59 @@ export function SkillForm({ skill }: { skill?: Skill }) {
     const result = await response.json().catch(() => ({})) as { warning?: string };
     showToast({ message: result.warning ?? "Skill 上传成功。", tone: result.warning ? "warning" : "success" });
     window.setTimeout(() => router.push("/admin"), 700);
+    } catch {
+      const errorMessage = "请求中断，请检查网络或主机上传限制后重试。";
+      setMessage(errorMessage);
+      showToast({ message: errorMessage, tone: "error" });
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
     <form action={submit} className="mt-10 max-w-2xl space-y-5 border-t border-foreground/10 pt-8">
       {toast ? <FormToast message={toast.message} tone={toast.tone} /> : null}
-      <LabeledField label="Skill 名称">
+      <LabeledField label="Skill 名称" required>
         <Input name="name" required defaultValue={skill?.name} placeholder="请输入 Skill 名称" />
       </LabeledField>
-      <LabeledField label="介绍">
+      <LabeledField label="介绍" required>
         <Textarea name="description" required defaultValue={skill?.description} placeholder="请输入 Skill 介绍" rows={4} />
       </LabeledField>
-      <LabeledField label="分类">
-        <select name="category" defaultValue={skill?.category ?? "Other"} className="h-12 w-full border border-foreground/[0.08] bg-white px-4 text-sm outline-none focus:border-foreground/25">
+      <LabeledField label="分类" required>
+        <Select name="category" defaultValue={skill?.category ?? "Other"}>
           {categories.map((category) => (
             <option key={category} value={category}>{category}</option>
           ))}
-        </select>
+        </Select>
       </LabeledField>
-      <LabeledField label={isEdit ? "新版本号（上传 ZIP 时生效）" : "版本号"}>
+      <LabeledField label={isEdit ? "新版本号（上传 ZIP 时生效）" : "版本号"} required>
         <Input name="version" required defaultValue={skill?.version ?? "v1.0.0"} placeholder="例如：v1.0.0" />
       </LabeledField>
-      <LabeledField label="作者">
-        <Input name="author" required defaultValue={skill?.author ?? "admin"} placeholder="请输入作者" />
+      <LabeledField label="作者 / 贡献者" required>
+        <Input name="authorName" required defaultValue={skill?.authorName ?? ""} placeholder="请输入前台展示的作者" />
+      </LabeledField>
+      <LabeledField label="使用场景">
+        <TagMultiSelectField type="skill-usage" name="usageScenarios" defaultValue={skill?.usageScenarios} />
       </LabeledField>
       <LabeledField label="标签">
-        <Input name="tags" defaultValue={(skill?.tags ?? []).join(", ")} placeholder="用逗号分隔，例如：AI, Workflow, Coding" />
+        <TagMultiSelectField type="skill-tag" name="tags" defaultValue={skill?.tags} />
       </LabeledField>
       <LabeledField label="封面链接（可选）">
         <Input name="cover" defaultValue={skill?.cover} placeholder="请输入封面图链接" />
       </LabeledField>
-      <LabeledField label={isEdit ? "上传新版本 ZIP（可选）" : "上传 ZIP"}>
-        <Input name="package" type="file" required={!isEdit} accept=".zip,application/zip" className="rounded-2xl py-2" />
+      <LabeledField label={isEdit ? "上传新版本 ZIP（可选）" : "上传 ZIP"} required={!isEdit}>
+        <Input name="package" type="file" required={!isEdit} accept=".zip,application/zip" />
       </LabeledField>
       {isEdit ? (
         <LabeledField label="更新类型">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="cursor-pointer border border-foreground/10 bg-white p-4 transition hover:border-foreground">
-              <input name="updateType" type="radio" value="version" defaultChecked className="mr-2" />
+              <Radio name="updateType" value="version" defaultChecked className="mr-2 align-[-2px]" />
               <span className="text-sm font-bold">版本更新</span>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">保留旧版本，新增一条版本记录。</p>
             </label>
             <label className="cursor-pointer border border-foreground/10 bg-white p-4 transition hover:border-foreground">
-              <input name="updateType" type="radio" value="overwrite" className="mr-2" />
+              <Radio name="updateType" value="overwrite" className="mr-2 align-[-2px]" />
               <span className="text-sm font-bold">覆盖上传</span>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">替换当前版本包，不新增版本记录。</p>
             </label>
@@ -156,8 +173,8 @@ export function SkillForm({ skill }: { skill?: Skill }) {
         <Textarea name="changeLog" defaultValue={skill?.changeLog} placeholder="例如：上传新版本" rows={4} />
       </LabeledField>
       <div className="flex gap-3">
-        <Button type="submit">{isEdit ? "保存修改" : "发布 Skill"}</Button>
-        <Button type="button" variant="outline" onClick={() => router.push("/admin")}>取消</Button>
+        <Button type="submit" disabled={isSubmitting}>{isSubmitting ? "处理中..." : isEdit ? "保存修改" : "发布 Skill"}</Button>
+        <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => router.push("/admin")}>取消</Button>
       </div>
       {message ? <p className="text-sm text-red-600">{message}</p> : null}
     </form>

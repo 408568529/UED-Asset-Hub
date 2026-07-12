@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { AdminGuard } from "@/components/admin/AdminGuard";
-import { AdminTabs } from "@/components/admin/AdminTabs";
+import { AdminWorkspace } from "@/components/admin/AdminWorkspace";
 import { assetVersionService } from "@/services/assetVersionService";
 
 export default async function VersionDetailPage({ params }: { params: Promise<{ id: string; versionId: string }> }) {
@@ -16,9 +16,7 @@ export default async function VersionDetailPage({ params }: { params: Promise<{ 
         <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">
           {version.assetType} · {version.operator} · {version.createdAt}
         </p>
-        <AdminTabs />
-
-        <section className="mt-12 grid gap-10 lg:grid-cols-[360px_1fr]">
+        <AdminWorkspace><section className="grid gap-10 lg:grid-cols-[360px_1fr]">
           <div>
             <h2 className="text-2xl font-black">修改摘要</h2>
             <ul className="mt-5 space-y-2 text-sm leading-6">
@@ -33,7 +31,7 @@ export default async function VersionDetailPage({ params }: { params: Promise<{ 
               {version.contentSnapshot}
             </pre>
           </div>
-        </section>
+        </section></AdminWorkspace>
       </main>
     </AdminGuard>
   );

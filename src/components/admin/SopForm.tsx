@@ -3,10 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { LabeledField } from "@/components/admin/LabeledField";
+import { TagMultiSelectField } from "@/components/admin/TagMultiSelectField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { getAdminPassword } from "@/lib/adminSession";
 import type { Sop } from "@/types/sop";
 
 function parseTags(value: FormDataEntryValue | null) {
@@ -29,10 +29,7 @@ export function SopForm({ sop }: { sop?: Sop }) {
   async function submit(formData: FormData) {
     const response = await fetch(isEdit ? `/api/sops/${sop?.id}` : "/api/sops", {
       method: isEdit ? "PUT" : "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-admin-password": getAdminPassword()
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: String(formData.get("name") ?? ""),
         description: String(formData.get("description") ?? ""),
@@ -70,7 +67,7 @@ export function SopForm({ sop }: { sop?: Sop }) {
         <Input name="owner" defaultValue={sop?.owner} placeholder="请输入负责人或团队" />
       </LabeledField>
       <LabeledField label="标签（可选）">
-        <Input name="tags" defaultValue={(sop?.tags ?? []).join(", ")} placeholder="用逗号分隔，例如：走查, 验收" />
+        <TagMultiSelectField type="sop-tag" name="tags" defaultValue={sop?.tags} />
       </LabeledField>
       <LabeledField label="排序值（可选）">
         <Input name="sortOrder" type="number" defaultValue={sop?.sortOrder} placeholder="数字越小越靠前" />

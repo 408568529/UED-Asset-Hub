@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { categories } from "@/data/mock/categories";
 import { topics } from "@/data/mock/topics";
@@ -34,19 +35,19 @@ export function PublishForm() {
         </label>
         <label className="space-y-2">
           <span className="text-sm font-medium">分类</span>
-          <select className="h-12 w-full rounded-full border border-foreground/[0.08] bg-white px-4 text-sm outline-none focus:border-foreground/25">
+          <Select>
             {categories.map((category) => (
               <option key={category.id} value={category.id}>{category.name}</option>
             ))}
-          </select>
+          </Select>
         </label>
         <label className="space-y-2">
           <span className="text-sm font-medium">专题</span>
-          <select className="h-12 w-full rounded-full border border-foreground/[0.08] bg-white px-4 text-sm outline-none focus:border-foreground/25">
+          <Select>
             {topics.map((topic) => (
               <option key={topic.id} value={topic.id}>{topic.title}</option>
             ))}
-          </select>
+          </Select>
         </label>
         <label className="space-y-2 md:col-span-2">
           <span className="text-sm font-medium">标签</span>

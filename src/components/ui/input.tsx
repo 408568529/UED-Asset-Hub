@@ -1,14 +1,32 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+export type ControlSize = "sm" | "md" | "lg";
+
+const inputSizes: Record<ControlSize, string> = {
+  sm: "h-[var(--control-height-sm)] px-3 text-xs",
+  md: "h-[var(--control-height-md)] px-3 text-sm",
+  lg: "h-[var(--control-height-lg)] px-4 text-base"
+};
+
+export type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
+  controlSize?: ControlSize;
+};
+
+export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Input(
+  { className, controlSize = "md", ...props },
+  ref
+) {
   return (
     <input
+      ref={ref}
+      data-ui-control
       className={cn(
-        "h-12 w-full rounded-full border border-foreground/[0.08] bg-white px-4 text-sm outline-none transition placeholder:text-muted-foreground/60 focus:border-foreground/25 focus:ring-4 focus:ring-primary/10",
+        "w-full rounded-[var(--radius)] border border-input bg-white text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground/70 hover:border-foreground/40 focus:border-foreground focus:shadow-[0_0_0_1px_hsl(var(--foreground))] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70 aria-[invalid=true]:border-destructive aria-[invalid=true]:shadow-[0_0_0_1px_hsl(var(--destructive))] file:mr-3 file:border-0 file:bg-transparent file:text-sm file:font-bold",
+        inputSizes[controlSize],
         className
       )}
       {...props}
     />
   );
-}
+});

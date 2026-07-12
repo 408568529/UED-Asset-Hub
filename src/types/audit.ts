@@ -1,5 +1,5 @@
-export type LogType = "create" | "update" | "delete" | "upload" | "version" | "login" | "logout";
-export type TargetType = "asset" | "version" | "file" | "auth" | "system";
+export type LogType = "create" | "update" | "delete" | "upload" | "version" | "login" | "logout" | "view" | "copy" | "play";
+export type TargetType = "asset" | "version" | "file" | "auth" | "system" | "credential" | "training";
 export type AssetVersionType = "product" | "component";
 
 export interface OperationLog {
@@ -19,7 +19,7 @@ export interface UploadRecord {
   id: string;
   fileName: string;
   fileType: "md" | "image" | "json" | "other";
-  assetModule?: "product" | "component" | "sop" | "skill" | "font" | "prompt";
+  assetModule?: "product" | "component" | "sop" | "skill" | "font" | "prompt" | "training";
   relatedAssetId?: string;
   relatedAssetName?: string;
   operator: string;
@@ -27,6 +27,9 @@ export interface UploadRecord {
   status: "success" | "failed";
   summary?: string;
   storagePath?: string;
+  uploadMode?: "upload" | "server-local";
+  fileSize?: number;
+  failureReason?: string;
 }
 
 export interface AssetVersion {

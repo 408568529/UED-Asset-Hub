@@ -5,7 +5,10 @@ import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DeleteConfirmDialog } from "@/components/admin/DeleteConfirmDialog";
-import { getAdminPassword } from "@/lib/adminSession";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ComponentSpec } from "@/types/componentSpec";
 import type { FontAsset } from "@/types/font";
 import type { Product } from "@/types/product";
@@ -15,6 +18,7 @@ import type { Sop } from "@/types/sop";
 
 type Category = "all" | "product" | "skill" | "font" | "prompt" | "component" | "sop";
 type SortMode = "latest" | "created" | "title";
+type CategoryCounts = Record<Exclude<Category, "all">, number>;
 
 type AdminAssetRow = {
   id: string;
@@ -28,6 +32,7 @@ type AdminAssetRow = {
   viewHref: string;
   editHref: string;
   deleteApi: string;
+  meta?: string;
 };
 
 const filters: { id: Category; label: string }[] = [
@@ -85,14 +90,15 @@ function toRows(products: Product[], components: ComponentSpec[], sops: Sop[], s
       id: skill.id,
       title: skill.name,
       description: skill.description,
-      tags: skill.tags,
+      tags: [...skill.tags, ...skill.usageScenarios],
       category: "skill" as const,
       categoryLabel: "Skill Center",
       updatedAt: skill.updatedAt,
       createdAt: skill.createdAt,
       viewHref: `/skills/${skill.id}`,
       editHref: `/admin/skills/${skill.id}`,
-      deleteApi: `/api/skills/${skill.id}`
+      deleteApi: `/api/skills/${skill.id}`,
+      meta: `作者：${skill.authorName} · 上传人：${skill.uploadedBy}`
     })),
     ...fonts.map((font) => ({
       id: font.id,
@@ -130,6 +136,7 @@ export function AdminList({
   skills,
   fonts,
   prompts,
+  categoryCounts,
   children
 }: {
   products: Product[];
@@ -138,6 +145,7 @@ export function AdminList({
   skills: Skill[];
   fonts: FontAsset[];
   prompts: PromptAsset[];
+  categoryCounts: CategoryCounts;
   children?: ReactNode;
 }) {
   const router = useRouter();
@@ -164,7 +172,7 @@ export function AdminList({
 
   async function confirmDelete() {
     if (!deleteTarget) return;
-    const response = await fetch(deleteTarget.deleteApi, { method: "DELETE", headers: { "x-admin-password": getAdminPassword() } });
+    const response = await fetch(deleteTarget.deleteApi, { method: "DELETE" });
     const result = (await response.json()) as { warning?: string };
     setMessage(result.warning ?? "");
     setDeleteTarget(null);
@@ -173,37 +181,35 @@ export function AdminList({
 
   return (
     <section>
-      <div className="mb-8 border-t border-foreground/10 pt-6">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="mb-8">
+        <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <TabsList>
           {filters.map((filter) => (
-            <button
+            <TabsTrigger
               key={filter.id}
-              type="button"
               onClick={() => setCategory(filter.id)}
-              className={`h-10 min-w-24 border px-4 text-sm font-bold transition ${
-                category === filter.id ? "border-foreground bg-foreground text-white" : "border-foreground/[0.08] text-muted-foreground hover:border-foreground hover:text-foreground"
-              }`}
+              active={category === filter.id}
             >
               {filter.label}
-            </button>
+              {filter.id === "all" || categoryCounts[filter.id] ? <span className="font-mono text-xs font-normal text-muted-foreground">{filter.id === "all" ? Object.values(categoryCounts).reduce((total, count) => total + count, 0) : categoryCounts[filter.id]}</span> : null}
+            </TabsTrigger>
           ))}
+          </TabsList>
         </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-[1fr_180px]">
-          <input
+        <div className="mt-6 grid gap-3 md:grid-cols-[1fr_180px]">
+          <Input
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
             placeholder="搜索资产名称 / 介绍 / 标签"
-            className="h-12 border border-foreground/[0.08] bg-white px-4 text-sm outline-none focus:border-foreground/25"
           />
-          <select
+          <Select
             value={sortMode}
             onChange={(event) => setSortMode(event.target.value as SortMode)}
-            className="h-12 border border-foreground/[0.08] bg-white px-4 text-sm outline-none focus:border-foreground/25"
           >
             <option value="latest">最新更新</option>
             <option value="created">最早创建</option>
             <option value="title">标题 A-Z</option>
-          </select>
+          </Select>
         </div>
       </div>
 
@@ -215,13 +221,14 @@ export function AdminList({
             <div>
               <h3 className="text-2xl font-black leading-tight">{row.title}</h3>
               <p className="mt-2 line-clamp-2 max-w-3xl text-sm leading-6 text-muted-foreground">{row.description}</p>
+              {row.meta ? <p className="mt-2 font-mono text-xs text-muted-foreground">{row.meta}</p> : null}
             </div>
             <p className="font-mono text-xs text-muted-foreground">{row.categoryLabel}</p>
             <p className="font-mono text-xs text-muted-foreground">{row.updatedAt.slice(0, 10)}</p>
             <div className="flex gap-3 text-sm md:justify-end md:opacity-45 md:transition md:group-hover:opacity-100">
               <a href={row.viewHref} target="_blank" rel="noreferrer" className="font-bold underline">查看</a>
               <Link href={row.editHref} className="font-bold underline">编辑</Link>
-              <button type="button" onClick={() => setDeleteTarget(row)} className="font-bold text-red-600 underline">删除</button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => setDeleteTarget(row)} className="h-auto px-0 font-bold text-destructive underline hover:bg-transparent hover:text-destructive">删除</Button>
             </div>
           </article>
         ))}

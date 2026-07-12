@@ -7,7 +7,6 @@ import { LabeledField } from "@/components/admin/LabeledField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { getAdminPassword } from "@/lib/adminSession";
 
 export function SkillVersionForm({ skillId }: { skillId: string }) {
   const router = useRouter();
@@ -17,7 +16,6 @@ export function SkillVersionForm({ skillId }: { skillId: string }) {
   async function submit(formData: FormData) {
     const response = await fetch(`/api/skills/${skillId}/versions`, {
       method: "POST",
-      headers: { "x-admin-password": getAdminPassword() },
       body: formData
     });
     if (!response.ok) {
@@ -38,7 +36,7 @@ export function SkillVersionForm({ skillId }: { skillId: string }) {
         <Input name="version" required defaultValue="v1.0.1" />
       </LabeledField>
       <LabeledField label="上传 ZIP">
-        <Input name="package" type="file" required accept=".zip,application/zip" className="rounded-2xl py-2" />
+        <Input name="package" type="file" required accept=".zip,application/zip" />
       </LabeledField>
       <LabeledField label="README（可选）">
         <Textarea name="readme" rows={6} />

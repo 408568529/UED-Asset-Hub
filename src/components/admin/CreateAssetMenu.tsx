@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const actions = [
   { href: "/admin/products/new", label: "Vibe Product", description: "新增团队自研工具" },
@@ -10,7 +11,9 @@ const actions = [
   { href: "/admin/fonts/new", label: "Font Library", description: "上传字体资源和版本" },
   { href: "/admin/prompts/new", label: "Prompt Library", description: "新增可复用 Prompt" },
   { href: "/admin/components/new", label: "组件规范", description: "新增组件规范资产" },
-  { href: "/admin/sops/new", label: "标准 SOP", description: "新增流程与协作规范" }
+  { href: "/admin/sops/new", label: "标准 SOP", description: "新增流程与协作规范" },
+  { href: "/admin/test-environments", label: "测试环境", description: "在表格中新增客户版本测试环境" },
+  { href: "/admin/training/create", label: "培训资料", description: "上传或关联培训视频" }
 ];
 
 export function CreateAssetMenu() {
@@ -28,14 +31,13 @@ export function CreateAssetMenu() {
 
   return (
     <div ref={rootRef} className="relative">
-      <button
+      <Button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex h-11 min-w-28 items-center justify-center gap-2 bg-foreground px-5 text-sm font-bold leading-none text-white transition hover:-translate-y-0.5 hover:bg-foreground/90"
       >
         新建资产
         <ChevronDown size={16} />
-      </button>
+      </Button>
       {open ? (
         <div className="absolute right-0 top-14 z-20 w-72 border border-foreground/10 bg-[#fffefa] p-2 shadow-2xl">
           {actions.map((action) => (

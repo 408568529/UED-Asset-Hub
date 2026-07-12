@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Textarea } from "@/components/ui/textarea";
 import type { FontAsset } from "@/types/font";
 
 export function FontPreview({ font }: { font: FontAsset }) {
@@ -14,10 +15,10 @@ export function FontPreview({ font }: { font: FontAsset }) {
         <style>{`@font-face { font-family: "${fontFamily}"; src: url("/api/fonts/${font.id}/download?preview=1") format("${font.fileFormat === "ttf" ? "truetype" : font.fileFormat === "otf" ? "opentype" : font.fileFormat}"); }`}</style>
       ) : null}
       <h2 className="text-2xl font-black">在线预览</h2>
-      <textarea
+      <Textarea
         value={sample}
         onChange={(event) => setSample(event.target.value)}
-        className="mt-6 min-h-24 w-full border border-foreground/[0.08] bg-[#f8f7f1] px-4 py-3 text-sm outline-none focus:border-foreground/25"
+        className="mt-6 min-h-24 bg-background"
       />
       <div
         className="mt-6 min-h-48 whitespace-pre-wrap bg-[#f8f7f1] p-6 text-5xl leading-tight"

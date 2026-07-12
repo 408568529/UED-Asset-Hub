@@ -1,34 +1,24 @@
 export function AdminOverview({
-  productCount,
-  componentCount,
-  sopCount,
-  skillCount,
-  fontCount,
-  promptCount
+  assetTotal,
+  monthlyNewCount,
+  lastUpdatedLabel
 }: {
-  productCount: number;
-  componentCount: number;
-  sopCount: number;
-  skillCount: number;
-  fontCount: number;
-  promptCount: number;
+  assetTotal: number;
+  monthlyNewCount: number;
+  lastUpdatedLabel: string;
 }) {
   const items = [
-    { label: "资产总数", value: productCount + componentCount + sopCount + skillCount + fontCount + promptCount },
-    { label: "Vibe Product", value: productCount },
-    { label: "Skill Center", value: skillCount },
-    { label: "Font Library", value: fontCount },
-    { label: "Prompt Library", value: promptCount },
-    { label: "组件规范", value: componentCount },
-    { label: "标准 SOP", value: sopCount }
+    { label: "资产总数", value: String(assetTotal) },
+    { label: "本月新增", value: String(monthlyNewCount) },
+    { label: "最近更新", value: lastUpdatedLabel }
   ];
 
   return (
-    <section className="mt-12 grid border-t border-foreground/10 md:grid-cols-4 lg:grid-cols-7">
+    <section className="grid border-y border-border sm:grid-cols-3">
       {items.map((item) => (
-        <div key={item.label} className="border-b border-foreground/10 py-6 md:border-r md:px-6 md:last:border-r-0">
-          <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">{item.label}</p>
-          <p className="mt-4 text-5xl font-black leading-none">{item.value}</p>
+        <div key={item.label} className="py-6 sm:border-r sm:border-border sm:px-6 sm:first:pl-0 sm:last:border-r-0 sm:last:pr-0">
+          <p className="text-3xl font-black leading-none md:text-4xl">{item.value}</p>
+          <p className="mt-3 font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">{item.label}</p>
         </div>
       ))}
     </section>

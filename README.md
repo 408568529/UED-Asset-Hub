@@ -1,6 +1,6 @@
 # UED Asset Hub
 
-UED Asset Hub 是面向设计团队的内容型资产社区 MVP。当前前台开放 Vibe Product、Skill Center、Font Library、Prompt Library、组件规范和标准 SOP，后台集中管理新增、编辑、删除和上传。
+UED Asset Hub 是面向设计团队的内容型资产社区。V1.8 已开放 Vibe Product、Skill Center、Font Library、Prompt Library、组件规范、标准 SOP、培训资料和测试环境管理。
 
 ## 启动
 
@@ -55,6 +55,13 @@ data/
 │  ├─ fonts.json
 │  ├─ font-versions.json
 │  ├─ prompts.json
+│  ├─ tags.json
+│  ├─ test-environments.json
+│  ├─ training-groups.json
+│  ├─ training-topics.json       # 仅保留旧数据兼容，不再作为页面层级
+│  ├─ training-videos.json
+│  ├─ training-upload-tasks.json
+│  ├─ training-watch-sessions.json
 │  ├─ logs.json
 │  ├─ uploads.json
 │  └─ versions.json
@@ -74,6 +81,10 @@ data/
 │  └─ .gitkeep
 ├─ vibe-product/
 │  └─ .gitkeep
+├─ training/
+│  └─ 资料分组/视频目录/
+├─ training-media/
+│  └─ 主机预先放置、供“关联本地文件”选择的视频
 └─ uploads/
    └─ unclassified/
 ```
@@ -84,14 +95,24 @@ data/
 
 ```env
 DATA_DIR=/UED-Asset-Hub-Storage/data
-NEXT_PUBLIC_ADMIN_USERNAME=admin
-NEXT_PUBLIC_ADMIN_PASSWORD=admin123
+TRAINING_MEDIA_DIR=/UED-Asset-Hub-Storage/training-media
+TEST_ENV_ENCRYPTION_KEY=请设置一段仅保存在主机环境变量中的随机密钥
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123
+ADMIN_SESSION_SECRET=请设置一段仅保存在主机环境变量中的随机密钥
+# 仅在通过 HTTPS 访问时设置为 true；内网 HTTP 环境保持 false。
+ADMIN_SESSION_SECURE=false
 ```
 
 Windows 主机示例：
 
 ```env
 DATA_DIR=D:/UED-Asset-Hub/data
+TRAINING_MEDIA_DIR=D:/UED-Asset-Hub/training-media
+TEST_ENV_ENCRYPTION_KEY=请设置主机专用随机密钥
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123
+ADMIN_SESSION_SECRET=请设置主机专用随机密钥
 ```
 
 首次部署空主机时，可以用 `data.example/` 初始化真实数据目录：
@@ -116,9 +137,23 @@ Copy-Item -Recurse .\data.example\* D:\UED-Asset-Hub\data\
 - `Skill Center` 数量读取 `meta/skills.json`
 - `Font Library` 数量读取 `meta/fonts.json`
 - `Prompt Library` 数量读取 `meta/prompts.json`
+- `培训资料` 数量读取 `meta/training-videos.json`
+- `测试环境` 数量读取 `meta/test-environments.json`
 
 代码更新和内容数据建议分开管理：代码通过 Git 同步，真实内容保存在公共电脑的 `DATA_DIR` 中。
 为方便迁移，上传文件路径保存为相对 `DATA_DIR` 的路径，例如 `skill-center/xxx/v1.0.0/skill.zip`。
+
+培训视频常规上传保存在 `DATA_DIR/training/`。服务器本地关联只扫描 `TRAINING_MEDIA_DIR`，不会浏览主机其他目录。测试环境密码使用 `TEST_ENV_ENCRYPTION_KEY` 在服务端加密，密钥不能提交到 Git；更换密钥前必须先完成数据迁移，否则旧密码无法解密。
+
+## V1.8 功能
+
+- Skill 作者与实际上传人分离，旧 `username` / `author` 字段自动兼容。
+- 搜索页实时聚合所有模块 Service，不再读取独立 mock 搜索结果。
+- 所有资产标签和使用场景统一通过 Tag Service 选择、新建与去重。
+- Prompt 列表支持原位预览、复制统计和操作日志。
+- 测试环境支持行内新增与编辑，密码默认隐藏并按需解密。
+- 培训资料首页按一级资料分组展示文件夹；旧主题自动并入标签，历史视频不会消失。
+- 培训资料支持浏览器真实上传进度、失败重试、服务器媒体目录关联、Range 播放和基础观看统计；有效播放超过 5 秒后立即刷新次数，同一会话只计一次。
 
 推荐服务器目录：
 
@@ -175,13 +210,7 @@ Compress-Archive -Path "D:\UED-Asset-Hub\data" -DestinationPath "D:\UED-Asset-Hu
 admin / admin123
 ```
 
-登录态暂存在浏览器 `localStorage`：
-
-```txt
-ued_admin_token=mock-token
-```
-
-后续接入真实后端时，可将 `src/lib/adminSession.ts` 替换为真实 token/session 逻辑。`/publish` 不再作为普通发布入口，会导向管理登录流程。
+登录成功后由服务端写入 `HttpOnly` 会话 Cookie；账号密码不会写入浏览器 `localStorage`，也不会作为请求头发送。部署时请在主机 `.env.local` 配置 `ADMIN_USERNAME`、`ADMIN_PASSWORD` 和 `ADMIN_SESSION_SECRET`。`/publish` 不再作为普通发布入口，会导向管理登录流程。
 
 ## V1.3 日志与版本记录
 

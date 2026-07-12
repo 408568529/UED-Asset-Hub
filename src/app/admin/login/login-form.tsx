@@ -9,13 +9,16 @@ import { loginAdmin } from "@/lib/adminSession";
 export function LoginForm() {
   const router = useRouter();
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  function submit(formData: FormData) {
+  async function submit(formData: FormData) {
     const username = String(formData.get("username") ?? "");
     const password = String(formData.get("password") ?? "");
 
-    if (!loginAdmin(username, password)) {
+    setSubmitting(true);
+    if (!await loginAdmin(username, password)) {
       setError("账号或密码不正确");
+      setSubmitting(false);
       return;
     }
 
@@ -33,7 +36,7 @@ export function LoginForm() {
         <Input name="password" type="password" autoComplete="current-password" placeholder="请输入密码" />
       </label>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      <Button type="submit" size="lg">登录</Button>
+      <Button type="submit" size="lg" disabled={submitting}>{submitting ? "登录中" : "登录"}</Button>
     </form>
   );
 }

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { aiService } from "@/services/aiService";
 
 export function AskUEDBox() {
@@ -22,11 +23,12 @@ export function AskUEDBox() {
       </div>
       <h2 className="mt-6 max-w-4xl text-4xl font-black leading-[1.02] md:text-6xl">问团队资产，而不是重新翻群聊</h2>
       <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-        <input
+        <Input
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
           placeholder="例如：查询条件设计规范有哪些？"
-          className="min-w-0 flex-1 rounded-full border border-white/15 bg-white/10 px-5 py-4 text-base text-white outline-none placeholder:text-white/45 focus:border-primary/70"
+          controlSize="lg"
+          className="min-w-0 flex-1"
         />
         <Button type="button" variant="secondary" onClick={ask}>Ask</Button>
       </div>

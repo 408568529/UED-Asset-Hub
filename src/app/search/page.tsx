@@ -1,67 +1,63 @@
 import Link from "next/link";
-import { Sparkles } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { SearchBox } from "@/components/search/SearchBox";
 import { SearchFilters } from "@/components/search/SearchFilters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { searchService } from "@/services/searchService";
-import type { AssetCategory } from "@/types/asset";
+import type { SearchAssetType } from "@/types/search";
 
-export default async function SearchPage({
-  searchParams
-}: {
-  searchParams: Promise<{ q?: string; category?: string; tag?: string }>;
-}) {
+export const dynamic = "force-dynamic";
+
+export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string; type?: string; tag?: string }> }) {
   const params = await searchParams;
   const results = await searchService.search({
     keyword: params.q,
-    category: params.category as AssetCategory | undefined,
+    types: params.type ? [params.type as SearchAssetType] : undefined,
     tags: params.tag ? [params.tag] : undefined
   });
 
   return (
-    <div className="mx-auto max-w-6xl px-5 py-12">
-      <div className="mb-8">
-        <p className="text-sm font-medium text-primary">AI Search</p>
-        <h1 className="mt-3 text-5xl font-black">搜索团队资产</h1>
-        <p className="mt-4 max-w-2xl text-base leading-8 text-muted-foreground">先基于 mock 数据做前端搜索，后续可接入全文检索、向量数据库和 RAG 问答。</p>
-      </div>
-      <SearchBox placeholder={params.q || "输入关键词搜索资产、专题、Prompt..."} />
-      <div className="mt-5">
-        <SearchFilters selectedCategory={params.category} />
+    <main className="mx-auto max-w-6xl px-5 py-16 md:py-24">
+      <header className="border-b border-foreground/[0.1] pb-10">
+        <p className="font-mono text-xs uppercase tracking-[0.22em] text-muted-foreground">Asset Search</p>
+        <h1 className="mt-5 text-3xl font-black md:text-5xl">搜索真实团队资产</h1>
+        <p className="mt-4 max-w-2xl text-base leading-8 text-muted-foreground">搜索结果实时读取产品、规范、Skill、字体、Prompt、培训资料和测试环境元数据。</p>
+        <div className="mt-8"><SearchBox placeholder={params.q || "输入名称、标签、作者或使用场景"} /></div>
+        <div className="mt-5"><SearchFilters selectedType={params.type} keyword={params.q} /></div>
+      </header>
+
+      <div className="mt-8 flex items-center justify-between font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">
+        <span>{params.q ? `“${params.q.trim()}”` : "All Assets"}</span>
+        <span>{results.length} Results</span>
       </div>
 
-      <section className="mt-8 rounded-[2rem] border border-primary/15 bg-primary/5 p-6">
-        <div className="flex items-center gap-2 text-sm font-medium text-primary">
-          <Sparkles size={18} />
-          AI 搜索结果占位
-        </div>
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          未来会把关键词、用户权限、资产内容和向量检索结果一起送入 AI service，返回带引用来源的答案。
-        </p>
-      </section>
-
-      <div className="mt-8 space-y-4">
+      <section className="mt-4 border-t border-foreground/[0.1]">
         {results.map((result) => (
-          <Link key={`${result.type}-${result.id}`} href={result.url} className="block rounded-[1.5rem] border border-white/70 bg-white p-5 shadow-card transition hover:-translate-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge>{result.type}</Badge>
-              <span className="text-xs text-muted-foreground">相关度 {Math.round(result.score * 100)}%</span>
+          <Link key={`${result.type}-${result.id}`} href={result.url} className="group grid gap-5 border-b border-foreground/[0.1] py-7 transition-colors hover:bg-white/65 md:grid-cols-[160px_1fr_auto] md:items-center">
+            <div>
+              <Badge>{result.typeLabel}</Badge>
+              <p className="mt-3 font-mono text-xs text-muted-foreground">{result.updatedAt.slice(0, 10)}</p>
             </div>
-            <h2 className="mt-3 text-2xl font-bold">{result.title}</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{result.excerpt}</p>
+            <div>
+              <h2 className="text-xl font-black md:text-2xl">{result.title}</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{result.excerpt}</p>
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
+                {result.author ? <span>作者 · {result.author}</span> : null}
+                {result.tags.slice(0, 4).map((tag) => <span key={tag}>#{tag}</span>)}
+              </div>
+            </div>
+            <ArrowUpRight className="transition-transform group-hover:-translate-y-1 group-hover:translate-x-1" size={20} />
           </Link>
         ))}
         {!results.length ? (
-          <div className="rounded-[1.5rem] bg-white p-8 text-center shadow-card">
-            <p className="font-medium">没有找到结果</p>
-            <p className="mt-2 text-sm text-muted-foreground">换个关键词，或回到全部分类再试一次。</p>
-            <Button asChild className="mt-5">
-              <Link href="/search">清空筛选</Link>
-            </Button>
+          <div className="border-b border-foreground/[0.1] py-16 text-center">
+            <p className="text-xl font-black">未找到与“{params.q?.trim() ?? ""}”相关的资产</p>
+            <p className="mt-3 text-sm text-muted-foreground">请尝试更换关键词或筛选条件</p>
+            <Button asChild className="mt-6"><Link href="/search">清空筛选</Link></Button>
           </div>
         ) : null}
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

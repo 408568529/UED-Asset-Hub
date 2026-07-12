@@ -1,4 +1,5 @@
 import { SkillCard } from "@/components/skill/SkillCard";
+import { ModulePageHeader } from "@/components/layout/ModulePageHeader";
 import { Input } from "@/components/ui/input";
 import { skillService } from "@/services/skillService";
 
@@ -8,22 +9,17 @@ export default async function SkillsPage({ searchParams }: { searchParams: Promi
 
   return (
     <main className="mx-auto max-w-7xl px-5 py-20 md:py-28">
-      <div className="grid gap-8 md:grid-cols-[1fr_360px] md:items-end">
-        <div>
-          <p className="font-mono text-sm uppercase tracking-[0.22em] text-muted-foreground">Skill Center</p>
-          <h1 className="mt-6 max-w-5xl text-2xl font-black leading-tight md:text-3xl">团队 AI 技能中心</h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">浏览、查看说明、下载和持续更新团队 Skill 包。</p>
-        </div>
-        <form action="/skills" className="bg-white p-1 shadow-[0_18px_60px_rgba(0,0,0,0.05)]">
-          <Input name="q" defaultValue={q} placeholder="搜索 Skill 名称、介绍或标签" className="border-0 bg-transparent focus:ring-0" />
+      <ModulePageHeader eyebrow="Skill Center" title="团队 AI 技能中心" description="浏览、查看说明、下载和持续更新团队 Skill 包。" count={skills.length}>
+        <form action="/skills">
+          <Input name="q" defaultValue={q} placeholder="搜索 Skill 名称、介绍或标签" controlSize="lg" />
         </form>
-      </div>
+      </ModulePageHeader>
 
-      <section className="mt-24">
+      <section className="mt-16 md:mt-20">
         {skills.map((skill) => (
           <SkillCard key={skill.id} skill={skill} />
         ))}
-        {!skills.length ? <p className="py-8 text-muted-foreground">暂无 Skill 资产。</p> : null}
+        {!skills.length ? <p className="border-b border-foreground/[0.08] py-12 text-muted-foreground">暂无匹配的 Skill 资产。</p> : null}
       </section>
     </main>
   );
