@@ -36,6 +36,7 @@ export interface TrainingVideo {
   speaker?: string;
   eventDate?: string;
   tags: string[];
+  tagIds?: string[];
   coverPath?: string;
   videoPath: string;
   sourceMode: TrainingSourceMode;

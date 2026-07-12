@@ -38,7 +38,7 @@ export function TrainingFolderBrowser({ initialFolders, searchIndex }: { initial
       setToast({ message: "已选择同名历史文件夹。" });
       return;
     }
-    const response = await fetch("/api/training/groups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    const response = await fetch("/api/taxonomy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "training-folder", name }) });
     const result = await response.json() as TrainingFolder & { message?: string };
     if (!response.ok) {
       setToast({ message: result.message ?? "文件夹创建失败。", tone: "error" });

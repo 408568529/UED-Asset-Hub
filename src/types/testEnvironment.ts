@@ -12,6 +12,7 @@ export interface TestEnvironment {
   encryptedPassword: string;
   description?: string;
   tags: string[];
+  tagIds?: string[];
   status: TestEnvironmentStatus;
   createdBy: string;
   createdAt: string;
@@ -30,5 +31,6 @@ export interface TestEnvironmentInput {
   password?: string;
   description?: string;
   tags: string[];
+  tagIds?: string[];
   status?: TestEnvironmentStatus;
 }

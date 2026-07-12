@@ -8,11 +8,14 @@ export interface PromptAsset {
   summary: string;
   cover?: string;
   category: string;
+  categoryId?: string;
   tags: string[];
+  tagIds?: string[];
   author: string;
   version: string;
   models: PromptModel[];
   scenarios: string[];
+  scenarioIds?: string[];
   outputTypes: PromptOutputType[];
   difficulty: PromptDifficulty;
   rating: number;

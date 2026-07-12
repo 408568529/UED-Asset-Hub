@@ -5,6 +5,7 @@ export interface Sop {
   docLink: string;
   owner?: string;
   tags?: string[];
+  tagIds?: string[];
   sortOrder?: number;
   createdAt: string;
   updatedAt: string;
