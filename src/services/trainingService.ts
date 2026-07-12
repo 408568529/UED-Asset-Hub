@@ -5,7 +5,7 @@ import { getLinkedServerFile, removeLinkedServerFile, removeTrainingVideoFiles, 
 import { operationLogService } from "@/services/operationLogService";
 import { uploadRecordService } from "@/services/uploadRecordService";
 import type { DeleteResult, MutationResult } from "@/types/serviceResult";
-import type { TrainingFolder, TrainingGroup, TrainingTopic, TrainingUploadTask, TrainingVideo, TrainingVideoInput } from "@/types/training";
+import type { TrainingFolder, TrainingGroup, TrainingSourceMode, TrainingTopic, TrainingUploadTask, TrainingVideo, TrainingVideoInput } from "@/types/training";
 
 const GROUPS_FILE = "training-groups.json";
 const TOPICS_FILE = "training-topics.json";
@@ -213,8 +213,9 @@ export const trainingService = {
     return { data: video, warning };
   },
 
-  async importServerFile(input: TrainingVideoInput, relativePath: string, operator = "admin") {
+  async importServerFile(input: TrainingVideoInput, relativePath: string, operator = "admin", videoId?: string, deleteOriginalFile?: boolean) {
     const file = await getLinkedServerFile(relativePath);
+    if (videoId) return this.replaceVideoFile(videoId, input, { videoPath: file.storedPath, fileName: file.fileName, fileSize: file.fileSize, sourceMode: "server-local" }, { operator, deleteOriginalFile });
     return this.createVideo(input, { videoPath: file.storedPath, fileName: file.fileName, fileSize: file.fileSize, sourceMode: "server-local" }, operator);
   },
 
@@ -236,6 +237,47 @@ export const trainingService = {
       operator,
       diffSummary: ["培训资料元数据已更新"]
     }).then(() => undefined));
+    return { data: video, warning };
+  },
+
+  async replaceVideoFile(id: string, input: TrainingVideoInput, file: { videoPath: string; fileName: string; fileSize: number; sourceMode: TrainingSourceMode }, options: { deleteOriginalFile?: boolean; operator?: string } = {}) {
+    const videos = await this.getVideos();
+    const index = videos.findIndex((video) => video.id === id);
+    if (index < 0) return null;
+    const previous = videos[index];
+    const group = await ensureGroup(input.groupName);
+    const video = normalizeVideo({ ...previous, ...input, groupId: group.id, groupName: group.name, videoPath: file.videoPath, fileName: file.fileName, fileSize: file.fileSize, sourceMode: file.sourceMode, topicId: undefined, topicName: undefined, updatedAt: new Date().toISOString() });
+    videos[index] = video;
+    await writeJsonFile(VIDEOS_FILE, videos);
+    const warning = await captureWarning(async () => {
+      if (options.deleteOriginalFile) {
+        if (previous.sourceMode === "server-local") await removeLinkedServerFile(previous.videoPath);
+        else await fs.rm(resolveTrainingVideoPath(previous.videoPath), { force: true });
+      }
+      await operationLogService.createLog({
+        type: "update",
+        title: `替换培训视频：${video.title}`,
+        description: `${previous.fileName} → ${video.fileName}`,
+        targetType: "training",
+        targetId: video.id,
+        targetName: video.title,
+        operator: options.operator ?? "admin",
+        diffSummary: [`新文件：${video.fileName}`, `方式：${video.sourceMode}`, options.deleteOriginalFile ? "已删除原视频文件" : "保留原视频文件"]
+      });
+      await uploadRecordService.createUpload({
+        fileName: video.fileName,
+        fileType: "other",
+        fileSize: video.fileSize,
+        assetModule: "training",
+        relatedAssetId: video.id,
+        relatedAssetName: video.title,
+        operator: options.operator ?? "admin",
+        status: "success",
+        uploadMode: video.sourceMode,
+        summary: "培训视频已替换",
+        storagePath: video.videoPath
+      });
+    });
     return { data: video, warning };
   },
 

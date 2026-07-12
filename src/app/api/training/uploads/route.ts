@@ -15,9 +15,12 @@ function decodeHeader(value: string | null, fallback = "") {
 export async function POST(request: Request) {
   if (!isAdminRequest(request)) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   const taskId = request.headers.get("x-upload-task-id") || `training-upload-${Date.now()}`;
+  const videoId = request.headers.get("x-training-video-id") || undefined;
+  const deleteOriginalFile = request.headers.get("x-delete-original-file") === "true";
   const fileName = decodeHeader(request.headers.get("x-file-name"), "training-video.mp4");
   const totalBytes = Number(request.headers.get("content-length") ?? 0);
   let temporaryPath = "";
+  let storedPath = "";
   let uploadedBytes = 0;
   let fileHandle: Awaited<ReturnType<typeof fs.open>> | null = null;
   const now = new Date().toISOString();
@@ -47,12 +50,18 @@ export async function POST(request: Request) {
     await trainingService.upsertUploadTask({ ...task, status: "processing", uploadedBytes, updatedAt: new Date().toISOString() });
     await fs.rename(paths.temporaryPath, paths.absolutePath);
     temporaryPath = "";
-    const result = await trainingService.createVideo(metadata, { videoPath: paths.relativePath, fileName, fileSize: uploadedBytes, sourceMode: "upload" });
+    storedPath = paths.absolutePath;
+    const result = videoId
+      ? await trainingService.replaceVideoFile(videoId, metadata, { videoPath: paths.relativePath, fileName, fileSize: uploadedBytes, sourceMode: "upload" }, { deleteOriginalFile })
+      : await trainingService.createVideo(metadata, { videoPath: paths.relativePath, fileName, fileSize: uploadedBytes, sourceMode: "upload" });
+    if (!result) throw new Error("培训资料不存在，无法替换视频。");
+    storedPath = "";
     await trainingService.upsertUploadTask({ ...task, status: "success", uploadedBytes, totalBytes: totalBytes || uploadedBytes, videoId: result.data.id, updatedAt: new Date().toISOString() });
-    return NextResponse.json(result, { status: 201 });
+    return NextResponse.json(result, { status: videoId ? 200 : 201 });
   } catch (error) {
     await fileHandle?.close().catch(() => undefined);
     if (temporaryPath) await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+    if (storedPath) await fs.rm(storedPath, { force: true }).catch(() => undefined);
     const failureReason = error instanceof Error ? error.message : "培训视频上传失败。";
     await trainingService.upsertUploadTask({ id: taskId, fileName, status: "failed", uploadedBytes, totalBytes, failureReason, createdAt: now, updatedAt: new Date().toISOString() }).catch(() => undefined);
     await uploadRecordService.createUpload({ fileName, fileType: "other", fileSize: totalBytes, assetModule: "training", operator: "admin", status: "failed", uploadMode: "upload", summary: "培训视频上传失败", failureReason }).catch(() => undefined);
