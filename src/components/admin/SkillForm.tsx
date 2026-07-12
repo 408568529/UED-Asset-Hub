@@ -5,14 +5,12 @@ import { useState } from "react";
 import { FormToast } from "@/components/admin/FormToast";
 import { LabeledField } from "@/components/admin/LabeledField";
 import { TagMultiSelectField } from "@/components/admin/TagMultiSelectField";
+import { TaxonomyComboboxField } from "@/components/admin/TaxonomyComboboxField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Radio } from "@/components/ui/radio";
-import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { Skill, SkillCategory } from "@/types/skill";
-
-const categories: SkillCategory[] = ["Codex", "Claude", "Cursor", "Prompt", "Workflow", "MCP", "Other"];
+import type { Skill } from "@/types/skill";
 
 function parseTags(value: FormDataEntryValue | null) {
   return String(value ?? "").split(",").map((tag) => tag.trim()).filter(Boolean);
@@ -126,11 +124,7 @@ export function SkillForm({ skill }: { skill?: Skill }) {
         <Textarea name="description" required defaultValue={skill?.description} placeholder="请输入 Skill 介绍" rows={4} />
       </LabeledField>
       <LabeledField label="分类" required>
-        <Select name="category" defaultValue={skill?.category ?? "Other"}>
-          {categories.map((category) => (
-            <option key={category} value={category}>{category}</option>
-          ))}
-        </Select>
+        <TaxonomyComboboxField type="skill-category" name="category" defaultValue={skill?.category ?? "Other"} placeholder="搜索或新建分类" />
       </LabeledField>
       <LabeledField label={isEdit ? "新版本号（上传 ZIP 时生效）" : "版本号"} required>
         <Input name="version" required defaultValue={skill?.version ?? "v1.0.0"} placeholder="例如：v1.0.0" />

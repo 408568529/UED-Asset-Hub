@@ -11,6 +11,7 @@ export interface FontAsset {
   license?: string;
   version: string;
   tags: string[];
+  tagIds?: string[];
   sortOrder?: number;
   filePath: string;
   fileName: string;

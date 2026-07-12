@@ -5,6 +5,7 @@ import { useState } from "react";
 import { FormToast } from "@/components/admin/FormToast";
 import { LabeledField } from "@/components/admin/LabeledField";
 import { TagMultiSelectField } from "@/components/admin/TagMultiSelectField";
+import { TaxonomyComboboxField } from "@/components/admin/TaxonomyComboboxField";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -83,7 +84,7 @@ export function PromptForm({ prompt }: { prompt?: PromptAsset }) {
       </LabeledField>
       <div className="grid gap-5 md:grid-cols-2">
         <LabeledField label="分类">
-          <Input name="category" required defaultValue={prompt?.category ?? "设计研发"} placeholder="例如：代码生成" />
+          <TaxonomyComboboxField type="prompt-category" name="category" defaultValue={prompt?.category ?? "设计研发"} placeholder="搜索或新建分类" />
         </LabeledField>
         <LabeledField label="版本号">
           <Input name="version" required defaultValue={prompt?.version ?? "v1.0.0"} />

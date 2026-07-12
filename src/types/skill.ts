@@ -1,4 +1,4 @@
-export type SkillCategory = "Codex" | "Claude" | "Cursor" | "Prompt" | "Workflow" | "MCP" | "Other";
+export type SkillCategory = string;
 
 export interface Skill {
   id: string;
@@ -6,13 +6,16 @@ export interface Skill {
   description: string;
   cover?: string;
   category: SkillCategory;
+  categoryId?: string;
   version: string;
   authorName: string;
   uploadedBy: string;
   usageScenarios: string[];
+  usageScenarioIds?: string[];
   author?: string;
   username?: string;
   tags: string[];
+  tagIds?: string[];
   downloadCount: number;
   createdAt: string;
   updatedAt: string;

@@ -5,6 +5,7 @@ export interface ComponentSpec {
   docLink: string;
   figmaLink?: string;
   tags?: string[];
+  tagIds?: string[];
   sortOrder?: number;
   createdAt: string;
   updatedAt: string;

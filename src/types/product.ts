@@ -5,6 +5,7 @@ export interface Product {
   link: string;
   coverUrl?: string;
   tags?: string[];
+  tagIds?: string[];
   sortOrder?: number;
   createdAt: string;
   updatedAt: string;
