@@ -1,11 +1,12 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { DATA_DIR, TRAINING_MEDIA_DIR, storageFolders } from "@/config/storage";
+import { DATA_DIR, TRAINING_MEDIA_DIR, shouldMigrateLegacyTrainingMedia, storageFolders } from "@/config/storage";
 import { sanitizeFileName, sanitizePathName } from "@/lib/fileUpload";
 import type { TrainingServerFile, TrainingVideoInput } from "@/types/training";
 
 const videoExtensions = new Set([".mp4", ".webm", ".mov", ".m4v", ".ogg"]);
 const coverExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+const legacyTrainingMediaDir = path.join(DATA_DIR, "training-media");
 
 function assertInside(root: string, target: string) {
   const relative = path.relative(root, target);
@@ -91,6 +92,13 @@ export async function removeLinkedServerFile(videoPath: string) {
 }
 
 export async function listTrainingServerFiles(): Promise<TrainingServerFile[]> {
+  if (shouldMigrateLegacyTrainingMedia) {
+    const [legacy, target] = await Promise.all([
+      fs.stat(legacyTrainingMediaDir).catch(() => null),
+      fs.stat(TRAINING_MEDIA_DIR).catch(() => null)
+    ]);
+    if (legacy?.isDirectory() && !target) await fs.rename(legacyTrainingMediaDir, TRAINING_MEDIA_DIR);
+  }
   await fs.mkdir(TRAINING_MEDIA_DIR, { recursive: true });
   const root = path.resolve(TRAINING_MEDIA_DIR);
   const pending = [root];
