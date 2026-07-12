@@ -2,7 +2,13 @@ import path from "node:path";
 
 export const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 export const META_DIR = path.join(DATA_DIR, "meta");
-export const TRAINING_MEDIA_DIR = process.env.TRAINING_MEDIA_DIR || path.join(DATA_DIR, "training-media");
+const legacyTrainingMediaDir = path.join(DATA_DIR, "training-media");
+const configuredTrainingMediaDir = process.env.TRAINING_MEDIA_DIR;
+// Keep manually managed training videos beside runtime data, not inside it.
+export const TRAINING_MEDIA_DIR = configuredTrainingMediaDir && path.resolve(configuredTrainingMediaDir) !== path.resolve(legacyTrainingMediaDir)
+  ? configuredTrainingMediaDir
+  : path.join(path.dirname(DATA_DIR), "training-media");
+export const shouldMigrateLegacyTrainingMedia = !configuredTrainingMediaDir || path.resolve(configuredTrainingMediaDir) === path.resolve(legacyTrainingMediaDir);
 
 export const storageFolders = {
   product: "vibe-product",
