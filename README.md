@@ -9,6 +9,8 @@ npm install
 npm run dev
 ```
 
+Windows 主机从 GitHub 发布、SSH 拉取、构建启动和数据保护的完整操作说明见：[Markdown 说明](docs/Windows主机发布更新流程.md) 或 [可视化操作页](docs/Windows主机发布更新流程.html)。
+
 默认访问：
 
 ```bash

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UED Asset Hub | 主机发布流程</title>
+  <style>
+    :root { --bg:#f5f4ef; --panel:#fffefa; --ink:#111; --muted:#6b6b68; --line:#d9d8d1; --accent:#b8f71a; --danger:#9d2020; }
+    * { box-sizing:border-box; } html { scroll-behavior:smooth; } body { margin:0; background:var(--bg); color:var(--ink); font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif; line-height:1.55; }
+    .shell { max-width:900px; margin:0 auto; padding:0 30px 68px; } header { padding:48px 0 34px; border-bottom:1px solid var(--ink); } .eyebrow,.mode,.number { font:700 12px/1 Consolas,monospace; letter-spacing:1.5px; text-transform:uppercase; }
+    .eyebrow,.number { color:var(--muted); } h1 { margin:14px 0 10px; font-size:clamp(38px,6vw,76px); line-height:1.02; } .lead { max-width:700px; margin:0; color:var(--muted); font-size:18px; }
+    nav { display:flex; gap:20px; overflow:auto; white-space:nowrap; padding:18px 0; border-bottom:1px solid var(--line); } nav a { color:var(--muted); text-decoration:none; font-size:14px; } nav a:hover { color:var(--ink); text-decoration:underline; text-underline-offset:4px; }
+    section { padding:52px 0; border-bottom:1px solid var(--line); scroll-margin-top:12px; } .section-head { display:grid; grid-template-columns:90px 1fr; gap:24px; margin-bottom:28px; } .number { padding-top:8px; } h2 { margin:0; font-size:clamp(27px,3.2vw,42px); line-height:1.1; } h3 { margin:0 0 8px; font-size:20px; } p { margin:0 0 14px; }
+    .grid { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; } .card { border:1px solid var(--line); background:var(--panel); padding:23px; } .mode { display:inline-block; margin-bottom:12px; padding:6px 8px; background:var(--accent); } .mode.dark { color:#fff; background:var(--ink); } .hint { color:var(--muted); font-size:14px; } .safe { border-left:4px solid var(--accent); padding:13px 16px; background:#f8ffea; } .warning { border-left:4px solid var(--danger); padding:13px 16px; color:#691d1d; background:#fff6f5; } .sequence-label { margin:22px 0 6px; color:var(--muted); font:700 12px/1 Consolas,monospace; letter-spacing:1px; }
+    .code { position:relative; margin:15px 0 4px; background:#151515; color:#f5f5ed; overflow:auto; } pre { margin:0; padding:20px 80px 20px 20px; font:14px/1.65 Consolas,"Liberation Mono",monospace; white-space:pre-wrap; word-break:break-word; } .copy { position:absolute; top:10px; right:10px; min-height:32px; padding:0 11px; border:1px solid #656565; border-radius:0; background:transparent; color:#fff; cursor:pointer; font:700 12px/1 "Microsoft YaHei",sans-serif; } .copy:hover,.copy:focus { border-color:var(--accent); color:var(--accent); outline:none; } .copy[data-state="done"] { border-color:var(--accent); color:var(--accent); }
+    code { font-family:Consolas,monospace; } footer { padding-top:34px; color:var(--muted); font-size:14px; } @media (max-width:720px) { .shell { padding:0 18px 48px; } header { padding-top:34px; } .section-head { grid-template-columns:1fr; gap:6px; } .number { padding:0; } .grid { grid-template-columns:1fr; } .wide { grid-column:auto; } section { padding:38px 0; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="eyebrow">UED Asset Hub / Deployment Handbook</div>
+      <h1>Windows 主机<br />发布更新流程</h1>
+      <p class="lead">从本机推送 Git，到主机 SSH 拉取、重装依赖和启动服务。每条命令都能一键复制。</p>
+    </header>
+    <nav><a href="#paths">目录与数据</a><a href="#publish">上传 Git</a><a href="#ssh">首次 SSH</a><a href="#update">每次更新</a><a href="#public">公网演示</a><a href="#backup">数据备份</a><a href="#troubleshoot">故障处理</a></nav>
+
+    <section id="paths">
+      <div class="section-head"><div class="number">00 / 基线</div><h2>代码与数据必须分开</h2></div>
+      <div class="grid">
+        <article class="card"><h3>代码目录</h3><p class="hint">Git 只管理这里的代码。</p><div class="code"><button class="copy">复制</button><pre>D:\UED-Asset-Hub-Host\UED-Asset-Hub\</pre></div></article>
+        <article class="card"><h3>真实数据目录</h3><p class="hint">上传文件、资产记录和历史数据保存在仓库外。</p><div class="code"><button class="copy">复制</button><pre>D:\UED-Asset-Hub\runtime-data\</pre></div></article>
+        <article class="card wide"><div class="safe">只要 <code>DATA_DIR</code> 指向仓库外的 <code>runtime-data</code>，更新代码不会覆盖真实业务数据。</div></article>
+        <article class="card wide"><div class="warning">不要执行 <code>git reset --hard</code> 或 <code>git checkout -- .</code>。它们会直接丢弃主机中未提交的修改。</div></article>
+      </div>
+    </section>
+
+    <section id="publish">
+      <div class="section-head"><div class="number">01 / 本机</div><h2>本机开发完成后上传 Git</h2></div>
+      <div class="grid">
+        <article class="card"><span class="mode">单行执行</span><h3>检查改动</h3><p class="hint">确认没有真实数据、<code>.env.local</code> 或密钥文件。</p><div class="code"><button class="copy">复制</button><pre>git status</pre></div></article>
+        <article class="card"><span class="mode">单行执行</span><h3>创建功能分支</h3><p class="hint">将 feature-name 改为本次功能名。</p><div class="code"><button class="copy">复制</button><pre>git switch -c codex/feature-name</pre></div></article>
+        <article class="card"><span class="mode">单行执行</span><h3>类型检查</h3><div class="code"><button class="copy">复制</button><pre>npm run typecheck</pre></div></article>
+        <article class="card"><span class="mode">单行执行</span><h3>生产构建</h3><div class="code"><button class="copy">复制</button><pre>npm run build</pre></div></article>
+        <article class="card"><h3>提交并推送</h3><p class="hint">按下面从上到下执行；每一条都是独立命令。</p><div class="sequence-label">第 1 条 / 暂存所有确认过的改动</div><div class="code"><button class="copy">复制</button><pre>git add -A</pre></div><div class="sequence-label">第 2 条 / 创建提交</div><div class="code"><button class="copy">复制</button><pre>git commit -m "Describe this release"</pre></div><div class="sequence-label">第 3 条 / 推送当前功能分支</div><div class="code"><button class="copy">复制</button><pre>git push -u origin HEAD</pre></div><p class="hint">在 GitHub 创建 Pull Request，确认 base 为 main 后合并。</p></article>
+      </div>
+    </section>
+
+    <section id="ssh">
+      <div class="section-head"><div class="number">02 / 一次配置</div><h2>Windows 主机改用 SSH 拉取</h2></div>
+      <div class="grid">
+        <article class="card"><span class="mode">单行执行</span><h3>生成主机密钥</h3><div class="code"><button class="copy">复制</button><pre>ssh-keygen -t ed25519 -C "UED Asset Hub Windows Host"</pre></div><p class="hint">按默认路径保存。绝不上传没有 .pub 后缀的私钥。</p></article>
+        <article class="card"><span class="mode">单行执行</span><h3>复制公钥</h3><div class="code"><button class="copy">复制</button><pre>Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub" | Set-Clipboard</pre></div><p class="hint">在 GitHub 个人 SSH and GPG keys 新建 Authentication Key，再按 Ctrl + V 粘贴。</p></article>
+        <article class="card"><span class="mode">单行执行</span><h3>验证连接</h3><div class="code"><button class="copy">复制</button><pre>ssh -T git@github.com</pre></div><p class="hint">首次询问时输入 yes；看到 successfully authenticated 即成功。</p></article>
+        <article class="card"><h3>切换仓库远端</h3><p class="hint">按下面从上到下执行；每一条都是独立命令。</p><div class="sequence-label">第 1 条 / 进入主机代码目录</div><div class="code"><button class="copy">复制</button><pre>cd "D:\UED-Asset-Hub-Host\UED-Asset-Hub"</pre></div><div class="sequence-label">第 2 条 / 指定 Windows SSH 程序</div><div class="code"><button class="copy">复制</button><pre>git config --global core.sshCommand "C:/Windows/System32/OpenSSH/ssh.exe"</pre></div><div class="sequence-label">第 3 条 / 改为 SSH 远端地址</div><div class="code"><button class="copy">复制</button><pre>git remote set-url origin git@github.com:408568529/UED-Asset-Hub.git</pre></div><div class="sequence-label">第 4 条 / 确认地址</div><div class="code"><button class="copy">复制</button><pre>git remote -v</pre></div></article>
+      </div>
+    </section>
+
+    <section id="update">
+      <div class="section-head"><div class="number">03 / 每次发布</div><h2>更新主机代码并启动</h2></div>
+      <div class="grid">
+        <article class="card wide"><h3>先停止旧服务</h3><p>在正在运行 <code>npm run start</code> 的 PowerShell 窗口按 <code>Ctrl + C</code>。</p></article>
+        <article class="card"><span class="mode">单行执行</span><h3>进入目录</h3><div class="code"><button class="copy">复制</button><pre>cd "D:\UED-Asset-Hub-Host\UED-Asset-Hub"</pre></div></article>
+        <article class="card"><span class="mode">单行执行</span><h3>检查主机状态</h3><div class="code"><button class="copy">复制</button><pre>git status</pre></div></article>
+        <article class="card"><span class="mode">条件执行</span><h3>仅 package-lock 被修改时才保存</h3><div class="code"><button class="copy">复制</button><pre>git stash push -m "host package lock before update" package-lock.json</pre></div><p class="hint">如果 git status 显示工作区干净，直接跳过本步骤。若出现其他文件修改，先不要拉取或清理。</p></article>
+        <article class="card"><span class="mode">单行执行</span><h3>拉取 main</h3><div class="code"><button class="copy">复制</button><pre>git pull origin main</pre></div></article>
+        <article class="card"><span class="mode">可选排错</span><h3>仅构建异常或页面仍是旧版时清缓存</h3><div class="code"><button class="copy">复制</button><pre>Remove-Item -Recurse -Force .\.next</pre></div><p class="hint">正常更新可以跳过。执行后再重新运行 npm run build。</p></article>
+        <article class="card"><span class="mode">单行执行</span><h3>严格重装依赖</h3><div class="code"><button class="copy">复制</button><pre>npm ci</pre></div><p class="hint">自动重建 node_modules，不改写 package-lock。</p></article>
+        <article class="card"><span class="mode">单行执行</span><h3>构建</h3><div class="code"><button class="copy">复制</button><pre>npm run build</pre></div></article>
+        <article class="card wide"><span class="mode">单行执行</span><h3>启动新版本</h3><div class="code"><button class="copy">复制</button><pre>npm run start -- -H 0.0.0.0 -p 3027</pre></div><p class="hint">该命令会持续运行。局域网访问：<code>http://主机IP:3027</code>。</p></article>
+      </div>
+    </section>
+
+    <section id="public">
+      <div class="section-head"><div class="number">04 / 临时演示</div><h2>生成公网演示链接</h2></div>
+      <div class="grid">
+        <article class="card"><div class="warning">Quick Tunnel 会把当前主机的站点公开到互联网。仅用于临时演示；确认没有展示敏感内容，并确保后台密码不是默认值。关闭隧道窗口后，链接立即失效。</div></article>
+        <article class="card"><span class="mode">一次安装</span><h3>下载 Cloudflare cloudflared</h3><p>从 <a href="https://developers.cloudflare.com/tunnel/downloads/" target="_blank" rel="noreferrer">Cloudflare Windows x64 官方下载页</a> 下载 <code>cloudflared.exe</code>，放到：</p><div class="code"><button class="copy">复制</button><pre>D:\UED-Asset-Hub-Host\tools\cloudflared.exe</pre></div></article>
+        <article class="card"><span class="mode">单行执行</span><h3>确认工具可用</h3><div class="code"><button class="copy">复制</button><pre>D:\UED-Asset-Hub-Host\tools\cloudflared.exe --version</pre></div></article>
+        <article class="card"><span class="mode">前提</span><h3>先启动平台</h3><p>在第一个 PowerShell 窗口启动 UED Asset Hub，并保持窗口不要关闭：</p><div class="code"><button class="copy">复制</button><pre>npm run start -- -H 0.0.0.0 -p 3027</pre></div></article>
+        <article class="card"><span class="mode">单行执行</span><h3>新开第二个 PowerShell 窗口，启动公网隧道</h3><div class="code"><button class="copy">复制</button><pre>D:\UED-Asset-Hub-Host\tools\cloudflared.exe tunnel --url http://127.0.0.1:3027</pre></div><p class="hint">终端会打印一个 <code>https://随机名称.trycloudflare.com</code> 链接，复制该链接分享给外部人员。</p></article>
+        <article class="card"><span class="mode">结束演示</span><h3>关闭公网链接</h3><p>在运行 cloudflared 的第二个窗口按 <code>Ctrl + C</code>。该临时链接会立即停止，下一次启动会生成新的链接。</p></article>
+      </div>
+    </section>
+
+    <section id="backup">
+      <div class="section-head"><div class="number">04 / 推荐</div><h2>重要版本前备份数据</h2></div>
+      <article class="card"><span class="mode">单行执行</span><p class="hint">代码与数据已分离，但重要发布前仍建议压缩备份一次。</p><div class="code"><button class="copy">复制</button><pre>$ts = Get-Date -Format "yyyyMMdd-HHmmss"; Compress-Archive -Path "D:\UED-Asset-Hub\runtime-data\*" -DestinationPath "D:\UED-Asset-Hub\runtime-data-backup-$ts.zip"</pre></div></article>
+    </section>
+
+    <section id="troubleshoot">
+      <div class="section-head"><div class="number">05 / 排错</div><h2>常见问题</h2></div>
+      <div class="grid"><article class="card"><h3>Git HTTPS / TLS 报错</h3><p>主机已改用 SSH。先检查 SSH：</p><div class="code"><button class="copy">复制</button><pre>ssh -T git@github.com</pre></div><p class="hint">成功后执行 git pull origin main，不需要 Token。</p></article><article class="card"><h3>Next SWC 不是有效 Win32 应用</h3><p>执行本页的 <code>npm ci</code>，它会重装与 Windows 匹配的原生依赖。</p></article></div>
+    </section>
+    <footer>UED Asset Hub · 本次已验证的 SSH 主机更新流程</footer>
+  </main>
+  <script>
+    async function copyText(text) {
+      if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+      const field = document.createElement("textarea"); field.value = text; document.body.appendChild(field); field.select(); document.execCommand("copy"); field.remove();
+    }
+    document.querySelectorAll(".copy").forEach((button) => button.addEventListener("click", async () => {
+      try { await copyText(button.parentElement.querySelector("pre").innerText); button.textContent = "已复制"; button.dataset.state = "done"; setTimeout(() => { button.textContent = "复制"; button.dataset.state = ""; }, 1600); }
+      catch { button.textContent = "复制失败"; }
+    }));
+  </script>
+</body>
+</html>
