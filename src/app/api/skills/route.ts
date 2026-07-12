@@ -15,7 +15,8 @@ function getInput(formData: FormData): SkillInput {
     cover: String(formData.get("cover") ?? ""),
     category: (String(formData.get("category") ?? "Other") || "Other") as SkillCategory,
     version: String(formData.get("version") ?? "v1.0.0"),
-    author: String(formData.get("author") ?? "admin"),
+    authorName: String(formData.get("authorName") ?? formData.get("author") ?? "").trim() || "未填写作者",
+    usageScenarios: parseTags(formData.get("usageScenarios")),
     tags: parseTags(formData.get("tags")),
     readme: String(formData.get("readme") ?? ""),
     changeLog: String(formData.get("changeLog") ?? "上传新版本")

@@ -5,7 +5,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "UED Asset Hub",
-  description: "Design Asset Community for UED teams"
+  description: "团队设计资产、Skill、Prompt、培训资料与测试环境入口"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

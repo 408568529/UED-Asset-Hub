@@ -1,5 +1,7 @@
 import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { storageFolders } from "@/config/storage";
 import { diffProduct } from "@/lib/auditDiff";
+import { removeStoredModuleEntry } from "@/lib/storage/deleteStoredEntry";
 import { assetVersionService } from "@/services/assetVersionService";
 import { operationLogService } from "@/services/operationLogService";
 import type { MutationResult, DeleteResult } from "@/types/serviceResult";
@@ -125,6 +127,7 @@ export const productService = {
     if (nextProducts.length === products.length) return { deleted: false };
     await writeJsonFile(FILE_NAME, nextProducts);
     const warning = await captureWarning(async () => {
+      await removeStoredModuleEntry(storageFolders.product, product?.name);
       await operationLogService.createLog({
         type: "delete",
         title: `删除资产：${product?.name ?? id}`,

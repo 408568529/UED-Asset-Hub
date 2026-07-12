@@ -36,5 +36,17 @@ export const openModules: Record<OpenModuleId, { name: string; description: stri
     description: "团队 AI Prompt Marketplace，沉淀可复制复用的提示词资产。",
     href: "/prompts",
     tone: "prompt"
+  },
+  training: {
+    name: "培训资料",
+    description: "团队培训、设计峰会与行业学习视频资料。",
+    href: "/training",
+    tone: "training"
+  },
+  testEnvironments: {
+    name: "测试环境",
+    description: "按产品与客户版本维护 UAT、测试和演示环境。",
+    href: "/test-environments",
+    tone: "environment"
   }
 };

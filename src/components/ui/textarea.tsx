@@ -1,14 +1,19 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea(
+  { className, ...props },
+  ref
+) {
   return (
     <textarea
+      ref={ref}
+      data-ui-control
       className={cn(
-        "min-h-36 w-full rounded-2xl border border-foreground/[0.08] bg-white px-4 py-3 text-sm outline-none transition placeholder:text-muted-foreground/60 focus:border-foreground/25 focus:ring-4 focus:ring-primary/10",
+        "min-h-[120px] w-full resize-y rounded-[var(--radius)] border border-input bg-white px-3 py-3 text-sm text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground/70 hover:border-foreground/40 focus:border-foreground focus:shadow-[0_0_0_1px_hsl(var(--foreground))] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70 aria-[invalid=true]:border-destructive aria-[invalid=true]:shadow-[0_0_0_1px_hsl(var(--destructive))]",
         className
       )}
       {...props}
     />
   );
-}
+});

@@ -1,4 +1,5 @@
 import { ProductCard } from "@/components/product/ProductCard";
+import { ModulePageHeader } from "@/components/layout/ModulePageHeader";
 import { Input } from "@/components/ui/input";
 import { productService } from "@/services/productService";
 
@@ -8,21 +9,17 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
 
   return (
     <main className="mx-auto max-w-7xl px-5 py-20 md:py-28">
-      <div className="grid gap-8 md:grid-cols-[1fr_360px] md:items-end">
-        <div>
-          <p className="font-mono text-sm uppercase tracking-[0.22em] text-muted-foreground">Vibe Product</p>
-          <h1 className="mt-6 max-w-5xl text-2xl font-black leading-tight md:text-3xl">团队自研工具入口</h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">集中管理可访问的产品、网页工具和 AI 辅助工作流。</p>
-        </div>
-        <form action="/products" className="bg-white p-1 shadow-[0_18px_60px_rgba(0,0,0,0.05)]">
-          <Input name="q" defaultValue={q} placeholder="搜索产品名称或介绍" className="border-0 bg-transparent focus:ring-0" />
+      <ModulePageHeader eyebrow="Vibe Product" title="团队自研工具入口" description="集中管理可访问的产品、网页工具和 AI 辅助工作流。" count={products.length}>
+        <form action="/products">
+          <Input name="q" defaultValue={q} placeholder="搜索产品名称或介绍" controlSize="lg" />
         </form>
-      </div>
+      </ModulePageHeader>
 
-      <section className="mt-24">
+      <section className="mt-16 md:mt-20">
         {products.map((product) => (
           <ProductCard key={product.id} product={product} />
         ))}
+        {!products.length ? <p className="border-b border-foreground/[0.08] py-12 text-muted-foreground">暂无匹配的产品资产。</p> : null}
       </section>
     </main>
   );

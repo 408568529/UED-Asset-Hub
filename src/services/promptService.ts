@@ -1,4 +1,6 @@
 import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { storageFolders } from "@/config/storage";
+import { removeStoredModuleEntry } from "@/lib/storage/deleteStoredEntry";
 import { operationLogService } from "@/services/operationLogService";
 import type { DeleteResult, MutationResult } from "@/types/serviceResult";
 import type { PromptAsset, PromptInput } from "@/types/prompt";
@@ -102,12 +104,21 @@ export const promptService = {
     return prompts[index];
   },
 
-  async incrementCopy(id: string) {
+  async incrementCopy(id: string, operator = "visitor") {
     const prompts = await readJsonFile<PromptAsset[]>(FILE_NAME, []);
     const index = prompts.findIndex((prompt) => prompt.id === id);
     if (index < 0) return null;
     prompts[index] = { ...prompts[index], copyCount: prompts[index].copyCount + 1 };
     await writeJsonFile(FILE_NAME, prompts);
+    await captureWarning(() => operationLogService.createLog({
+      type: "copy",
+      title: `复制 Prompt：${prompts[index].name}`,
+      description: "从 Prompt 列表或详情复制完整内容",
+      targetType: "asset",
+      targetId: id,
+      targetName: prompts[index].name,
+      operator
+    }).then(() => undefined));
     return prompts[index];
   },
 
@@ -118,6 +129,7 @@ export const promptService = {
     if (nextPrompts.length === prompts.length) return { deleted: false };
     await writeJsonFile(FILE_NAME, nextPrompts);
     const warning = await captureWarning(async () => {
+      await removeStoredModuleEntry(storageFolders.prompt, prompt?.name);
       await operationLogService.createLog({
         type: "delete",
         title: `删除 Prompt：${prompt?.name ?? id}`,

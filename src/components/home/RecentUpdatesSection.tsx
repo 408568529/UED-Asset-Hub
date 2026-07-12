@@ -5,6 +5,7 @@ import type { Product } from "@/types/product";
 import type { PromptAsset } from "@/types/prompt";
 import type { Skill } from "@/types/skill";
 import type { Sop } from "@/types/sop";
+import type { TrainingVideo } from "@/types/training";
 
 type UpdateItem = {
   id: string;
@@ -20,7 +21,8 @@ export function RecentUpdatesSection({
   sops,
   skills,
   fonts,
-  prompts
+  prompts,
+  training
 }: {
   products: Product[];
   components: ComponentSpec[];
@@ -28,6 +30,7 @@ export function RecentUpdatesSection({
   skills: Skill[];
   fonts: FontAsset[];
   prompts: PromptAsset[];
+  training: TrainingVideo[];
 }) {
   const updates: UpdateItem[] = [
     ...products.map((product) => ({
@@ -71,6 +74,13 @@ export function RecentUpdatesSection({
       type: "Prompt Library",
       href: `/prompts/${prompt.id}`,
       updatedAt: prompt.updatedAt
+    })),
+    ...training.map((video) => ({
+      id: video.id,
+      name: video.title,
+      type: "培训资料",
+      href: `/training/${video.id}`,
+      updatedAt: video.updatedAt
     }))
   ]
     .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt))
@@ -79,7 +89,7 @@ export function RecentUpdatesSection({
   return (
     <section className="mx-auto max-w-7xl px-5 py-20 md:py-28">
       <Reveal>
-        <div className="mb-10 pt-6 md:mb-14">
+        <div className="mb-10 border-t border-foreground/[0.1] pt-6 md:mb-14">
           <div className="grid gap-6 md:grid-cols-[160px_1fr]">
             <p className="font-mono text-sm text-muted-foreground">02 — Latest Updates</p>
             <div>
@@ -92,15 +102,16 @@ export function RecentUpdatesSection({
         </div>
       </Reveal>
       <div>
-        {updates.map((item) => (
+        {updates.map((item, index) => (
           <a
             key={`${item.type}-${item.id}`}
             href={item.href}
             target="_blank"
             rel="noreferrer"
-            className="grid gap-3 border-b border-foreground/[0.08] py-7 transition hover:bg-white/55 md:grid-cols-[1fr_180px_140px]"
+            className="group grid gap-3 border-b border-foreground/[0.08] py-7 transition-colors hover:bg-white/65 md:grid-cols-[64px_1fr_180px_140px] md:items-center"
           >
-            <span className="text-2xl font-black">{item.name}</span>
+            <span className="font-mono text-xs text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
+            <span className="text-xl font-black transition-transform duration-300 group-hover:translate-x-2 md:text-2xl">{item.name}</span>
             <span className="font-mono text-sm text-muted-foreground">{item.type}</span>
             <span className="font-mono text-sm text-muted-foreground">{item.updatedAt.slice(0, 10)}</span>
           </a>

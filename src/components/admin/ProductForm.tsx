@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { LabeledField } from "@/components/admin/LabeledField";
-import { getAdminPassword } from "@/lib/adminSession";
+import { TagMultiSelectField } from "@/components/admin/TagMultiSelectField";
 import type { Product } from "@/types/product";
 
 function parseTags(value: FormDataEntryValue | null) {
@@ -29,10 +29,7 @@ export function ProductForm({ product }: { product?: Product }) {
   async function submit(formData: FormData) {
     const response = await fetch(isEdit ? `/api/products/${product?.id}` : "/api/products", {
       method: isEdit ? "PUT" : "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-admin-password": getAdminPassword()
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: String(formData.get("name") ?? ""),
         description: String(formData.get("description") ?? ""),
@@ -70,7 +67,7 @@ export function ProductForm({ product }: { product?: Product }) {
         <Input name="coverUrl" defaultValue={product?.coverUrl} placeholder="请输入封面图链接" />
       </LabeledField>
       <LabeledField label="标签（可选）">
-        <Input name="tags" defaultValue={(product?.tags ?? []).join(", ")} placeholder="用逗号分隔，例如：AI, 工具" />
+        <TagMultiSelectField type="product-tag" name="tags" defaultValue={product?.tags} />
       </LabeledField>
       <LabeledField label="排序值（可选）">
         <Input name="sortOrder" type="number" defaultValue={product?.sortOrder} placeholder="数字越小越靠前" />

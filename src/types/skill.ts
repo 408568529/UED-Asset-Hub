@@ -7,7 +7,11 @@ export interface Skill {
   cover?: string;
   category: SkillCategory;
   version: string;
-  author: string;
+  authorName: string;
+  uploadedBy: string;
+  usageScenarios: string[];
+  author?: string;
+  username?: string;
   tags: string[];
   downloadCount: number;
   createdAt: string;
@@ -31,4 +35,4 @@ export interface SkillVersion {
   downloadCount: number;
 }
 
-export type SkillInput = Pick<Skill, "name" | "description" | "cover" | "category" | "version" | "author" | "tags" | "readme" | "changeLog">;
+export type SkillInput = Pick<Skill, "name" | "description" | "cover" | "category" | "version" | "authorName" | "usageScenarios" | "tags" | "readme" | "changeLog">;

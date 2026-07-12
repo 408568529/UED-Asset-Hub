@@ -4,6 +4,7 @@ import { operationLogService } from "@/services/operationLogService";
 import type { OperationLog } from "@/types/audit";
 
 export async function GET(request: Request) {
+  if (!isAdminRequest(request)) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   const { searchParams } = new URL(request.url);
   const limit = searchParams.get("limit");
   return NextResponse.json(await operationLogService.getLogs(limit ? Number(limit) : undefined));

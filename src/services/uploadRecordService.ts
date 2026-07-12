@@ -21,7 +21,10 @@ function normalizeUpload(upload: LegacyUploadRecord): UploadRecord {
     uploadedAt: upload.uploadedAt ?? upload.createdAt ?? new Date(0).toISOString(),
     status: upload.status === "failed" ? "failed" : "success",
     summary: upload.summary,
-    storagePath: upload.storagePath
+    storagePath: upload.storagePath,
+    uploadMode: upload.uploadMode,
+    fileSize: upload.fileSize,
+    failureReason: upload.failureReason
   };
 }
 

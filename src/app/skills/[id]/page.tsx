@@ -14,9 +14,20 @@ export default async function SkillDetailPage({ params }: { params: Promise<{ id
       <p className="font-mono text-sm uppercase tracking-[0.22em] text-muted-foreground">Skill Center</p>
       <h1 className="mt-6 max-w-5xl text-2xl font-black leading-tight md:text-3xl">{skill.name}</h1>
       <p className="mt-6 max-w-3xl text-lg leading-8 text-muted-foreground">{skill.description}</p>
+      <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 font-mono text-sm text-muted-foreground">
+        <span>Author · {skill.authorName}</span>
+        <span>Uploaded by · {skill.uploadedBy}</span>
+        <span>Published · {skill.createdAt.slice(0, 10)}</span>
+        <span>Updated · {skill.updatedAt.slice(0, 10)}</span>
+        <span>Version · {skill.version}</span>
+        <span>{skill.downloadCount} downloads</span>
+      </div>
       <div className="mt-8 flex flex-wrap gap-2">
         <Badge>{skill.category}</Badge>
         <Badge>{skill.version}</Badge>
+        {skill.usageScenarios.map((scenario) => (
+          <Badge key={scenario}>{scenario}</Badge>
+        ))}
         {skill.tags.map((tag) => (
           <Badge key={tag}>{tag}</Badge>
         ))}

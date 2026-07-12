@@ -1,4 +1,5 @@
 import { SopCard } from "@/components/sop/SopCard";
+import { ModulePageHeader } from "@/components/layout/ModulePageHeader";
 import { Input } from "@/components/ui/input";
 import { sopService } from "@/services/sopService";
 
@@ -8,21 +9,17 @@ export default async function SopsPage({ searchParams }: { searchParams: Promise
 
   return (
     <main className="mx-auto max-w-7xl px-5 py-20 md:py-28">
-      <div className="grid gap-8 md:grid-cols-[1fr_360px] md:items-end">
-        <div>
-          <p className="font-mono text-sm uppercase tracking-[0.22em] text-muted-foreground">Standard SOP</p>
-          <h1 className="mt-6 max-w-5xl text-2xl font-black leading-tight md:text-3xl">标准流程资产库</h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">集中管理设计走查、交付协作、评审验收等标准流程。</p>
-        </div>
-        <form action="/sops" className="bg-white p-1 shadow-[0_18px_60px_rgba(0,0,0,0.05)]">
-          <Input name="q" defaultValue={q} placeholder="搜索 SOP 名称或介绍" className="border-0 bg-transparent focus:ring-0" />
+      <ModulePageHeader eyebrow="Standard SOP" title="标准流程资产库" description="集中管理设计走查、交付协作、评审验收等标准流程。" count={sops.length}>
+        <form action="/sops">
+          <Input name="q" defaultValue={q} placeholder="搜索 SOP 名称或介绍" controlSize="lg" />
         </form>
-      </div>
+      </ModulePageHeader>
 
-      <section className="mt-24">
+      <section className="mt-16 md:mt-20">
         {sops.map((sop) => (
           <SopCard key={sop.id} sop={sop} />
         ))}
+        {!sops.length ? <p className="border-b border-foreground/[0.08] py-12 text-muted-foreground">暂无匹配的标准 SOP。</p> : null}
       </section>
     </main>
   );

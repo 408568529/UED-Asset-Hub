@@ -1,47 +1,26 @@
 "use client";
 
-import { ADMIN_PASSWORD_KEY, ADMIN_TOKEN_KEY, adminCredentials } from "@/config/admin";
-
-export function isAdminLoggedIn() {
-  return typeof window !== "undefined" && localStorage.getItem(ADMIN_TOKEN_KEY) === adminCredentials.token;
+export async function isAdminLoggedIn() {
+  try {
+    const response = await fetch("/api/auth/session", { cache: "no-store" });
+    return response.ok && (await response.json() as { authenticated?: boolean }).authenticated === true;
+  } catch {
+    return false;
+  }
 }
 
-export function loginAdmin(username: string, password: string) {
-  if (username !== adminCredentials.username || password !== adminCredentials.password) return false;
-  localStorage.setItem(ADMIN_TOKEN_KEY, adminCredentials.token);
-  localStorage.setItem(ADMIN_PASSWORD_KEY, password);
+export async function loginAdmin(username: string, password: string) {
+  const response = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password })
+  });
+  if (!response.ok) return false;
   window.dispatchEvent(new Event("ued-admin-session-change"));
-  writeAuthLog("login", "登录", "管理员登录管理台");
   return true;
 }
 
-export function logoutAdmin() {
-  const password = getAdminPassword();
-  localStorage.removeItem(ADMIN_TOKEN_KEY);
-  localStorage.removeItem(ADMIN_PASSWORD_KEY);
+export async function logoutAdmin() {
+  await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
   window.dispatchEvent(new Event("ued-admin-session-change"));
-  writeAuthLog("logout", "退出登录", "管理员退出管理台", password);
-}
-
-export function getAdminPassword() {
-  return typeof window === "undefined" ? "" : localStorage.getItem(ADMIN_PASSWORD_KEY) || "";
-}
-
-function writeAuthLog(type: "login" | "logout", title: string, description: string, password = getAdminPassword()) {
-  fetch("/api/logs", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-admin-password": password
-    },
-    body: JSON.stringify({
-      type,
-      title,
-      description,
-      targetType: "auth",
-      operator: adminCredentials.username
-    })
-  }).catch((error) => {
-    console.error("Auth log write failed", error);
-  });
 }

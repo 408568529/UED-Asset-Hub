@@ -10,8 +10,8 @@ export function AdminNavActions() {
   const [loggedIn, setLoggedIn] = useState(false);
 
   useEffect(() => {
-    function sync() {
-      setLoggedIn(isAdminLoggedIn());
+    async function sync() {
+      setLoggedIn(await isAdminLoggedIn());
     }
 
     sync();
@@ -32,7 +32,7 @@ export function AdminNavActions() {
             管理台
           </Link>
         </Button>
-        <Button type="button" size="sm" variant="outline" onClick={logoutAdmin}>退出登录</Button>
+        <Button type="button" size="sm" variant="outline" onClick={() => void logoutAdmin()}>退出登录</Button>
       </div>
     );
   }

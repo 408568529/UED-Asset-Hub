@@ -1,4 +1,4 @@
-export type OpenModuleId = "products" | "components" | "sops" | "skills" | "fonts" | "prompts";
+export type OpenModuleId = "products" | "components" | "sops" | "skills" | "fonts" | "prompts" | "training" | "testEnvironments";
 
 export interface ModuleSummary {
   id: OpenModuleId;
