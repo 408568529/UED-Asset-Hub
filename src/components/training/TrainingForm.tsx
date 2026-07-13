@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Radio } from "@/components/ui/radio";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { createClientId } from "@/lib/clientId";
 import type { TrainingFolder, TrainingServerFile, TrainingSourceMode, TrainingVideo, TrainingVideoInput } from "@/types/training";
 
 type UploadProgress = { status: string; percent: number; speed: number; eta: number; error?: string };
@@ -81,7 +82,7 @@ export function TrainingForm({ video, initialFolderName = "" }: { video?: Traini
     return new Promise<{ data: TrainingVideo; warning?: string }>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhrRef.current = xhr;
-      const taskId = `training-${crypto.randomUUID()}`;
+      const taskId = createClientId("training-");
       let lastLoaded = 0;
       let lastTime = Date.now();
       xhr.open("POST", "/api/training/uploads");
