@@ -13,6 +13,7 @@ export interface TestEnvironment {
   description?: string;
   tags: string[];
   tagIds?: string[];
+  sortOrder?: number;
   status: TestEnvironmentStatus;
   createdBy: string;
   createdAt: string;

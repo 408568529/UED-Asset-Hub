@@ -1,15 +1,12 @@
 import { NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/adminAuth";
-import { isServerEncryptionConfigured } from "@/lib/serverEncryption";
 import { testEnvironmentService } from "@/services/testEnvironmentService";
 import type { TestEnvironmentInput } from "@/types/testEnvironment";
 
 export async function GET(request: Request) {
   if (!isAdminRequest(request)) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   const keyword = new URL(request.url).searchParams.get("q") ?? undefined;
-  const response = NextResponse.json(await testEnvironmentService.getEnvironments(keyword));
-  response.headers.set("x-password-storage-configured", String(isServerEncryptionConfigured()));
-  return response;
+  return NextResponse.json(await testEnvironmentService.getEnvironments(keyword));
 }
 
 export async function POST(request: Request) {
