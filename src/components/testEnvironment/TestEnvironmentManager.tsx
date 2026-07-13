@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { createClientId } from "@/lib/clientId";
 import type { SafeTestEnvironment, TestEnvironmentInput, TestEnvironmentType } from "@/types/testEnvironment";
 
 type Draft = TestEnvironmentInput & { id: string; isNew?: boolean };
@@ -76,7 +77,7 @@ export function TestEnvironmentManager({ adminMode = false }: { adminMode?: bool
   }
 
   function addRow() {
-    const id = `new-${crypto.randomUUID()}`;
+    const id = createClientId("new-");
     const now = new Date().toISOString();
     const item: SafeTestEnvironment = { id, productName: "", clientVersionName: "", environmentType: "UAT", environmentName: "", environmentUrl: "", username: "", description: "", tags: [], status: "available", createdBy: "admin", createdAt: now, updatedAt: now };
     setEnvironments((current) => [item, ...current]);

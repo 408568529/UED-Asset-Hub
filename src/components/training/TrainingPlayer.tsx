@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClientId } from "@/lib/clientId";
 
 export function TrainingPlayer({ videoId, title, poster, initialPlayCount }: { videoId: string; title: string; poster?: string; initialPlayCount: number }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const sessionId = useRef(typeof crypto !== "undefined" ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+  const sessionId = useRef(createClientId("watch-"));
   const lastReportedTime = useRef(0);
   const [playCount, setPlayCount] = useState(initialPlayCount);
 
