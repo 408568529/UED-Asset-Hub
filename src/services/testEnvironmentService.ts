@@ -88,7 +88,7 @@ export const testEnvironmentService = {
       targetId: environment.id,
       targetName: environment.environmentName,
       operator,
-      diffSummary: ["创建测试环境，密码已加密保存"]
+      diffSummary: ["创建测试环境，日志未记录密码明文"]
     }).then(() => undefined));
     return { data: toSafe(environment), warning };
   },
@@ -122,7 +122,7 @@ export const testEnvironmentService = {
       targetId: environment.id,
       targetName: environment.environmentName,
       operator,
-      diffSummary: input.password ? ["更新环境信息", "测试密码已重新加密"] : ["更新环境信息"]
+      diffSummary: input.password ? ["更新环境信息", "测试密码已更新"] : ["更新环境信息"]
     }).then(() => undefined));
     return { data: toSafe(environment), warning };
   },

@@ -98,7 +98,7 @@ data/
 ```env
 DATA_DIR=/UED-Asset-Hub-Storage/data
 TRAINING_MEDIA_DIR=/UED-Asset-Hub-Storage/training-media
-TEST_ENV_ENCRYPTION_KEY=请设置一段仅保存在主机环境变量中的随机密钥
+TEST_ENV_ENCRYPTION_KEY=可选：设置后测试环境密码将以服务端加密方式保存
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
 ADMIN_SESSION_SECRET=请设置一段仅保存在主机环境变量中的随机密钥
@@ -111,7 +111,7 @@ Windows 主机示例：
 ```env
 DATA_DIR=D:/UED-Asset-Hub/data
 TRAINING_MEDIA_DIR=D:/UED-Asset-Hub/training-media
-TEST_ENV_ENCRYPTION_KEY=请设置主机专用随机密钥
+TEST_ENV_ENCRYPTION_KEY=可选：设置主机专用随机密钥以启用测试密码加密
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
 ADMIN_SESSION_SECRET=请设置主机专用随机密钥
@@ -145,7 +145,7 @@ Copy-Item -Recurse .\data.example\* D:\UED-Asset-Hub\data\
 代码更新和内容数据建议分开管理：代码通过 Git 同步，真实内容保存在公共电脑的 `DATA_DIR` 中。
 为方便迁移，上传文件路径保存为相对 `DATA_DIR` 的路径，例如 `skill-center/xxx/v1.0.0/skill.zip`。
 
-培训视频常规上传保存在 `DATA_DIR/training/`。服务器本地关联只扫描 `TRAINING_MEDIA_DIR`，不会浏览主机其他目录。测试环境密码使用 `TEST_ENV_ENCRYPTION_KEY` 在服务端加密，密钥不能提交到 Git；更换密钥前必须先完成数据迁移，否则旧密码无法解密。
+培训视频常规上传保存在 `DATA_DIR/training/`。服务器本地关联只扫描 `TRAINING_MEDIA_DIR`，不会浏览主机其他目录。测试环境密码在配置 `TEST_ENV_ENCRYPTION_KEY` 时使用服务端加密；未配置时按内部普通文本保存。密钥不能提交到 Git；更换或移除密钥前必须完成已加密密码的数据迁移，否则旧密码无法解密。
 
 ## V1.8 功能
 
