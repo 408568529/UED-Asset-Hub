@@ -25,6 +25,13 @@ function matches(environment: TestEnvironment, keyword?: string) {
     .includes(normalized);
 }
 
+function sortEnvironments(a: TestEnvironment, b: TestEnvironment) {
+  return (a.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.sortOrder ?? Number.MAX_SAFE_INTEGER)
+    || a.productName.localeCompare(b.productName)
+    || a.clientVersionName.localeCompare(b.clientVersionName)
+    || +new Date(b.updatedAt) - +new Date(a.updatedAt);
+}
+
 async function captureWarning(action: () => Promise<void>) {
   try {
     await action();
@@ -45,7 +52,7 @@ export const testEnvironmentService = {
     const environments = await readJsonFile<TestEnvironment[]>(FILE_NAME, []);
     return environments
       .filter((environment) => matches(environment, keyword))
-      .sort((a, b) => a.productName.localeCompare(b.productName) || a.clientVersionName.localeCompare(b.clientVersionName) || +new Date(b.updatedAt) - +new Date(a.updatedAt))
+      .sort(sortEnvironments)
       .map(toSafe);
   },
 
@@ -74,6 +81,7 @@ export const testEnvironmentService = {
       encryptedPassword: encryptServerValue(input.password),
       description: input.description,
       tags: input.tags ?? [],
+      sortOrder: Math.max(-1, ...environments.map((item) => item.sortOrder ?? -1)) + 1,
       status: input.status ?? "available",
       createdBy: operator,
       createdAt: now,
@@ -143,6 +151,32 @@ export const testEnvironmentService = {
       diffSummary: ["删除测试环境，日志未记录密码明文"]
     }).then(() => undefined));
     return { deleted: true, warning };
+  },
+
+  async reorderEnvironments(ids: string[], operator = "admin"): Promise<MutationResult<SafeTestEnvironment[]> | null> {
+    const environments = await readJsonFile<TestEnvironment[]>(FILE_NAME, []);
+    if (ids.length !== environments.length || new Set(ids).size !== ids.length) return null;
+
+    const byId = new Map(environments.map((item) => [item.id, item]));
+    const nextEnvironments = ids.map((id, sortOrder) => {
+      const environment = byId.get(id);
+      return environment ? { ...environment, sortOrder } : null;
+    });
+    if (nextEnvironments.some((item) => item === null)) return null;
+
+    const ordered = nextEnvironments as TestEnvironment[];
+    await writeJsonFile(FILE_NAME, ordered);
+    const warning = await captureWarning(() => operationLogService.createLog({
+      type: "update",
+      title: "调整测试环境排序",
+      description: `共调整 ${ordered.length} 条测试环境的展示顺序`,
+      targetType: "credential",
+      targetId: "test-environments",
+      targetName: "测试环境",
+      operator,
+      diffSummary: ["更新测试环境自定义排序"]
+    }).then(() => undefined));
+    return { data: ordered.map(toSafe), warning };
   },
 
   async revealPassword(id: string, operator = "admin", action: "reveal" | "copy-password" = "reveal") {
