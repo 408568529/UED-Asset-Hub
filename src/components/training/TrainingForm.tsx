@@ -163,7 +163,7 @@ export function TrainingForm({ video, initialFolderName = "" }: { video?: Traini
   return (
     <form onSubmit={submit} className="mt-10 max-w-3xl space-y-5 border-t border-foreground/10 pt-8">
       {toast ? <FormToast message={toast.message} tone={toast.tone} /> : null}
-      <LabeledField label="视频标题" required><Input required value={input.title} onChange={(event) => update("title", event.target.value)} /></LabeledField>
+      <LabeledField label="视频标题"><Input value={input.title} onChange={(event) => update("title", event.target.value)} placeholder="留空时自动使用视频文件名" /></LabeledField>
       <LabeledField label="所属文件夹" required><TrainingFolderField folders={folders} value={input.groupName} onChange={(groupName) => update("groupName", groupName)} onCreated={(folder) => setFolders((current) => [folder, ...current])} /></LabeledField>
       <LabeledField label="视频简介"><Textarea value={input.description ?? ""} onChange={(event) => update("description", event.target.value)} rows={5} /></LabeledField>
       <div className="grid gap-5 md:grid-cols-2"><LabeledField label="讲师"><Input value={input.speaker ?? ""} onChange={(event) => update("speaker", event.target.value)} /></LabeledField><LabeledField label="培训日期"><Input type="date" value={input.eventDate ?? ""} onChange={(event) => update("eventDate", event.target.value)} /></LabeledField></div>

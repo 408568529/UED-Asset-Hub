@@ -27,7 +27,7 @@ export async function POST(request: Request) {
 
   try {
     const metadata = JSON.parse(decodeHeader(request.headers.get("x-training-metadata"))) as TrainingVideoInput;
-    if (!metadata.title?.trim() || !metadata.groupName?.trim()) throw new Error("视频标题和所属文件夹为必填项。");
+    if (!metadata.groupName?.trim()) throw new Error("所属文件夹为必填项。");
     if (!request.body) throw new Error("未收到视频文件内容。");
     const paths = await prepareTrainingUploadPath(metadata, taskId, fileName);
     temporaryPath = paths.temporaryPath;

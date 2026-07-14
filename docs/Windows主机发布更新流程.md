@@ -239,12 +239,12 @@ http://主机IP:3027
 
 注意：公网链接会让外部人员访问当前站点。分享前请确认没有敏感资产，后台密码已修改，且不要把主机管理权限交给外部人员。
 
-### 1. 一次性下载 cloudflared
+### 1. 确认 cloudflared 安装位置
 
-从 Cloudflare 官方 [Windows 下载页](https://developers.cloudflare.com/tunnel/downloads/) 下载 x64 版 `cloudflared.exe`，保存为：
+当前主机已验证可用的安装位置是：
 
 ```txt
-D:\UED-Asset-Hub-Host\tools\cloudflared.exe
+C:\Program Files (x86)\cloudflared\cloudflared.exe
 ```
 
 ### 2. 确认工具可用
@@ -252,7 +252,7 @@ D:\UED-Asset-Hub-Host\tools\cloudflared.exe
 **单行执行：**
 
 ```powershell
-D:\UED-Asset-Hub-Host\tools\cloudflared.exe --version
+& "C:\Program Files (x86)\cloudflared\cloudflared.exe" --version
 ```
 
 ### 3. 启动平台和隧道
@@ -266,7 +266,7 @@ npm run start -- -H 0.0.0.0 -p 3027
 新开第二个 PowerShell 窗口，执行：
 
 ```powershell
-D:\UED-Asset-Hub-Host\tools\cloudflared.exe tunnel --url http://127.0.0.1:3027
+& "C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://127.0.0.1:3027
 ```
 
 终端会打印一个 `https://随机名称.trycloudflare.com` 地址，复制它即可给外部人员访问。结束演示时，在第二个窗口按 `Ctrl + C`；该链接会立即失效，下次启动会生成新链接。

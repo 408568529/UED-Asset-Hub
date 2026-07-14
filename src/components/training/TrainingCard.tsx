@@ -26,7 +26,7 @@ export function TrainingCard({ video }: { video: TrainingVideo }) {
       </div>
       <div className="border-b border-foreground/[0.1] py-5">
         <p className="font-mono text-xs text-muted-foreground">{video.groupName}</p>
-        <h3 className="mt-3 text-xl font-black leading-tight">{video.title}</h3>
+        <h3 className="mt-3 min-h-[2.5em] line-clamp-2 text-xl font-black leading-tight">{video.title}</h3>
         <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground"><span>{formatDuration(video.duration)}</span>{video.speaker ? <span>{video.speaker}</span> : null}<span>{video.playCount} 次播放</span><TrainingRating rating={video.rating} /></div>
       </div>
     </Link>

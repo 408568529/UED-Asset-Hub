@@ -22,6 +22,14 @@ function normalizeRating(value: unknown) {
   return Number.isInteger(rating) && rating >= 1 && rating <= 5 ? rating : undefined;
 }
 
+function resolveVideoTitle(input: TrainingVideoInput, fileName: string) {
+  return input.title?.trim() || fileName.replace(/\.[^.]+$/, "").trim() || "未命名培训视频";
+}
+
+function withResolvedTitle(input: TrainingVideoInput, fileName: string): TrainingVideoInput {
+  return { ...input, title: resolveVideoTitle(input, fileName) };
+}
+
 function normalizeVideo(video: Omit<Partial<TrainingVideo>, "rating"> & { rating?: number | null }): TrainingVideo {
   const now = new Date().toISOString();
   const playCount = Number(video.playCount ?? 0);
@@ -167,11 +175,12 @@ export const trainingService = {
 
   async createVideo(input: TrainingVideoInput, file: { videoPath: string; fileName: string; fileSize: number; sourceMode: "upload" | "server-local" }, operator = "admin"): Promise<MutationResult<TrainingVideo>> {
     const videos = await this.getVideos();
-    const group = await ensureGroup(input.groupName);
+    const resolvedInput = withResolvedTitle(input, file.fileName);
+    const group = await ensureGroup(resolvedInput.groupName);
     const now = new Date().toISOString();
     const video: TrainingVideo = normalizeVideo({
-      id: createId("training", input.title),
-      ...input,
+      id: createId("training", resolvedInput.title),
+      ...resolvedInput,
       groupId: group.id,
       groupName: group.name,
       topicId: undefined,
@@ -223,8 +232,9 @@ export const trainingService = {
     const videos = await this.getVideos();
     const index = videos.findIndex((video) => video.id === id);
     if (index < 0) return null;
-    const group = await ensureGroup(input.groupName);
-    const video = normalizeVideo({ ...videos[index], ...input, groupId: group.id, groupName: group.name, topicId: undefined, topicName: undefined, updatedAt: new Date().toISOString() });
+    const resolvedInput = withResolvedTitle(input, videos[index].fileName);
+    const group = await ensureGroup(resolvedInput.groupName);
+    const video = normalizeVideo({ ...videos[index], ...resolvedInput, groupId: group.id, groupName: group.name, topicId: undefined, topicName: undefined, updatedAt: new Date().toISOString() });
     videos[index] = video;
     await writeJsonFile(VIDEOS_FILE, videos);
     const warning = await captureWarning(() => operationLogService.createLog({
@@ -245,8 +255,9 @@ export const trainingService = {
     const index = videos.findIndex((video) => video.id === id);
     if (index < 0) return null;
     const previous = videos[index];
-    const group = await ensureGroup(input.groupName);
-    const video = normalizeVideo({ ...previous, ...input, groupId: group.id, groupName: group.name, videoPath: file.videoPath, fileName: file.fileName, fileSize: file.fileSize, sourceMode: file.sourceMode, topicId: undefined, topicName: undefined, updatedAt: new Date().toISOString() });
+    const resolvedInput = withResolvedTitle(input, file.fileName);
+    const group = await ensureGroup(resolvedInput.groupName);
+    const video = normalizeVideo({ ...previous, ...resolvedInput, groupId: group.id, groupName: group.name, videoPath: file.videoPath, fileName: file.fileName, fileSize: file.fileSize, sourceMode: file.sourceMode, topicId: undefined, topicName: undefined, updatedAt: new Date().toISOString() });
     videos[index] = video;
     await writeJsonFile(VIDEOS_FILE, videos);
     const warning = await captureWarning(async () => {
