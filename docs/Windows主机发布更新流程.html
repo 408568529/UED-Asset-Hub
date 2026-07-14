@@ -75,21 +75,21 @@
       <div class="section-head"><div class="number">04 / 临时演示</div><h2>生成公网演示链接</h2></div>
       <div class="grid">
         <article class="card"><div class="warning">Quick Tunnel 会把当前主机的站点公开到互联网。仅用于临时演示；确认没有展示敏感内容，并确保后台密码不是默认值。关闭隧道窗口后，链接立即失效。</div></article>
-        <article class="card"><span class="mode">一次安装</span><h3>下载 Cloudflare cloudflared</h3><p>从 <a href="https://developers.cloudflare.com/tunnel/downloads/" target="_blank" rel="noreferrer">Cloudflare Windows x64 官方下载页</a> 下载 <code>cloudflared.exe</code>，放到：</p><div class="code"><button class="copy">复制</button><pre>D:\UED-Asset-Hub-Host\tools\cloudflared.exe</pre></div></article>
-        <article class="card"><span class="mode">单行执行</span><h3>确认工具可用</h3><div class="code"><button class="copy">复制</button><pre>D:\UED-Asset-Hub-Host\tools\cloudflared.exe --version</pre></div></article>
+        <article class="card"><span class="mode">当前主机</span><h3>确认 cloudflared 安装位置</h3><p>当前已验证跑通的程序路径：</p><div class="code"><button class="copy">复制</button><pre>C:\Program Files (x86)\cloudflared\cloudflared.exe</pre></div></article>
+        <article class="card"><span class="mode">单行执行</span><h3>确认工具可用</h3><div class="code"><button class="copy">复制</button><pre>&amp; "C:\Program Files (x86)\cloudflared\cloudflared.exe" --version</pre></div></article>
         <article class="card"><span class="mode">前提</span><h3>先启动平台</h3><p>在第一个 PowerShell 窗口启动 UED Asset Hub，并保持窗口不要关闭：</p><div class="code"><button class="copy">复制</button><pre>npm run start -- -H 0.0.0.0 -p 3027</pre></div></article>
-        <article class="card"><span class="mode">单行执行</span><h3>新开第二个 PowerShell 窗口，启动公网隧道</h3><div class="code"><button class="copy">复制</button><pre>D:\UED-Asset-Hub-Host\tools\cloudflared.exe tunnel --url http://127.0.0.1:3027</pre></div><p class="hint">终端会打印一个 <code>https://随机名称.trycloudflare.com</code> 链接，复制该链接分享给外部人员。</p></article>
+        <article class="card"><span class="mode">单行执行</span><h3>新开第二个 PowerShell 窗口，启动公网隧道</h3><div class="code"><button class="copy">复制</button><pre>&amp; "C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://127.0.0.1:3027</pre></div><p class="hint">终端会打印一个 <code>https://随机名称.trycloudflare.com</code> 链接，复制该链接分享给外部人员。</p></article>
         <article class="card"><span class="mode">结束演示</span><h3>关闭公网链接</h3><p>在运行 cloudflared 的第二个窗口按 <code>Ctrl + C</code>。该临时链接会立即停止，下一次启动会生成新的链接。</p></article>
       </div>
     </section>
 
     <section id="backup">
-      <div class="section-head"><div class="number">04 / 推荐</div><h2>重要版本前备份数据</h2></div>
+      <div class="section-head"><div class="number">05 / 推荐</div><h2>重要版本前备份数据</h2></div>
       <article class="card"><span class="mode">单行执行</span><p class="hint">代码与数据已分离，但重要发布前仍建议压缩备份一次。</p><div class="code"><button class="copy">复制</button><pre>$ts = Get-Date -Format "yyyyMMdd-HHmmss"; Compress-Archive -Path "D:\UED-Asset-Hub\runtime-data\*" -DestinationPath "D:\UED-Asset-Hub\runtime-data-backup-$ts.zip"</pre></div></article>
     </section>
 
     <section id="troubleshoot">
-      <div class="section-head"><div class="number">05 / 排错</div><h2>常见问题</h2></div>
+      <div class="section-head"><div class="number">06 / 排错</div><h2>常见问题</h2></div>
       <div class="grid"><article class="card"><h3>Git HTTPS / TLS 报错</h3><p>主机已改用 SSH。先检查 SSH：</p><div class="code"><button class="copy">复制</button><pre>ssh -T git@github.com</pre></div><p class="hint">成功后执行 git pull origin main，不需要 Token。</p></article><article class="card"><h3>Next SWC 不是有效 Win32 应用</h3><p>执行本页的 <code>npm ci</code>，它会重装与 Windows 匹配的原生依赖。</p></article></div>
     </section>
     <footer>UED Asset Hub · 本次已验证的 SSH 主机更新流程</footer>
