@@ -23,6 +23,14 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=请设置后台密码
 ADMIN_SESSION_SECRET=仅保存在主机上的随机长字符串
 ADMIN_SESSION_SECURE=false
+AGENT_RUNTIME_DIR=D:/UED-Asset-Hub/agent-data
+DSH_SOURCE_DIR=D:/UED-Asset-Hub-DSH/deepseek-harness
+DSH_BASE_URL=http://127.0.0.1:3080
+AGENT_PROXY_PORT=3081
+AGENT_PROXY_HOST=127.0.0.1
+HOST_BIND_HOST=0.0.0.0
+HOST_PORT=3027
+HOST_INTERNAL_PORT=3028
 ```
 
 `DATA_DIR` 必须在 Git 代码目录之外。只要该设置不变，更新代码不会覆盖上传的资产、历史记录或测试环境数据。
@@ -157,7 +165,7 @@ git remote -v
 
 ### 1. 停止旧服务
 
-在正在运行 `npm run start` 的 PowerShell 窗口按 `Ctrl + C`。
+在正在运行 `npm run start:host` 的 PowerShell 窗口按 `Ctrl + C`。Host Runner 会统一停止 Asset Hub、Agent Proxy 与 DSH Runtime。
 
 ### 2. 进入代码目录并检查状态
 
@@ -182,6 +190,14 @@ git stash push -m "host package lock before update" package-lock.json
 ```
 
 如果出现其他文件被修改，不要继续拉取，也不要执行 `reset` 或 `checkout`；先确认这些修改来源。
+
+确认工作区状态后，先检查真实数据路径仍在代码目录外：
+
+```powershell
+npm run verify:runtime-data
+```
+
+看到 `Runtime data protection check passed` 才继续更新。检查失败时，不要执行 `git pull`；先修正主机 `.env.local` 中的 `DATA_DIR` 或 `TRAINING_MEDIA_DIR`。
 
 ### 3. 拉取已合并的最新代码
 
@@ -224,7 +240,7 @@ npm run build
 **单行执行：** 此命令会持续运行，不要关闭该窗口。
 
 ```powershell
-npm run start -- -H 0.0.0.0 -p 3027
+npm run start:host
 ```
 
 然后用局域网地址访问：
@@ -233,7 +249,35 @@ npm run start -- -H 0.0.0.0 -p 3027
 http://主机IP:3027
 ```
 
-## 五、生成临时公网演示链接
+## 五、Windows 主机自动启动
+
+正式主机不需要分别手动启动 DSH、Agent Proxy 与 Asset Hub。`npm run start:host` 会先验证外置数据目录、DSH 固定提交和端口，再按 `DSH Runtime -> Agent Proxy -> Asset Hub` 的顺序启动；DSH 与 Agent Proxy 均仅监听 `127.0.0.1`，Host Runner 将公开 Asset Hub 的 `/agent-runtime` 同源转发到 Proxy，任一子进程异常退出后会自动重启。
+
+可在管理员 PowerShell 中创建任务计划程序：
+
+```powershell
+.\scripts\install-host-runner-task.ps1
+```
+
+默认用户登录后启动。若服务器需要开机即启动：
+
+```powershell
+.\scripts\install-host-runner-task.ps1 -AtStartup
+```
+
+任务计划程序中的“停止”操作会结束 Host Runner，并由它关闭所有子进程。
+
+如已安装 NSSM，也可以将 `scripts\启动 UED Asset Hub Host Runner.bat` 注册为 Windows 服务：
+
+```powershell
+nssm install "UED Asset Hub Host Runner" "C:\Windows\System32\cmd.exe" "/c \"D:\UED-Asset-Hub-Host\UED-Asset-Hub\scripts\启动 UED Asset Hub Host Runner.bat\""
+```
+
+```powershell
+nssm start "UED Asset Hub Host Runner"
+```
+
+## 六、生成临时公网演示链接
 
 使用 Cloudflare Quick Tunnel 可以在不配置域名的情况下，临时生成公网链接。该方式只适合演示和测试：链接随机生成、运行隧道的窗口关闭后即失效，不适合作为长期正式入口。
 
@@ -260,7 +304,7 @@ C:\Program Files (x86)\cloudflared\cloudflared.exe
 在第一个 PowerShell 窗口启动平台，并保持窗口运行：
 
 ```powershell
-npm run start -- -H 0.0.0.0 -p 3027
+npm run start:host
 ```
 
 新开第二个 PowerShell 窗口，执行：
@@ -271,7 +315,7 @@ npm run start -- -H 0.0.0.0 -p 3027
 
 终端会打印一个 `https://随机名称.trycloudflare.com` 地址，复制它即可给外部人员访问。结束演示时，在第二个窗口按 `Ctrl + C`；该链接会立即失效，下次启动会生成新链接。
 
-## 六、更新前备份真实数据（推荐）
+## 七、更新前备份真实数据（推荐）
 
 代码和数据已经分离，`git pull` 不会覆盖数据。对于重要版本更新，仍建议先备份一次。
 
@@ -281,7 +325,7 @@ npm run start -- -H 0.0.0.0 -p 3027
 $ts = Get-Date -Format "yyyyMMdd-HHmmss"; Compress-Archive -Path "D:\UED-Asset-Hub\runtime-data\*" -DestinationPath "D:\UED-Asset-Hub\runtime-data-backup-$ts.zip"
 ```
 
-## 七、常见问题
+## 八、常见问题
 
 ### `git pull` 失败或 TLS/SSL 报错
 

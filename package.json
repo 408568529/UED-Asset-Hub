@@ -5,7 +5,12 @@
   "scripts": {
     "dev": "node node_modules/next/dist/bin/next dev",
     "build": "node node_modules/next/dist/bin/next build",
+    "prestart": "node scripts/verify-runtime-data.mjs",
     "start": "node node_modules/next/dist/bin/next start",
+    "verify:runtime-data": "node scripts/verify-runtime-data.mjs",
+    "verify:agent-runtime": "node agent-integration/scripts/verify-dsh.mjs",
+    "start:agent-proxy": "node agent-integration/scripts/start-agent-proxy.mjs",
+    "start:host": "node scripts/start-host.mjs",
     "lint": "node node_modules/next/dist/bin/next lint",
     "typecheck": "node node_modules/typescript/bin/tsc --noEmit"
   },
@@ -14,6 +19,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.18.1",
+    "http-proxy": "^1.18.1",
     "lucide-react": "^0.468.0",
     "next": "^15.3.3",
     "react": "^19.1.0",

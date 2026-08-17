@@ -38,6 +38,7 @@ data/                    本地运行数据，已被 Git 忽略
 data.example/            新服务器初始化数据模板
 src/data/mock/           本地 mock 数据
 src/services/            页面唯一依赖的数据服务层
+src/agent-integration/  悠鼎 Agent 与 DSH 的适配边界
 ```
 
 页面不要直接读取本地 JSON 文件。Product、Skill、Font、Prompt、组件规范和标准 SOP 都通过对应 `service` 与 `moduleService` 获取数据。
@@ -143,6 +144,78 @@ Copy-Item -Recurse .\data.example\* D:\UED-Asset-Hub\data\
 - `测试环境` 数量读取 `meta/test-environments.json`
 
 代码更新和内容数据建议分开管理：代码通过 Git 同步，真实内容保存在公共电脑的 `DATA_DIR` 中。
+
+## 悠鼎 Agent P0 基础运行
+
+悠鼎 Agent 使用官方 DeepSeek Harness 源码固定在 `0.1.0-rc.5 / 47f943859bef60e4160492346772ded9b24f765a`，官方 DSH 源码不进入本项目也不做修改。DSH 仅监听服务器本机 `127.0.0.1:3080`，Asset Hub 通过服务端 Adapter 检查运行状态，浏览器不会直接访问 DSH。
+
+在主机 `.env.local` 中额外设置仓库外的运行目录：
+
+```env
+AGENT_RUNTIME_DIR=D:/UED-Asset-Hub/agent-data
+AGENT_ENABLED=true
+DSH_SOURCE_DIR=D:/UED-Asset-Hub-DSH/deepseek-harness
+DSH_BASE_URL=http://127.0.0.1:3080
+AGENT_PROXY_PORT=3081
+AGENT_PROXY_HOST=127.0.0.1
+HOST_BIND_HOST=0.0.0.0
+HOST_PORT=3027
+HOST_INTERNAL_PORT=3028
+```
+
+先在 Asset Hub Git 仓库外准备固定版本的 DSH 源码，再启动 DSH（Windows PowerShell）：
+
+```powershell
+.\agent-integration\scripts\setup-dsh.ps1 -DshSourceDir "D:\UED-Asset-Hub-DSH\deepseek-harness"
+.\agent-integration\scripts\start-dsh.ps1 -RuntimeDir "D:\UED-Asset-Hub\agent-data" -DshSourceDir "D:\UED-Asset-Hub-DSH\deepseek-harness"
+```
+
+在另一个 PowerShell 窗口启动官方 Web UI 的受保护代理：
+
+```powershell
+npm run start:agent-proxy
+```
+
+DSH 和 Agent Proxy 都只监听主机本机回环地址（分别为 `127.0.0.1:3080`、`127.0.0.1:3081`）。正式运行时 Host Runner 将 `/agent-runtime` 同源转发到 Proxy，验证 Asset Hub 管理员会话后才转发官方 DSH Web UI、HTTP 请求和 WebSocket 事件流；浏览器不会直接访问 DSH 或 Proxy。`/agent` 会自动嵌入该官方工作台，保留 DSH 的字体、布局、控件、动效与交互，只将品牌强调色映射为 Asset Hub 绿色。
+
+再启动 Asset Hub 后，以管理员身份访问 `/agent`。运行状态检查：
+
+```bash
+npm run verify:agent-runtime
+```
+
+`agent-data` 与 `DATA_DIR` 完全分开：前者保存 DSH Session、附件、Workspace 与后续 Artifact，后者仅保存正式资产数据。两者均在 Git 仓库外，执行 `git pull` 更新代码不会覆盖。
+
+## Windows 主机正式运行
+
+正式部署不要分别手动启动 DSH、Agent Proxy 和 Asset Hub。执行一次生产构建后，使用 Host Runner 统一托管：
+
+```powershell
+npm run start:host
+```
+
+Host Runner 会在启动前检查仓库外的 `DATA_DIR`、`AGENT_RUNTIME_DIR`、`DSH_SOURCE_DIR`、固定 DSH 提交、生产构建和四个端口；它仅接受 `DSH_BASE_URL=http://127.0.0.1:3080`，然后依次启动 `DSH Runtime -> Agent Proxy -> Asset Hub`，并在公开的 Asset Hub 端口同源转发 `/agent-runtime`。任何一个子进程异常退出都会按最多 30 秒的退避间隔自动重启；按 `Ctrl + C` 会统一停止三者。正式用户只需访问 `http://主机IP:3027`。
+
+Windows 可使用任务计划程序创建开机或登录后自动启动任务：
+
+```powershell
+.\scripts\install-host-runner-task.ps1
+```
+
+默认在用户登录后启动；需要开机启动时使用：
+
+```powershell
+.\scripts\install-host-runner-task.ps1 -AtStartup
+```
+
+也可以使用 NSSM 将 `scripts\启动 UED Asset Hub Host Runner.bat` 注册为服务。无论使用何种方式，DSH 仍只监听 `127.0.0.1:3080`，真实资产和 Agent 运行数据均位于 Git 外。
+
+NSSM 示例：
+
+```powershell
+nssm install "UED Asset Hub Host Runner" "C:\Windows\System32\cmd.exe" "/c \"D:\UED-Asset-Hub-Host\UED-Asset-Hub\scripts\启动 UED Asset Hub Host Runner.bat\""
+nssm start "UED Asset Hub Host Runner"
+```
 为方便迁移，上传文件路径保存为相对 `DATA_DIR` 的路径，例如 `skill-center/xxx/v1.0.0/skill.zip`。
 
 培训视频常规上传保存在 `DATA_DIR/training/`。服务器本地关联只扫描 `TRAINING_MEDIA_DIR`，不会浏览主机其他目录。测试环境密码在配置 `TEST_ENV_ENCRYPTION_KEY` 时使用服务端加密；未配置时按内部普通文本保存。密钥不能提交到 Git；更换或移除密钥前必须完成已加密密码的数据迁移，否则旧密码无法解密。
@@ -173,7 +246,13 @@ npm install
 npm run build
 ```
 
-只要 `.env.local` 中的 `DATA_DIR` 指向仓库外的 `/UED-Asset-Hub-Storage/data` 或 `D:/UED-Asset-Hub/data`，代码更新不会覆盖服务器上的真实数据。
+`npm run start` 会先检查 `DATA_DIR` 和 `TRAINING_MEDIA_DIR`：它们必须显式配置且位于 Git 代码目录之外。检查不通过时服务不会启动，避免误把新上传数据写进会被 Git 更新的目录。
+
+只要 `.env.local` 中的 `DATA_DIR` 指向仓库外的 `/UED-Asset-Hub-Storage/data` 或 `D:/UED-Asset-Hub/runtime-data`，代码更新不会覆盖服务器上的真实数据。也可以在更新前单独运行：
+
+```bash
+npm run verify:runtime-data
+```
 
 更新代码前建议先备份真实数据：
 
