@@ -16,3 +16,15 @@ export type AgentSession = {
   agentPreset?: string;
   workspacePath?: string;
 };
+
+export type AgentConversationMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  createdAt: string;
+};
+
+export type AgentConversation = {
+  messages: AgentConversationMessage[];
+  running: boolean;
+};

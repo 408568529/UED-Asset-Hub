@@ -7,6 +7,7 @@ import { AlertDialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { AgentSession } from "@/agent-integration/types";
+import { AgentConversationSurface } from "@/components/agent/AgentConversationSurface";
 
 function formatUpdatedAt(value: string) {
   const date = new Date(value);
@@ -53,6 +54,9 @@ export function AgentSessionWorkspace() {
   }, [showToast]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  const handleSessionActivity = useCallback(() => { void refresh(); }, [refresh]);
+  const handleConversationError = useCallback((message: string) => showToast(message, "error"), [showToast]);
 
   async function createSession() {
     setCreating(true);
@@ -167,16 +171,7 @@ export function AgentSessionWorkspace() {
                 </Button>
               </div>
 
-              <div className="flex flex-1 items-center py-14">
-                <div className="max-w-xl">
-                  <p className="text-lg font-black">会话已准备就绪</p>
-                  <p className="mt-3 text-sm leading-7 text-muted-foreground">当前阶段已完成会话生命周期桥接。下一阶段将在此会话内接入 DSH 的提示词、流式事件和工具执行 Surface；不会暴露 DSH 原生网页或把工作数据写入正式资产目录。</p>
-                  <dl className="mt-7 grid gap-4 border-t border-border pt-5 text-sm md:grid-cols-2">
-                    <div><dt className="text-muted-foreground">运行状态</dt><dd className="mt-1 font-bold">{selected.running ? "运行中" : "空闲"}</dd></div>
-                    <div><dt className="text-muted-foreground">工作目录</dt><dd className="mt-1 truncate font-mono text-xs font-bold" title={selected.workspacePath}>{selected.workspacePath || "由 DSH 管理"}</dd></div>
-                  </dl>
-                </div>
-              </div>
+              <AgentConversationSurface session={selected} onSessionActivity={handleSessionActivity} onError={handleConversationError} />
             </div>
           ) : (
             <div className="flex min-h-64 items-center justify-center text-center">

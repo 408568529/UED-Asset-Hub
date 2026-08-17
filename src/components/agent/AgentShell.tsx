@@ -26,7 +26,7 @@ export function AgentShell() {
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center border border-foreground bg-foreground text-white"><Bot size={19} /></span>
                 <div>
                   <h2 className="text-xl font-black">Agent 对话工作区</h2>
-                  <p className="mt-2 text-sm leading-7 text-muted-foreground">DSH 原生会话、工具调用与流式界面将在下一小阶段以独立 Surface 接入。当前不将 DSH 原始导航、登录或 API 直接暴露到局域网。</p>
+                  <p className="mt-2 text-sm leading-7 text-muted-foreground">通过 Asset Hub Adapter 使用 DSH 会话与实时事件。当前只开放文本对话，不将 DSH 原始导航、登录或 API 直接暴露到局域网。</p>
                 </div>
               </div>
             </section>

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { agentRuntimeConfig, DSH_VERSION } from "@/agent-integration/config";
-import type { AgentRuntimeStatus, AgentSession } from "@/agent-integration/types";
+import type { AgentConversation, AgentConversationMessage, AgentRuntimeStatus, AgentSession } from "@/agent-integration/types";
 
 type DshRpcResponse<T> = {
   result?: {
@@ -25,6 +25,13 @@ type DshSessionSummary = {
 type DshListSessionsValue = { items: DshSessionSummary[] };
 type DshCreateSessionValue = { sessionId: string };
 type DshListWorkspacesValue = { archivedSessionIds: string[] };
+type DshHistoryEvent = {
+  type?: string;
+  seq?: number;
+  time?: number;
+  data?: unknown;
+};
+type DshHistoryValue = { events: Array<{ event: DshHistoryEvent }> };
 
 export class AgentAdapterError extends Error {}
 
@@ -95,6 +102,31 @@ function toAgentSession(item: DshSessionSummary): AgentSession {
   };
 }
 
+function getTextContent(value: unknown) {
+  if (!Array.isArray(value)) return "";
+  return value.flatMap((block) => {
+    if (!block || typeof block !== "object") return [];
+    const record = block as { type?: unknown; text?: unknown };
+    return record.type === "text" && typeof record.text === "string" ? [record.text] : [];
+  }).join("\n").trim();
+}
+
+function toConversationMessage(event: DshHistoryEvent): AgentConversationMessage | null {
+  const data = event.data as { id?: unknown; content?: unknown; source?: { kind?: unknown }; message?: { id?: unknown; content?: unknown } } | undefined;
+  const message = event.type === "assistant/message" ? data?.message : data;
+  const role = event.type === "assistant/message" ? "assistant" : event.type === "user/message" ? "user" : null;
+  if (role === "user" && data?.source?.kind !== "user") return null;
+  const text = getTextContent(message?.content);
+  if (!role || !text) return null;
+  const id = typeof message?.id === "string" ? message.id : `${role}-${event.seq ?? randomUUID()}`;
+  return {
+    id,
+    role,
+    text,
+    createdAt: new Date(typeof event.time === "number" ? event.time : Date.now()).toISOString()
+  };
+}
+
 export const dshRuntimeAdapter = {
   async getStatus(): Promise<AgentRuntimeStatus> {
     if (!agentRuntimeConfig.enabled) {
@@ -158,5 +190,64 @@ export const dshRuntimeAdapter = {
   async archiveSession(sessionId: string) {
     requireCallableRuntime();
     requireSuccess(await requestDsh<{ archivedSessionIds: string[] }>("workspace.archiveSession", { sessionId }), "无法归档 DSH 会话。");
+  },
+
+  async getConversation(sessionId: string): Promise<AgentConversation> {
+    requireCallableRuntime();
+    const [history, sessions] = await Promise.all([
+      requestDsh<DshHistoryValue>("session.history", { sessionId, maxMessages: 200 }),
+      this.listSessions()
+    ]);
+    const value = requireSuccess(history, "无法读取 DSH 会话历史。");
+    return {
+      messages: value.events.map(({ event }) => toConversationMessage(event)).filter((message): message is AgentConversationMessage => message !== null),
+      running: sessions.find((session) => session.id === sessionId)?.running ?? false
+    };
+  },
+
+  async sendPrompt(sessionId: string, text: string) {
+    requireCallableRuntime();
+    const message = text.trim();
+    if (!message || message.length > 8000) throw new AgentAdapterError("请输入 1-8000 个字符的消息。");
+    requireSuccess(await requestDsh<{ accepted: boolean }>("session.prompt", {
+      sessionId,
+      mode: "queue",
+      content: [{ type: "text", text: message }]
+    }), "无法发送消息到 DSH 会话。");
+  },
+
+  getEventStream(signal: AbortSignal): ReadableStream<Uint8Array> {
+    requireCallableRuntime();
+    const streamUrl = new URL("/api/events.mux", agentRuntimeConfig.dshBaseUrl!);
+    streamUrl.protocol = streamUrl.protocol === "https:" ? "wss:" : "ws:";
+    const encoder = new TextEncoder();
+    let socket: WebSocket | null = null;
+    let closed = false;
+
+    return new ReadableStream<Uint8Array>({
+      start(controller) {
+        const close = () => {
+          if (closed) return;
+          closed = true;
+          socket?.close();
+          controller.close();
+        };
+        signal.addEventListener("abort", close, { once: true });
+        socket = new WebSocket(streamUrl);
+        socket.onmessage = (event) => {
+          if (closed) return;
+          controller.enqueue(encoder.encode(`data: ${typeof event.data === "string" ? event.data : ""}\n\n`));
+        };
+        socket.onerror = () => {
+          if (closed) return;
+          closed = true;
+          controller.error(new AgentAdapterError("无法连接 DSH 实时事件流。"));
+        };
+        socket.onclose = () => close();
+      },
+      cancel() {
+        socket?.close();
+      }
+    });
   }
 };
