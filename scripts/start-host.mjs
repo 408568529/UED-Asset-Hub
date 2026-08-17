@@ -128,6 +128,19 @@ function startEdgeServer({ host, port, assetHubPort, proxyPort }) {
     }
   });
 
+  const belongsToAgentRuntime = (request, requestUrl) => {
+    if (requestUrl.pathname.startsWith("/agent-runtime/")) return true;
+    if (requestUrl.pathname === "/api/respond") return true;
+    if (/^\/api\/[^/]+\.[^/]+$/.test(requestUrl.pathname)) return true;
+    const referer = request.headers.referer;
+    if (!referer) return false;
+    try {
+      return new URL(referer).pathname.startsWith("/agent-runtime/");
+    } catch {
+      return false;
+    }
+  };
+
   edgeServer = http.createServer((request, response) => {
     const requestUrl = new URL(request.url || "/", "http://localhost");
     if (requestUrl.pathname === "/agent-runtime") {
@@ -135,22 +148,26 @@ function startEdgeServer({ host, port, assetHubPort, proxyPort }) {
       response.end();
       return;
     }
-    if (requestUrl.pathname.startsWith("/agent-runtime/")) {
-      request.url = request.url?.replace(/^\/agent-runtime/, "") || "/";
+    if (belongsToAgentRuntime(request, requestUrl)) {
+      if (requestUrl.pathname.startsWith("/agent-runtime/")) {
+        request.url = request.url?.replace(/^\/agent-runtime/, "") || "/";
+      }
       edge.web(request, response, { target: agentTarget });
       return;
     }
-    edge.web(request, response, { target: assetHubTarget });
+    edge.web(request, response, { target: assetHubTarget, changeOrigin: false });
   });
 
   edgeServer.on("upgrade", (request, socket, head) => {
     const requestUrl = new URL(request.url || "/", "http://localhost");
-    if (requestUrl.pathname.startsWith("/agent-runtime/")) {
-      request.url = request.url?.replace(/^\/agent-runtime/, "") || "/";
+    if (belongsToAgentRuntime(request, requestUrl)) {
+      if (requestUrl.pathname.startsWith("/agent-runtime/")) {
+        request.url = request.url?.replace(/^\/agent-runtime/, "") || "/";
+      }
       edge.ws(request, socket, head, { target: agentTarget });
       return;
     }
-    edge.ws(request, socket, head, { target: assetHubTarget });
+    edge.ws(request, socket, head, { target: assetHubTarget, changeOrigin: false });
   });
 
   return new Promise((resolve, reject) => {

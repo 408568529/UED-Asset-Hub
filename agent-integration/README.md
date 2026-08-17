@@ -36,10 +36,10 @@ Start the checked-out source:
 .\agent-integration\scripts\start-dsh.ps1 -RuntimeDir "D:\UED-Asset-Hub\agent-data" -DshSourceDir "D:\UED-Asset-Hub-DSH\deepseek-harness"
 ```
 
-After DSH prints its loopback URL, verify the Asset Hub bridge:
+For development diagnosis, verify the fixed DSH runtime:
 
 ```powershell
 npm run verify:agent-runtime
 ```
 
-The Asset Hub server reads `DSH_BASE_URL=http://127.0.0.1:3080` and checks it only from the server side. Browser clients never connect to DSH directly.
+For formal deployment, use `npm run start:host` from Asset Hub. Host Runner starts DSH, the loopback-only Agent Proxy and Asset Hub together. Browser clients access the official workbench through Asset Hub's same-origin `/agent-runtime/` path; they never connect to DSH or the Proxy directly.

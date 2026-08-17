@@ -64,14 +64,22 @@ const brandScript = `
   document.title = "悠鼎 Agent";
   const base = window.__UED_AGENT_BASE__ || "";
   const mapUrl = (value) => {
-    const url = typeof value === "string" ? new URL(value, window.location.href) : new URL(value.url, window.location.href);
+    const source = typeof value === "string"
+      ? value
+      : value instanceof URL
+        ? value.href
+        : value.url;
+    const url = new URL(source, window.location.href);
     if (url.origin === window.location.origin && url.pathname.startsWith("/") && !url.pathname.startsWith(base + "/")) {
       url.pathname = base + url.pathname;
     }
     return url.toString();
   };
   const originalFetch = window.fetch.bind(window);
-  window.fetch = (input, init) => originalFetch(typeof input === "string" || input instanceof URL ? mapUrl(input) : new Request(mapUrl(input), input), init);
+  window.fetch = (input, init) => originalFetch(
+    typeof input === "string" || input instanceof URL ? mapUrl(input) : new Request(mapUrl(input), input),
+    init,
+  );
   const NativeWebSocket = window.WebSocket;
   window.WebSocket = function AgentWebSocket(url, protocols) {
     return protocols === undefined ? new NativeWebSocket(mapUrl(url)) : new NativeWebSocket(mapUrl(url), protocols);
@@ -124,6 +132,7 @@ function copyHeaders(headers, bodyLength) {
   delete copied["content-security-policy-report-only"];
   delete copied["x-frame-options"];
   delete copied.connection;
+  delete copied["transfer-encoding"];
   if (bodyLength === undefined) delete copied["content-length"];
   else copied["content-length"] = String(bodyLength);
   return copied;
@@ -131,8 +140,23 @@ function copyHeaders(headers, bodyLength) {
 
 function injectTheme(html) {
   const additions = `<script>window.__UED_AGENT_BASE__=${JSON.stringify(basePath)};</script><link rel="stylesheet" href="${basePath}/asset-hub-agent-theme.css"><script src="${basePath}/asset-hub-agent-brand.js"></script>`;
-  const rewritten = html.replace(/\b(href|src)="\/(?!\/)/g, `$1="${basePath}/`);
+  const rewritten = html.replace(/(["'])\/(?!\/)/g, `$1${basePath}/`);
   return rewritten.includes("</head>") ? rewritten.replace("</head>", `${additions}</head>`) : `${additions}${rewritten}`;
+}
+
+function isDshHealthy() {
+  return new Promise((resolve) => {
+    const probe = http.request(target, { method: "GET", timeout: 3_000 }, (response) => {
+      response.resume();
+      resolve((response.statusCode || 500) < 500);
+    });
+    probe.on("error", () => resolve(false));
+    probe.on("timeout", () => {
+      probe.destroy();
+      resolve(false);
+    });
+    probe.end();
+  });
 }
 
 const proxy = httpProxy.createProxyServer({ changeOrigin: true, selfHandleResponse: true, ws: true });
@@ -161,11 +185,12 @@ proxy.on("error", (error, _request, response) => {
   }
 });
 
-const server = http.createServer((request, response) => {
+const server = http.createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
   if (url.pathname === "/healthz") {
-    response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ ok: true, target: target.origin }));
+    const ok = await isDshHealthy();
+    response.writeHead(ok ? 200 : 503, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    response.end(JSON.stringify({ ok }));
     return;
   }
   if (!hasAdminSession(request)) return unauthorized(response);
