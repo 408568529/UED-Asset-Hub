@@ -6,3 +6,13 @@ export type AgentRuntimeStatus = {
   checkedAt: string;
   runtimeVersion: string;
 };
+
+export type AgentSession = {
+  id: string;
+  title: string | null;
+  updatedAt: string;
+  running: boolean;
+  blank: boolean;
+  agentPreset?: string;
+  workspacePath?: string;
+};

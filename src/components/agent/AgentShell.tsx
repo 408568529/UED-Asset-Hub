@@ -1,5 +1,6 @@
 import { Bot, FolderCog, ShieldCheck } from "lucide-react";
 import { AgentRuntimePanel } from "@/components/agent/AgentRuntimePanel";
+import { AgentSessionWorkspace } from "@/components/agent/AgentSessionWorkspace";
 
 export function AgentShell() {
   return (
@@ -29,6 +30,7 @@ export function AgentShell() {
                 </div>
               </div>
             </section>
+            <AgentSessionWorkspace />
           </div>
 
           <aside className="border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">

@@ -1,4 +1,5 @@
 import "server-only";
+import path from "node:path";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
@@ -19,5 +20,6 @@ function resolveDshBaseUrl() {
 
 export const agentRuntimeConfig = {
   enabled: process.env.AGENT_ENABLED !== "false",
-  dshBaseUrl: resolveDshBaseUrl()
+  dshBaseUrl: resolveDshBaseUrl(),
+  workspacePath: process.env.AGENT_RUNTIME_DIR?.trim() ? path.join(process.env.AGENT_RUNTIME_DIR.trim(), "workspaces", "default") : null
 };
