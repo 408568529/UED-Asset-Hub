@@ -6,9 +6,10 @@ import { FormToast } from "@/components/admin/FormToast";
 import { AlertDialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { AgentSession } from "@/agent-integration/types";
+import type { AgentInteractionEvent, AgentPendingInteraction, AgentSession } from "@/agent-integration/types";
 import { AgentConversationSurface } from "@/components/agent/AgentConversationSurface";
 import { AgentExecutionSurface } from "@/components/agent/AgentExecutionSurface";
+import { AgentInteractionSurface } from "@/components/agent/AgentInteractionSurface";
 
 function formatUpdatedAt(value: string) {
   const date = new Date(value);
@@ -32,8 +33,10 @@ export function AgentSessionWorkspace() {
   const [archiveTarget, setArchiveTarget] = useState<AgentSession | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
   const [activityRefreshKey, setActivityRefreshKey] = useState(0);
+  const [interactions, setInteractions] = useState<AgentPendingInteraction[]>([]);
 
   const selected = useMemo(() => sessions.find((item) => item.id === selectedId) ?? null, [sessions, selectedId]);
+  const selectedInteractions = useMemo(() => interactions.filter((item) => item.sessionId === selectedId), [interactions, selectedId]);
 
   const showToast = useCallback((message: string, tone: "success" | "error" = "success") => {
     setToast({ message, tone });
@@ -62,6 +65,17 @@ export function AgentSessionWorkspace() {
     void refresh();
   }, [refresh]);
   const handleConversationError = useCallback((message: string) => showToast(message, "error"), [showToast]);
+
+  const handleInteraction = useCallback((event: AgentInteractionEvent) => {
+    setInteractions((current) => {
+      if (event.type === "requested") {
+        const id = `${event.interaction.kind}:${event.interaction.rpcId}`;
+        return [...current.filter((item) => `${item.kind}:${item.rpcId}` !== id), event.interaction];
+      }
+      if (event.type === "approval-resolved") return current.filter((item) => item.kind !== "approval" || item.approvalId !== event.approvalId);
+      return current.filter((item) => item.kind !== "question" || item.rpcId !== event.rpcId);
+    });
+  }, []);
 
   async function createSession() {
     setCreating(true);
@@ -106,6 +120,7 @@ export function AgentSessionWorkspace() {
       if (!response.ok) throw new Error(await getError(response, "会话移除失败。"));
       const remaining = sessions.filter((item) => item.id !== target.id);
       setSessions(remaining);
+      setInteractions((current) => current.filter((item) => item.sessionId !== target.id));
       setSelectedId((current) => current === target.id ? remaining[0]?.id ?? null : current);
       showToast("会话已移入 DSH 归档。");
     } catch (error) {
@@ -134,7 +149,9 @@ export function AgentSessionWorkspace() {
           <div className="mt-5 space-y-1">
             {loading ? <p className="py-6 text-sm text-muted-foreground">正在读取 DSH 会话...</p> : null}
             {!loading && sessions.length === 0 ? <p className="py-6 text-sm leading-7 text-muted-foreground">暂无会话。新建一个会话后，后续对话能力会接入这个工作区。</p> : null}
-            {sessions.map((session) => (
+            {sessions.map((session) => {
+              const pendingCount = interactions.filter((item) => item.sessionId === session.id).length;
+              return (
               <button
                 key={session.id}
                 type="button"
@@ -144,11 +161,12 @@ export function AgentSessionWorkspace() {
                 <FileClock size={16} className={selectedId === session.id ? "text-primary" : "text-muted-foreground"} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-bold">{session.title || "未命名会话"}</span>
-                  <span className={`mt-1 block text-xs ${selectedId === session.id ? "text-white/60" : "text-muted-foreground"}`}>{session.running ? "Agent 正在运行" : formatUpdatedAt(session.updatedAt)}</span>
+                  <span className={`mt-1 block text-xs ${selectedId === session.id ? "text-white/60" : "text-muted-foreground"}`}>{pendingCount > 0 ? `待处理 ${pendingCount} 项` : session.running ? "Agent 正在运行" : formatUpdatedAt(session.updatedAt)}</span>
                 </span>
                 <ChevronRight size={15} className={selectedId === session.id ? "text-white/70" : "text-muted-foreground"} />
               </button>
-            ))}
+              );
+            })}
           </div>
         </aside>
 
@@ -168,6 +186,7 @@ export function AgentSessionWorkspace() {
                     <div className="mt-3 flex items-center gap-2">
                       <h3 className="text-2xl font-black">{selected.title || "未命名会话"}</h3>
                       <span className="border border-border px-2 py-1 text-xs font-bold text-muted-foreground">{selected.running ? "运行中" : "空闲"}</span>
+                      {selectedInteractions.length > 0 ? <span className="border border-primary bg-primary px-2 py-1 text-xs font-bold text-foreground">待处理 {selectedInteractions.length} 项</span> : null}
                       <Button type="button" variant="ghost" size="icon" aria-label="重命名会话" title="重命名" onClick={() => { setEditingId(selected.id); setDraftTitle(selected.title || ""); }}><Pencil size={16} /></Button>
                     </div>
                   )}
@@ -177,7 +196,8 @@ export function AgentSessionWorkspace() {
                 </Button>
               </div>
 
-              <AgentConversationSurface session={selected} onSessionActivity={handleSessionActivity} onError={handleConversationError} />
+              <AgentInteractionSurface interactions={selectedInteractions} onSubmitted={handleSessionActivity} onError={handleConversationError} />
+              <AgentConversationSurface session={selected} onSessionActivity={handleSessionActivity} onError={handleConversationError} onInteraction={handleInteraction} />
               <AgentExecutionSurface session={selected} onError={handleConversationError} refreshKey={activityRefreshKey} />
             </div>
           ) : (

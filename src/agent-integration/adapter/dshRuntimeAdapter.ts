@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { agentRuntimeConfig, DSH_VERSION } from "@/agent-integration/config";
-import type { AgentConversation, AgentConversationMessage, AgentExecutionActivity, AgentExecutionSnapshot, AgentRuntimeStatus, AgentSession, AgentSkill } from "@/agent-integration/types";
+import type { AgentConversation, AgentConversationMessage, AgentExecutionActivity, AgentExecutionSnapshot, AgentQuestionAnswer, AgentRuntimeStatus, AgentSession, AgentSkill } from "@/agent-integration/types";
 
 type DshRpcResponse<T> = {
   result?: {
@@ -35,6 +35,7 @@ type DshToolView = { for?: "call" | "result"; view?: { card?: string; title?: st
 type DshHistoryValue = { events: Array<{ event: DshHistoryEvent; view?: DshToolView }> };
 type DshSkillEntry = { name: string; description: string; whenToUse?: string; modelInvocable: boolean };
 type DshSkillListValue = { skills: DshSkillEntry[] };
+type DshReceipt = { accepted: boolean; reason?: "not-pending" | "bad-response" };
 
 export class AgentAdapterError extends Error {}
 
@@ -81,6 +82,29 @@ async function requestDsh<T>(method: string, payload: Record<string, unknown>) {
 
     if (!response.ok) return null;
     return await response.json() as DshRpcResponse<T>;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function respondToDsh(rpcId: string, result: Record<string, unknown>) {
+  if (!agentRuntimeConfig.dshBaseUrl) return null;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+
+  try {
+    const response = await fetch(new URL("/api/respond", agentRuntimeConfig.dshBaseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "client-response", rpcId, result: { ok: true, value: result } }),
+      cache: "no-store",
+      signal: controller.signal
+    });
+    if (!response.ok) return null;
+    return await response.json() as DshReceipt;
   } catch {
     return null;
   } finally {
@@ -280,6 +304,25 @@ export const dshRuntimeAdapter = {
       modelInvocable: skill.modelInvocable
     }));
     return toExecutionSnapshot(historyValue, skills, sessions.find((session) => session.id === sessionId)?.running ?? false);
+  },
+
+  async respondToApproval(input: { rpcId: string; sessionId: string; approvalId: string; outcome: "allowed-once" | "rejected" }) {
+    requireCallableRuntime();
+    const receipt = await respondToDsh(input.rpcId, {
+      sessionId: input.sessionId,
+      approvalId: input.approvalId,
+      outcome: input.outcome
+    });
+    if (receipt?.accepted !== true) throw new AgentAdapterError(receipt?.reason === "not-pending" ? "该审批已处理或已失效。" : "无法提交审批结果。");
+  },
+
+  async respondToQuestions(input: { rpcId: string; sessionId: string; answers: AgentQuestionAnswer[] }) {
+    requireCallableRuntime();
+    const receipt = await respondToDsh(input.rpcId, {
+      sessionId: input.sessionId,
+      answer: { answers: input.answers }
+    });
+    if (receipt?.accepted !== true) throw new AgentAdapterError(receipt?.reason === "not-pending" ? "该问题已处理或已失效。" : "无法提交补充信息。");
   },
 
   getEventStream(signal: AbortSignal): ReadableStream<Uint8Array> {

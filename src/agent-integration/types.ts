@@ -55,3 +55,51 @@ export type AgentExecutionSnapshot = {
   skills: AgentSkill[];
   running: boolean;
 };
+
+export type AgentQuestionOption = {
+  label: string;
+  description?: string;
+};
+
+export type AgentQuestion = {
+  id: string;
+  question: string;
+  detail?: string;
+  header?: string;
+  options?: AgentQuestionOption[];
+  multiSelect?: boolean;
+  intent?: {
+    kind: "plan-review";
+    approve: string;
+  };
+};
+
+export type AgentApprovalInteraction = {
+  kind: "approval";
+  rpcId: string;
+  sessionId: string;
+  approvalId: string;
+  toolName: string;
+  callId?: string;
+  reason?: string;
+};
+
+export type AgentQuestionInteraction = {
+  kind: "question";
+  rpcId: string;
+  sessionId: string;
+  questions: AgentQuestion[];
+};
+
+export type AgentPendingInteraction = AgentApprovalInteraction | AgentQuestionInteraction;
+
+export type AgentInteractionEvent =
+  | { type: "requested"; interaction: AgentPendingInteraction }
+  | { type: "approval-resolved"; sessionId: string; approvalId: string }
+  | { type: "question-resolved"; sessionId: string; rpcId: string };
+
+export type AgentQuestionAnswer = {
+  id: string;
+  selected: string[];
+  custom?: string;
+};
