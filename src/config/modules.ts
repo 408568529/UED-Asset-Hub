@@ -1,5 +1,11 @@
 import type { OpenModuleId } from "@/types/module";
 
+export const agentModule = {
+  name: "悠鼎 Agent",
+  description: "团队 AI 工作空间、会话与后续工作流入口。",
+  href: "/agent"
+};
+
 export const openModules: Record<OpenModuleId, { name: string; description: string; href: string; tone: string }> = {
   products: {
     name: "Vibe Product",

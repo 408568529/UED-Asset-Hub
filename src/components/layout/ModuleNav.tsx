@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { openModules } from "@/config/modules";
+import { agentModule, openModules } from "@/config/modules";
 
 function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -31,6 +31,17 @@ export function ModuleNav() {
           </Link>
         );
       })}
+      <Link
+        href={agentModule.href}
+        aria-current={isActive(pathname, agentModule.href) ? "page" : undefined}
+        className={`relative shrink-0 px-3 py-2 text-sm font-bold transition-colors after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:origin-left after:bg-primary after:transition-transform ${
+          isActive(pathname, agentModule.href)
+            ? "text-foreground after:scale-x-100"
+            : "text-muted-foreground after:scale-x-0 hover:text-foreground hover:after:scale-x-100"
+        }`}
+      >
+        {agentModule.name}
+      </Link>
     </nav>
   );
 }

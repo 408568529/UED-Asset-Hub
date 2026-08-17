@@ -1,0 +1,7 @@
+{
+  "sourceRepository": "https://github.com/deepseek-ai/deepseek-harness.git",
+  "version": "0.1.0-rc.5",
+  "sourceCommit": "47f943859bef60e4160492346772ded9b24f765a",
+  "bindHost": "127.0.0.1",
+  "port": 3080
+}
