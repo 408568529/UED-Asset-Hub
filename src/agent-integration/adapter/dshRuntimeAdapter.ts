@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { agentRuntimeConfig, DSH_VERSION } from "@/agent-integration/config";
-import type { AgentConversation, AgentConversationMessage, AgentRuntimeStatus, AgentSession } from "@/agent-integration/types";
+import type { AgentConversation, AgentConversationMessage, AgentExecutionActivity, AgentExecutionSnapshot, AgentRuntimeStatus, AgentSession, AgentSkill } from "@/agent-integration/types";
 
 type DshRpcResponse<T> = {
   result?: {
@@ -31,7 +31,10 @@ type DshHistoryEvent = {
   time?: number;
   data?: unknown;
 };
-type DshHistoryValue = { events: Array<{ event: DshHistoryEvent }> };
+type DshToolView = { for?: "call" | "result"; view?: { card?: string; title?: string; kind?: string; rawInput?: unknown; description?: string; diffs?: Array<{ path?: unknown }>; output?: unknown } };
+type DshHistoryValue = { events: Array<{ event: DshHistoryEvent; view?: DshToolView }> };
+type DshSkillEntry = { name: string; description: string; whenToUse?: string; modelInvocable: boolean };
+type DshSkillListValue = { skills: DshSkillEntry[] };
 
 export class AgentAdapterError extends Error {}
 
@@ -127,6 +130,51 @@ function toConversationMessage(event: DshHistoryEvent): AgentConversationMessage
   };
 }
 
+function toDetail(view: DshToolView | undefined) {
+  const presentation = view?.view;
+  if (!presentation) return undefined;
+  if (typeof presentation.description === "string" && presentation.description) return presentation.description;
+  if (typeof presentation.rawInput === "string" && presentation.rawInput) return presentation.rawInput;
+  if (presentation.diffs?.length) return presentation.diffs.map((diff) => typeof diff.path === "string" ? diff.path : "").filter(Boolean).join(", ");
+  return undefined;
+}
+
+function toExecutionSnapshot(value: DshHistoryValue, skills: AgentSkill[], running: boolean): AgentExecutionSnapshot {
+  const activities = new Map<string, AgentExecutionActivity>();
+  for (const { event, view } of value.events) {
+    if (event.type === "tool/call") {
+      const data = event.data as { callId?: unknown; name?: unknown } | undefined;
+      if (typeof data?.callId !== "string" || typeof data.name !== "string") continue;
+      activities.set(data.callId, {
+        id: data.callId,
+        toolName: data.name,
+        title: typeof view?.view?.title === "string" ? view.view.title : data.name,
+        kind: typeof view?.view?.kind === "string" ? view.view.kind : "other",
+        status: "running",
+        startedAt: new Date(typeof event.time === "number" ? event.time : Date.now()).toISOString(),
+        detail: toDetail(view)
+      });
+    }
+    if (event.type === "tool/result") {
+      const data = event.data as { error?: { code?: unknown; name?: unknown }; message?: { source?: { callId?: unknown }; content?: Array<{ isError?: unknown }> } } | undefined;
+      if (!data) continue;
+      const callId = data?.message?.source?.callId;
+      if (typeof callId !== "string") continue;
+      const activity = activities.get(callId);
+      if (!activity) continue;
+      const failed = Boolean(data.error) || data.message?.content?.some((content) => content.isError === true);
+      activities.set(callId, {
+        ...activity,
+        title: typeof view?.view?.title === "string" ? view.view.title : activity.title,
+        status: failed ? "failed" : "completed",
+        completedAt: new Date(typeof event.time === "number" ? event.time : Date.now()).toISOString(),
+        error: failed ? (typeof data.error?.code === "string" ? data.error.code : typeof data.error?.name === "string" ? data.error.name : "工具执行失败") : undefined
+      });
+    }
+  }
+  return { activities: [...activities.values()].sort((left, right) => right.startedAt.localeCompare(left.startedAt)), skills, running };
+}
+
 export const dshRuntimeAdapter = {
   async getStatus(): Promise<AgentRuntimeStatus> {
     if (!agentRuntimeConfig.enabled) {
@@ -214,6 +262,24 @@ export const dshRuntimeAdapter = {
       mode: "queue",
       content: [{ type: "text", text: message }]
     }), "无法发送消息到 DSH 会话。");
+  },
+
+  async getExecutionSnapshot(sessionId: string): Promise<AgentExecutionSnapshot> {
+    requireCallableRuntime();
+    const [history, skillList, sessions] = await Promise.all([
+      requestDsh<DshHistoryValue>("session.history", { sessionId, maxMessages: 200 }),
+      requestDsh<DshSkillListValue>("skill.list", { sessionId }),
+      this.listSessions()
+    ]);
+    const historyValue = requireSuccess(history, "无法读取 DSH 执行过程。");
+    const skillValue = requireSuccess(skillList, "无法读取 DSH Skill 列表。");
+    const skills = skillValue.skills.map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+      whenToUse: skill.whenToUse,
+      modelInvocable: skill.modelInvocable
+    }));
+    return toExecutionSnapshot(historyValue, skills, sessions.find((session) => session.id === sessionId)?.running ?? false);
   },
 
   getEventStream(signal: AbortSignal): ReadableStream<Uint8Array> {

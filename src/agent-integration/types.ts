@@ -28,3 +28,30 @@ export type AgentConversation = {
   messages: AgentConversationMessage[];
   running: boolean;
 };
+
+export type AgentExecutionStatus = "running" | "completed" | "failed";
+
+export type AgentExecutionActivity = {
+  id: string;
+  toolName: string;
+  title: string;
+  kind: string;
+  status: AgentExecutionStatus;
+  startedAt: string;
+  completedAt?: string;
+  detail?: string;
+  error?: string;
+};
+
+export type AgentSkill = {
+  name: string;
+  description: string;
+  whenToUse?: string;
+  modelInvocable: boolean;
+};
+
+export type AgentExecutionSnapshot = {
+  activities: AgentExecutionActivity[];
+  skills: AgentSkill[];
+  running: boolean;
+};

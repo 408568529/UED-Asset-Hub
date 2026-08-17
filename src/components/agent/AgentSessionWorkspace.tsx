@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { AgentSession } from "@/agent-integration/types";
 import { AgentConversationSurface } from "@/components/agent/AgentConversationSurface";
+import { AgentExecutionSurface } from "@/components/agent/AgentExecutionSurface";
 
 function formatUpdatedAt(value: string) {
   const date = new Date(value);
@@ -30,6 +31,7 @@ export function AgentSessionWorkspace() {
   const [archiving, setArchiving] = useState<string | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<AgentSession | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
+  const [activityRefreshKey, setActivityRefreshKey] = useState(0);
 
   const selected = useMemo(() => sessions.find((item) => item.id === selectedId) ?? null, [sessions, selectedId]);
 
@@ -55,7 +57,10 @@ export function AgentSessionWorkspace() {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const handleSessionActivity = useCallback(() => { void refresh(); }, [refresh]);
+  const handleSessionActivity = useCallback(() => {
+    setActivityRefreshKey((value) => value + 1);
+    void refresh();
+  }, [refresh]);
   const handleConversationError = useCallback((message: string) => showToast(message, "error"), [showToast]);
 
   async function createSession() {
@@ -139,7 +144,7 @@ export function AgentSessionWorkspace() {
                 <FileClock size={16} className={selectedId === session.id ? "text-primary" : "text-muted-foreground"} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-bold">{session.title || "未命名会话"}</span>
-                  <span className={`mt-1 block text-xs ${selectedId === session.id ? "text-white/60" : "text-muted-foreground"}`}>{formatUpdatedAt(session.updatedAt)}</span>
+                  <span className={`mt-1 block text-xs ${selectedId === session.id ? "text-white/60" : "text-muted-foreground"}`}>{session.running ? "Agent 正在运行" : formatUpdatedAt(session.updatedAt)}</span>
                 </span>
                 <ChevronRight size={15} className={selectedId === session.id ? "text-white/70" : "text-muted-foreground"} />
               </button>
@@ -162,6 +167,7 @@ export function AgentSessionWorkspace() {
                   ) : (
                     <div className="mt-3 flex items-center gap-2">
                       <h3 className="text-2xl font-black">{selected.title || "未命名会话"}</h3>
+                      <span className="border border-border px-2 py-1 text-xs font-bold text-muted-foreground">{selected.running ? "运行中" : "空闲"}</span>
                       <Button type="button" variant="ghost" size="icon" aria-label="重命名会话" title="重命名" onClick={() => { setEditingId(selected.id); setDraftTitle(selected.title || ""); }}><Pencil size={16} /></Button>
                     </div>
                   )}
@@ -172,6 +178,7 @@ export function AgentSessionWorkspace() {
               </div>
 
               <AgentConversationSurface session={selected} onSessionActivity={handleSessionActivity} onError={handleConversationError} />
+              <AgentExecutionSurface session={selected} onError={handleConversationError} refreshKey={activityRefreshKey} />
             </div>
           ) : (
             <div className="flex min-h-64 items-center justify-center text-center">
