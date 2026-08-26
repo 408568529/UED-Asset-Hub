@@ -1,0 +1,10 @@
+# Asset Hub pins the official in-browser workspace picker for remote and host deployments.
+# The DSH auto picker selects a native OS dialog on macOS/Windows loopback hosts,
+# which is not usable by a browser client on another machine.
+- id: directory-picker
+  disabled: true
+- insert:
+    - id: directory-picker-browse
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+    - id: ui-directory-picker-browse
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'

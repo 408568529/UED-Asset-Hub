@@ -1,4 +1,4 @@
-import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { storageFolders } from "@/config/storage";
 import { removeStoredModuleEntry } from "@/lib/storage/deleteStoredEntry";
 import { operationLogService } from "@/services/operationLogService";
@@ -21,6 +21,11 @@ function sortSops(a: Sop, b: Sop) {
   return (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999) || +new Date(b.updatedAt) - +new Date(a.updatedAt);
 }
 
+async function getSopsWithReader(reader: typeof readJsonFile, keyword?: string) {
+  const sops = await reader<Sop[]>(FILE_NAME, []);
+  return sops.filter((sop) => matchesKeyword(sop, keyword)).sort(sortSops);
+}
+
 async function captureWarning(action: () => Promise<void>) {
   try {
     await action();
@@ -33,8 +38,11 @@ async function captureWarning(action: () => Promise<void>) {
 
 export const sopService = {
   async getSops(keyword?: string): Promise<Sop[]> {
-    const sops = await readJsonFile<Sop[]>(FILE_NAME, []);
-    return sops.filter((sop) => matchesKeyword(sop, keyword)).sort(sortSops);
+    return getSopsWithReader(readJsonFile, keyword);
+  },
+
+  async getSopsForKnowledge(keyword?: string): Promise<Sop[]> {
+    return getSopsWithReader(readJsonFileReadonly, keyword);
   },
 
   async countSops(): Promise<number> {

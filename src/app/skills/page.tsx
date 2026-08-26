@@ -8,14 +8,14 @@ export default async function SkillsPage({ searchParams }: { searchParams: Promi
   const skills = await skillService.getSkills(q);
 
   return (
-    <main className="mx-auto max-w-7xl px-5 py-20 md:py-28">
+    <main className="page-shell page-frame">
       <ModulePageHeader eyebrow="Skill Center" title="团队 AI 技能中心" description="浏览、查看说明、下载和持续更新团队 Skill 包。" count={skills.length}>
         <form action="/skills">
           <Input name="q" defaultValue={q} placeholder="搜索 Skill 名称、介绍或标签" controlSize="lg" />
         </form>
       </ModulePageHeader>
 
-      <section className="mt-16 md:mt-20">
+      <section className="library-list mt-10 md:mt-12">
         {skills.map((skill) => (
           <SkillCard key={skill.id} skill={skill} />
         ))}

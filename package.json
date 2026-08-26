@@ -8,6 +8,7 @@
     "prestart": "node scripts/verify-runtime-data.mjs",
     "start": "node node_modules/next/dist/bin/next start",
     "verify:runtime-data": "node scripts/verify-runtime-data.mjs",
+    "verify:knowledge-readonly": "node --experimental-strip-types scripts/verify-knowledge-readonly.mjs",
     "verify:agent-runtime": "node agent-integration/scripts/verify-dsh.mjs",
     "start:agent-proxy": "node agent-integration/scripts/start-agent-proxy.mjs",
     "start:host": "node scripts/start-host.mjs",

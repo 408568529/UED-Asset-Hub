@@ -70,7 +70,7 @@ export function Combobox({
         placeholder={placeholder}
       />
       {open && (filtered.length || (query.trim() && !exact && onCreate)) ? (
-        <div id={listboxId} role="listbox" className="absolute inset-x-0 top-[calc(100%+1px)] z-30 max-h-56 overflow-y-auto border border-input bg-white p-1 shadow-[0_12px_32px_rgba(0,0,0,0.1)]">
+        <div id={listboxId} role="listbox" className="absolute inset-x-0 top-[calc(100%+3px)] z-30 max-h-56 overflow-y-auto border border-[hsl(var(--border-strong))] bg-[hsl(var(--surface-raised))] p-1 shadow-[var(--shadow-raised)]">
           {filtered.map((option) => (
             <button key={option.value} type="button" role="option" aria-selected={normalize(value) === normalize(option.value)} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)} className="flex min-h-9 w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted">
               <span>{option.label}</span>{normalize(value) === normalize(option.value) ? <Check size={14} /> : option.meta !== undefined ? <span className="font-mono text-xs text-muted-foreground">{option.meta}</span> : null}

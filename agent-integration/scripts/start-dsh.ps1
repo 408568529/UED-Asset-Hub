@@ -36,12 +36,14 @@ if (($version.Major -eq 22 -and $version.Minor -lt 19) -or $version.Major -lt 22
 New-Item -ItemType Directory -Force -Path $runtimePath, (Join-Path $runtimePath "dsh-home"), (Join-Path $runtimePath "workspaces"), (Join-Path $runtimePath "artifacts"), (Join-Path $runtimePath "logs") | Out-Null
 $env:DSH_HOME = Join-Path $runtimePath "dsh-home"
 $env:DSH_TELEMETRY_DISABLED = "1"
+$env:AGENT_WORKSPACE_ROOT = Join-Path $runtimePath "workspaces"
+$workspacePickerOverlay = Join-Path $repoRoot "agent-integration\dsh\workspace-picker.overlay.yml"
 
 Write-Host "Starting DeepSeek Harness 0.1.0-rc.5 on 127.0.0.1:$Port"
 Write-Host "DSH_HOME: $env:DSH_HOME"
 Push-Location $dshSourcePath
 try {
-  pnpm dsh web --host 127.0.0.1 --port $Port
+  pnpm dsh web --patch $workspacePickerOverlay --host 127.0.0.1 --port $Port
 } finally {
   Pop-Location
 }

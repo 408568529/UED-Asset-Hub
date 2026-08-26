@@ -8,14 +8,14 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const products = await productService.getProducts(q);
 
   return (
-    <main className="mx-auto max-w-7xl px-5 py-20 md:py-28">
+    <main className="page-shell page-frame">
       <ModulePageHeader eyebrow="Vibe Product" title="团队自研工具入口" description="集中管理可访问的产品、网页工具和 AI 辅助工作流。" count={products.length}>
         <form action="/products">
           <Input name="q" defaultValue={q} placeholder="搜索产品名称或介绍" controlSize="lg" />
         </form>
       </ModulePageHeader>
 
-      <section className="mt-16 md:mt-20">
+      <section className="library-list mt-10 md:mt-12">
         {products.map((product) => (
           <ProductCard key={product.id} product={product} />
         ))}

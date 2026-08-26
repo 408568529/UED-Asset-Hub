@@ -1,4 +1,4 @@
-import { openModules } from "@/config/modules";
+import { knowledgeModuleHrefs, openModules } from "@/config/modules";
 import { storageFolders } from "@/config/storage";
 import { countStoredEntries } from "@/lib/storage/fileCount";
 import { componentSpecService } from "@/services/componentSpecService";
@@ -46,14 +46,14 @@ export const moduleService = {
     ]);
 
     return [
-      { id: "products", ...openModules.products, count: Math.max(productCount, productFileCount) },
-      { id: "components", ...openModules.components, count: Math.max(componentCount, componentFileCount) },
-      { id: "sops", ...openModules.sops, count: Math.max(sopCount, sopFileCount) },
-      { id: "skills", ...openModules.skills, count: Math.max(skillCount, skillFileCount) },
-      { id: "fonts", ...openModules.fonts, count: Math.max(fontCount, fontFileCount) },
-      { id: "prompts", ...openModules.prompts, count: Math.max(promptCount, promptFileCount) },
-      { id: "training", ...openModules.training, count: trainingCount },
-      { id: "testEnvironments", ...openModules.testEnvironments, count: testEnvironmentCount }
+      { id: "products", ...openModules.products, href: knowledgeModuleHrefs.products, count: Math.max(productCount, productFileCount) },
+      { id: "components", ...openModules.components, href: knowledgeModuleHrefs.components, count: Math.max(componentCount, componentFileCount) },
+      { id: "sops", ...openModules.sops, href: knowledgeModuleHrefs.sops, count: Math.max(sopCount, sopFileCount) },
+      { id: "skills", ...openModules.skills, href: knowledgeModuleHrefs.skills, count: Math.max(skillCount, skillFileCount) },
+      { id: "fonts", ...openModules.fonts, href: knowledgeModuleHrefs.fonts, count: Math.max(fontCount, fontFileCount) },
+      { id: "prompts", ...openModules.prompts, href: knowledgeModuleHrefs.prompts, count: Math.max(promptCount, promptFileCount) },
+      { id: "training", ...openModules.training, href: knowledgeModuleHrefs.training, count: trainingCount },
+      { id: "testEnvironments", ...openModules.testEnvironments, href: knowledgeModuleHrefs.testEnvironments, count: testEnvironmentCount }
     ];
   }
 };

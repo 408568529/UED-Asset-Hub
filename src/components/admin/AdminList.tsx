@@ -15,8 +15,9 @@ import type { Product } from "@/types/product";
 import type { PromptAsset } from "@/types/prompt";
 import type { Skill } from "@/types/skill";
 import type { Sop } from "@/types/sop";
+import type { TrainingVideo } from "@/types/training";
 
-type Category = "all" | "product" | "skill" | "font" | "prompt" | "component" | "sop";
+type Category = "all" | "product" | "skill" | "font" | "prompt" | "component" | "sop" | "training";
 type SortMode = "latest" | "created" | "title";
 type CategoryCounts = Record<Exclude<Category, "all">, number>;
 
@@ -31,7 +32,7 @@ type AdminAssetRow = {
   createdAt: string;
   viewHref: string;
   editHref: string;
-  deleteApi: string;
+  deleteApi?: string;
   meta?: string;
 };
 
@@ -42,10 +43,11 @@ const filters: { id: Category; label: string }[] = [
   { id: "font", label: "Font Library" },
   { id: "prompt", label: "Prompt Library" },
   { id: "component", label: "组件规范" },
-  { id: "sop", label: "标准 SOP" }
+  { id: "sop", label: "标准 SOP" },
+  { id: "training", label: "培训资料" }
 ];
 
-function toRows(products: Product[], components: ComponentSpec[], sops: Sop[], skills: Skill[], fonts: FontAsset[], prompts: PromptAsset[]): AdminAssetRow[] {
+function toRows(products: Product[], components: ComponentSpec[], sops: Sop[], skills: Skill[], fonts: FontAsset[], prompts: PromptAsset[], training: TrainingVideo[]): AdminAssetRow[] {
   return [
     ...products.map((product) => ({
       id: product.id,
@@ -125,6 +127,20 @@ function toRows(products: Product[], components: ComponentSpec[], sops: Sop[], s
       viewHref: `/prompts/${prompt.id}`,
       editHref: `/admin/prompts/${prompt.id}`,
       deleteApi: `/api/prompts/${prompt.id}`
+    })),
+    ...training.map((video) => ({
+      id: video.id,
+      title: video.title,
+      description: video.description ?? "",
+      tags: video.tags,
+      category: "training" as const,
+      categoryLabel: "培训资料",
+      updatedAt: video.updatedAt,
+      createdAt: video.createdAt,
+      viewHref: `/training/${video.id}`,
+      editHref: "/admin/training",
+      deleteApi: undefined,
+      meta: `${video.groupName}${video.speaker ? ` · ${video.speaker}` : ""}`
     }))
   ];
 }
@@ -136,6 +152,7 @@ export function AdminList({
   skills,
   fonts,
   prompts,
+  training,
   categoryCounts,
   children
 }: {
@@ -145,6 +162,7 @@ export function AdminList({
   skills: Skill[];
   fonts: FontAsset[];
   prompts: PromptAsset[];
+  training: TrainingVideo[];
   categoryCounts: CategoryCounts;
   children?: ReactNode;
 }) {
@@ -157,7 +175,7 @@ export function AdminList({
 
   const rows = useMemo(() => {
     const lowerKeyword = keyword.trim().toLowerCase();
-    return toRows(products, components, sops, skills, fonts, prompts)
+    return toRows(products, components, sops, skills, fonts, prompts, training)
       .filter((row) => (category === "all" ? true : row.category === category))
       .filter((row) => {
         if (!lowerKeyword) return true;
@@ -168,10 +186,11 @@ export function AdminList({
         if (sortMode === "created") return +new Date(a.createdAt || 0) - +new Date(b.createdAt || 0);
         return +new Date(b.updatedAt || 0) - +new Date(a.updatedAt || 0);
       });
-  }, [category, components, fonts, keyword, products, prompts, skills, sops, sortMode]);
+  }, [category, components, fonts, keyword, products, prompts, skills, sops, sortMode, training]);
 
   async function confirmDelete() {
     if (!deleteTarget) return;
+    if (!deleteTarget.deleteApi) return;
     const response = await fetch(deleteTarget.deleteApi, { method: "DELETE" });
     const result = (await response.json()) as { warning?: string };
     setMessage(result.warning ?? "");
@@ -181,7 +200,7 @@ export function AdminList({
 
   return (
     <section>
-      <div className="mb-8">
+      <div className="mb-7">
         <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <TabsList>
           {filters.map((filter) => (
@@ -196,7 +215,7 @@ export function AdminList({
           ))}
           </TabsList>
         </div>
-        <div className="mt-6 grid gap-3 md:grid-cols-[1fr_180px]">
+        <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_11rem]">
           <Input
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
@@ -215,20 +234,26 @@ export function AdminList({
 
       {message ? <p className="mb-4 text-sm text-red-600">{message}</p> : null}
 
-      <div className="border-t border-foreground/10">
+      <div className="border border-border bg-[hsl(var(--surface-raised))]">
+        <div className="hidden border-b border-border bg-[hsl(var(--surface-subtle)/0.46)] px-5 py-3 md:grid md:grid-cols-[minmax(0,1fr)_8.5rem_7.5rem_10rem] md:items-center md:gap-5">
+          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">资产</span>
+          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">类型</span>
+          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">更新</span>
+          <span className="text-right font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">操作</span>
+        </div>
         {rows.map((row) => (
-          <article key={`${row.category}-${row.id}`} className="group grid gap-4 border-b border-foreground/10 py-6 transition hover:bg-white/60 md:grid-cols-[1fr_150px_120px_160px] md:items-center">
+          <article key={`${row.category}-${row.id}`} className="group relative grid gap-4 border-b border-border px-5 py-5 transition-colors last:border-b-0 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:origin-bottom before:scale-y-0 before:bg-primary before:transition-transform hover:bg-[hsl(var(--surface-subtle)/0.35)] hover:before:scale-y-100 md:grid-cols-[minmax(0,1fr)_8.5rem_7.5rem_10rem] md:items-center md:gap-5">
             <div>
-              <h3 className="text-2xl font-black leading-tight">{row.title}</h3>
-              <p className="mt-2 line-clamp-2 max-w-3xl text-sm leading-6 text-muted-foreground">{row.description}</p>
+              <h3 className="text-lg font-black leading-tight tracking-[-0.02em] md:text-xl">{row.title}</h3>
+              <p className="mt-1.5 line-clamp-2 max-w-3xl text-sm leading-6 text-muted-foreground">{row.description}</p>
               {row.meta ? <p className="mt-2 font-mono text-xs text-muted-foreground">{row.meta}</p> : null}
             </div>
-            <p className="font-mono text-xs text-muted-foreground">{row.categoryLabel}</p>
-            <p className="font-mono text-xs text-muted-foreground">{row.updatedAt.slice(0, 10)}</p>
-            <div className="flex gap-3 text-sm md:justify-end md:opacity-45 md:transition md:group-hover:opacity-100">
+            <p><span className="inline-flex border border-border bg-[hsl(var(--surface-subtle))] px-2 py-1 font-mono text-[10px] text-muted-foreground">{row.categoryLabel}</span></p>
+            <p className="font-mono text-xs tabular-nums text-muted-foreground">{row.updatedAt.slice(0, 10)}</p>
+            <div className="flex gap-3 text-sm md:justify-end md:opacity-45 md:transition-opacity md:group-hover:opacity-100 md:group-focus-within:opacity-100">
               <a href={row.viewHref} target="_blank" rel="noreferrer" className="font-bold underline">查看</a>
               <Link href={row.editHref} className="font-bold underline">编辑</Link>
-              <Button type="button" size="sm" variant="ghost" onClick={() => setDeleteTarget(row)} className="h-auto px-0 font-bold text-destructive underline hover:bg-transparent hover:text-destructive">删除</Button>
+              {row.deleteApi ? <Button type="button" size="sm" variant="ghost" onClick={() => setDeleteTarget(row)} className="h-auto px-0 font-bold text-destructive underline hover:bg-transparent hover:text-destructive">删除</Button> : null}
             </div>
           </article>
         ))}

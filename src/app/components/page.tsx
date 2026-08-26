@@ -8,14 +8,14 @@ export default async function ComponentsPage({ searchParams }: { searchParams: P
   const components = await componentSpecService.getComponents(q);
 
   return (
-    <main className="mx-auto max-w-7xl px-5 py-20 md:py-28">
+    <main className="page-shell page-frame">
       <ModulePageHeader eyebrow="Component Specs" title="组件规范资产库" description="集中管理组件规范、设计文件和规范文档链接。" count={components.length}>
         <form action="/components">
           <Input name="q" defaultValue={q} placeholder="搜索组件名称或介绍" controlSize="lg" />
         </form>
       </ModulePageHeader>
 
-      <section className="mt-16 md:mt-20">
+      <section className="library-list mt-10 md:mt-12">
         {components.map((component) => (
           <ComponentSpecCard key={component.id} component={component} />
         ))}

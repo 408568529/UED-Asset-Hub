@@ -53,15 +53,15 @@ export function TrainingFolderBrowser({ initialFolders, searchIndex }: { initial
   }
 
   return (
-    <section className="mt-12">
+    <section className="mt-10 md:mt-12">
       {toast ? <FormToast message={toast.message} tone={toast.tone} /> : null}
-      <div className="flex flex-col gap-3 border-y border-foreground/[0.1] py-4 md:flex-row md:items-center">
+      <div className="surface-panel flex flex-col gap-3 p-4 md:flex-row md:items-center md:p-5">
         <Input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索视频或文件夹" className="min-w-0 flex-1" />
         <Select value={folderId} onChange={(event) => setFolderId(event.target.value)} className="md:w-56"><option value="">全部文件夹</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</Select>
         {admin ? <Button type="button" onClick={() => setCreating((value) => !value)}><FolderPlus size={16} />新建文件夹</Button> : null}
       </div>
-      {creating ? <div className="flex flex-col gap-3 border-b border-foreground/[0.1] bg-white p-4 sm:flex-row"><Input autoFocus value={newName} onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void createFolder(); }} placeholder="输入文件夹名称" className="min-w-0 flex-1" /><Button type="button" variant="secondary" onClick={() => void createFolder()}>创建并选中</Button></div> : null}
-      <div className="mt-10 grid gap-x-6 gap-y-12 md:grid-cols-2 lg:grid-cols-3">{filtered.map((folder) => <TrainingFolderCard key={folder.id} folder={folder} />)}</div>
+      {creating ? <div className="flex flex-col gap-3 border-x border-b border-border bg-[hsl(var(--surface-subtle)/0.5)] p-4 sm:flex-row"><Input autoFocus value={newName} onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void createFolder(); }} placeholder="输入文件夹名称" className="min-w-0 flex-1" /><Button type="button" variant="secondary" onClick={() => void createFolder()}>创建并选中</Button></div> : null}
+      <div className="mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-3">{filtered.map((folder) => <TrainingFolderCard key={folder.id} folder={folder} />)}</div>
       {!filtered.length ? <p className="py-16 text-center text-muted-foreground">暂无符合条件的资料文件夹。</p> : null}
     </section>
   );

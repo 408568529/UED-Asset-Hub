@@ -10,12 +10,10 @@ export default async function AdminUploadsPage() {
 
   return (
     <AdminGuard>
-      <main className="mx-auto max-w-7xl px-5 py-14 md:py-20">
-        <p className="font-mono text-sm uppercase tracking-[0.22em] text-muted-foreground">Upload Records</p>
-        <h1 className="mt-6 max-w-4xl text-3xl font-black leading-tight">上传记录</h1>
-        <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">查看 Markdown、图片、JSON 等文件的上传记录，也可以从这里上传到本地数据目录。</p>
-        <AdminWorkspace><div><Button asChild><Link href="/admin/uploads/new">上传文件</Link></Button><section className="mt-12"><UploadRecordList uploads={uploads} /></section></div></AdminWorkspace>
-      </main>
+      <main><AdminWorkspace>
+        <header className="admin-page-header"><div><h1 className="text-lg font-black tracking-[-0.02em]">上传记录</h1><p className="mt-0.5 text-xs text-muted-foreground">查看已上传文件与处理状态。</p></div><Button asChild><Link href="/admin/uploads/new">上传文件</Link></Button></header>
+        <div className="admin-page-content"><UploadRecordList uploads={uploads} /></div>
+      </AdminWorkspace></main>
     </AdminGuard>
   );
 }

@@ -18,10 +18,10 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   });
 
   return (
-    <main className="mx-auto max-w-6xl px-5 py-16 md:py-24">
-      <header className="border-b border-foreground/[0.1] pb-10">
-        <p className="font-mono text-xs uppercase tracking-[0.22em] text-muted-foreground">Asset Search</p>
-        <h1 className="mt-5 text-3xl font-black md:text-5xl">搜索真实团队资产</h1>
+    <main className="page-shell page-frame">
+      <header className="surface-panel border-t-[3px] border-t-primary p-6 md:p-9">
+        <p className="section-kicker">Asset Search / Global index</p>
+        <h1 className="mt-4 text-3xl font-black tracking-[-0.025em] md:text-4xl">搜索真实团队资产</h1>
         <p className="mt-4 max-w-2xl text-base leading-8 text-muted-foreground">搜索结果实时读取产品、规范、Skill、字体、Prompt、培训资料和测试环境元数据。</p>
         <div className="mt-8"><SearchBox placeholder={params.q || "输入名称、标签、作者或使用场景"} /></div>
         <div className="mt-5"><SearchFilters selectedType={params.type} keyword={params.q} /></div>
@@ -32,9 +32,9 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         <span>{results.length} Results</span>
       </div>
 
-      <section className="mt-4 border-t border-foreground/[0.1]">
+      <section className="library-list mt-4">
         {results.map((result) => (
-          <Link key={`${result.type}-${result.id}`} href={result.url} className="group grid gap-5 border-b border-foreground/[0.1] py-7 transition-colors hover:bg-white/65 md:grid-cols-[160px_1fr_auto] md:items-center">
+          <Link key={`${result.type}-${result.id}`} href={result.url} className="library-row group grid gap-5 px-5 py-6 md:grid-cols-[160px_1fr_auto] md:items-center">
             <div>
               <Badge>{result.typeLabel}</Badge>
               <p className="mt-3 font-mono text-xs text-muted-foreground">{result.updatedAt.slice(0, 10)}</p>

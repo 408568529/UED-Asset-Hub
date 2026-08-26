@@ -4,19 +4,23 @@ import type { Product } from "@/types/product";
 
 export function ProductCard({ product }: { product: Product }) {
   return (
-    <article className="border-b border-foreground/[0.08] py-9 transition-colors hover:bg-white/65 md:-mx-6 md:px-6">
-      <div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-        <div>
-          <p className="font-mono text-xs text-muted-foreground">Updated {product.updatedAt.slice(0, 10)}</p>
-          <h2 className="mt-4 text-2xl font-black leading-tight">{product.name}</h2>
-          <p className="mt-4 max-w-2xl text-base leading-8 text-muted-foreground">{product.description}</p>
+    <article className="library-row">
+      <div className="grid md:grid-cols-[8.5rem_minmax(0,1fr)_13rem]">
+        <div className="flex items-center justify-between border-b border-border bg-[hsl(var(--surface-subtle)/0.62)] p-5 md:block md:border-b-0 md:border-r md:p-6">
+          <p className="section-kicker">Product</p>
+          <p className="font-mono text-3xl font-black md:mt-14">VP</p>
         </div>
-        <Button asChild variant="secondary">
-          <a href={product.link} target="_blank" rel="noreferrer">
-            打开产品
-            <ArrowUpRight size={16} />
-          </a>
-        </Button>
+        <div className="p-5 md:p-7">
+          <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Updated {product.updatedAt.slice(0, 10)}</p>
+          <h2 className="mt-3 text-2xl font-black leading-tight tracking-[-0.02em]">{product.name}</h2>
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">{product.description}</p>
+          {product.tags?.length ? <p className="mt-4 font-mono text-[11px] text-muted-foreground">{product.tags.slice(0, 4).map((tag) => `#${tag}`).join("  ")}</p> : null}
+        </div>
+        <div className="flex items-center border-t border-border p-5 md:border-l md:border-t-0 md:p-6">
+          <Button asChild variant="secondary" className="w-full">
+            <a href={product.link} target="_blank" rel="noreferrer">打开产品 <ArrowUpRight size={16} /></a>
+          </Button>
+        </div>
       </div>
     </article>
   );

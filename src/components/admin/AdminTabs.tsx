@@ -2,18 +2,20 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FileText, History, Settings, Upload, Video, Wrench } from "lucide-react";
+import { Boxes, History, Settings, Upload, Wrench } from "lucide-react";
 import { Select } from "@/components/ui/select";
 
-const tabs = [
-  { href: "/admin", label: "内容管理", icon: FileText },
-  { href: "/admin/test-environments", label: "测试环境管理", icon: Wrench },
-  { href: "/admin/training", label: "培训资料", icon: Video },
-  { href: "/admin/logs", label: "更新日志", icon: History },
-  { href: "/admin/uploads", label: "上传记录", icon: Upload },
-  { href: "/admin/versions", label: "版本记录", icon: History },
-  { href: "/admin/settings", label: "系统设置", icon: Settings }
+const groups = [
+  { label: "内容管理", items: [{ href: "/admin", label: "全部资产", icon: Boxes }] },
+  { label: "业务管理", items: [{ href: "/admin/test-environments", label: "测试环境管理", icon: Wrench }] },
+  { label: "系统", items: [
+    { href: "/admin/uploads", label: "上传记录", icon: Upload },
+    { href: "/admin/logs", label: "更新日志", icon: History },
+    { href: "/admin/versions", label: "版本记录", icon: History },
+    { href: "/admin/settings", label: "系统设置", icon: Settings }
+  ] }
 ];
+const tabs = groups.flatMap((group) => group.items);
 
 function getCurrentTab(pathname: string) {
   return tabs.find((tab) => tab.href !== "/admin" && pathname.startsWith(tab.href)) ?? tabs[0];
@@ -32,19 +34,17 @@ export function AdminTabs() {
           {tabs.map((tab) => <option key={tab.href} value={tab.href}>{tab.label}</option>)}
         </Select>
       </div>
-      <div className="hidden border-l border-border lg:block">
-        <p className="mb-4 pl-4 font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">管理工作区</p>
-        <div className="grid gap-1">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const active = current.href === tab.href;
-            return (
-              <Link key={tab.href} href={tab.href} className={`flex min-h-10 items-center gap-3 border-l-2 px-4 text-sm transition-colors ${active ? "-ml-px border-foreground bg-muted font-bold text-foreground" : "-ml-px border-transparent text-muted-foreground hover:border-foreground/35 hover:text-foreground"}`}>
-                <Icon size={15} strokeWidth={1.8} />
-                <span>{tab.label}</span>
-              </Link>
-            );
-          })}
+      <div className="hidden lg:block">
+        <p className="mb-4 px-3 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">管理工作区</p>
+        <div className="grid gap-5">
+          {groups.map((group) => <div key={group.label}>
+            <p className="mb-1.5 px-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{group.label}</p>
+            <div className="grid gap-0.5">{group.items.map((tab) => {
+              const Icon = tab.icon;
+              const active = tab.href === "/admin" ? pathname === "/admin" : current.href === tab.href;
+              return <Link key={tab.href} href={tab.href} className={`relative flex min-h-9 items-center gap-3 border border-transparent px-3 text-[13px] transition-colors before:absolute before:inset-y-2 before:left-0 before:w-0.5 ${active ? "border-border bg-[hsl(var(--surface))] font-bold text-foreground before:bg-primary" : "text-muted-foreground hover:bg-[hsl(var(--surface)/0.7)] hover:text-foreground"}`}><Icon size={15} strokeWidth={1.7} /><span>{tab.label}</span></Link>;
+            })}</div>
+          </div>)}
         </div>
       </div>
     </nav>

@@ -15,11 +15,11 @@ export function Button({ className, variant = "primary", size = "md", asChild, .
     <Comp
       data-ui-control
       className={cn(
-        "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-[var(--radius)] border border-transparent font-bold leading-none transition-[background-color,border-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-[0_0_0_1px_hsl(var(--foreground))] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
-        variant === "primary" && "bg-foreground text-white hover:bg-foreground/90",
-        variant === "secondary" && "bg-primary text-foreground hover:bg-primary/90",
-        variant === "outline" && "border border-foreground/15 bg-transparent text-foreground hover:border-foreground hover:bg-foreground hover:text-white",
-        variant === "ghost" && "text-foreground hover:bg-foreground hover:text-white",
+        "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-[var(--radius)] border border-transparent font-bold leading-none transition-[background-color,border-color,color,box-shadow,transform] focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-[0_0_0_1px_hsl(var(--foreground))] active:translate-y-px disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
+        variant === "primary" && "bg-foreground text-white shadow-[0_10px_24px_-18px_rgba(0,0,0,0.65)] hover:bg-foreground/90",
+        variant === "secondary" && "border-primary bg-primary text-foreground hover:border-foreground hover:bg-primary/85",
+        variant === "outline" && "border border-border bg-[hsl(var(--surface))] text-foreground hover:border-foreground hover:bg-foreground hover:text-white",
+        variant === "ghost" && "text-foreground hover:bg-[hsl(var(--surface-subtle))]",
         variant === "destructive" && "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         size === "sm" && "h-[var(--control-height-sm)] px-3 text-xs",
         size === "md" && "h-[var(--control-height-md)] px-4 text-sm",

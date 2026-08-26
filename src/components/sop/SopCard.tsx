@@ -4,19 +4,22 @@ import type { Sop } from "@/types/sop";
 
 export function SopCard({ sop }: { sop: Sop }) {
   return (
-    <article className="border-b border-foreground/[0.08] py-9 transition-colors hover:bg-white/65 md:-mx-6 md:px-6">
-      <div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-        <div>
-          <p className="font-mono text-xs text-muted-foreground">Updated {sop.updatedAt.slice(0, 10)} {sop.owner ? `· ${sop.owner}` : ""}</p>
-          <h2 className="mt-4 text-2xl font-black leading-tight">{sop.name}</h2>
-          <p className="mt-4 max-w-2xl text-base leading-8 text-muted-foreground">{sop.description}</p>
+    <article className="library-row">
+      <div className="grid md:grid-cols-[8.5rem_minmax(0,1fr)_13rem]">
+        <div className="flex items-center justify-between border-b border-border bg-[hsl(var(--surface-subtle)/0.62)] p-5 md:block md:border-b-0 md:border-r md:p-6">
+          <p className="section-kicker">Process</p>
+          <p className="font-mono text-3xl font-black md:mt-14">SOP</p>
         </div>
-        <Button asChild variant="secondary">
-          <a href={sop.docLink} target="_blank" rel="noreferrer">
-            查看 SOP
-            <ArrowUpRight size={16} />
-          </a>
-        </Button>
+        <div className="p-5 md:p-7">
+          <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Updated {sop.updatedAt.slice(0, 10)} {sop.owner ? `· ${sop.owner}` : ""}</p>
+          <h2 className="mt-3 text-2xl font-black leading-tight tracking-[-0.02em]">{sop.name}</h2>
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">{sop.description}</p>
+        </div>
+        <div className="flex items-center border-t border-border p-5 md:border-l md:border-t-0 md:p-6">
+          <Button asChild variant="secondary" className="w-full">
+            <a href={sop.docLink} target="_blank" rel="noreferrer">查看 SOP <ArrowUpRight size={16} /></a>
+          </Button>
+        </div>
       </div>
     </article>
   );

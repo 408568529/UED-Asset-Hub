@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { AssetDetailHeader } from "@/components/layout/AssetDetailHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { skillService } from "@/services/skillService";
@@ -10,41 +11,26 @@ export default async function SkillDetailPage({ params }: { params: Promise<{ id
   const versions = await skillService.getSkillVersions(skill.id);
 
   return (
-    <main className="mx-auto max-w-7xl px-5 py-20 md:py-28">
-      <p className="font-mono text-sm uppercase tracking-[0.22em] text-muted-foreground">Skill Center</p>
-      <h1 className="mt-6 max-w-5xl text-2xl font-black leading-tight md:text-3xl">{skill.name}</h1>
-      <p className="mt-6 max-w-3xl text-lg leading-8 text-muted-foreground">{skill.description}</p>
-      <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 font-mono text-sm text-muted-foreground">
-        <span>Author · {skill.authorName}</span>
-        <span>Uploaded by · {skill.uploadedBy}</span>
-        <span>Published · {skill.createdAt.slice(0, 10)}</span>
-        <span>Updated · {skill.updatedAt.slice(0, 10)}</span>
-        <span>Version · {skill.version}</span>
-        <span>{skill.downloadCount} downloads</span>
-      </div>
-      <div className="mt-8 flex flex-wrap gap-2">
-        <Badge>{skill.category}</Badge>
-        <Badge>{skill.version}</Badge>
-        {skill.usageScenarios.map((scenario) => (
-          <Badge key={scenario}>{scenario}</Badge>
-        ))}
-        {skill.tags.map((tag) => (
-          <Badge key={tag}>{tag}</Badge>
-        ))}
-      </div>
-      <div className="mt-8">
-        <Button asChild>
-          <a href={`/api/skills/${skill.id}/download`}>下载 Skill</a>
-        </Button>
-      </div>
+    <main className="page-shell page-frame">
+      <AssetDetailHeader
+        eyebrow="Skill Center"
+        marker="SK"
+        title={skill.name}
+        description={skill.description}
+        meta={<><p>Author · <strong className="text-foreground">{skill.authorName}</strong></p><p>Uploaded by · {skill.uploadedBy}</p><p>Updated · {skill.updatedAt.slice(0, 10)}</p><p>Version · {skill.version}</p><p>{skill.downloadCount} downloads</p></>}
+        tags={<><Badge>{skill.category}</Badge><Badge>{skill.version}</Badge>{skill.usageScenarios.map((scenario) => <Badge key={scenario}>{scenario}</Badge>)}{skill.tags.map((tag) => <Badge key={tag}>{tag}</Badge>)}</>}
+        actions={<Button asChild variant="secondary"><a href={`/api/skills/${skill.id}/download`}>下载 Skill</a></Button>}
+      />
 
-      <section className="mt-24 grid gap-12 lg:grid-cols-[1fr_360px]">
-        <div className="bg-white p-6 md:p-8">
-          <h2 className="text-2xl font-black">README</h2>
+      <section className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <article className="detail-surface p-6 md:p-8">
+          <p className="section-kicker">Documentation</p>
+          <h2 className="mt-3 text-2xl font-black">README</h2>
           <pre className="mt-6 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{skill.readme || "暂无 README。"}</pre>
-        </div>
-        <aside className="bg-white/70 p-6 md:p-8">
-          <h2 className="text-2xl font-black">Version History</h2>
+        </article>
+        <aside className="detail-surface p-6 md:p-7">
+          <p className="section-kicker">Archive</p>
+          <h2 className="mt-3 text-2xl font-black">Version History</h2>
           <div className="mt-6">
             {versions.map((version) => (
               <div key={version.id} className="border-b border-foreground/[0.08] py-5">

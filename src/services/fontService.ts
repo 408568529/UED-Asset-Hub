@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import { resolveDataPath, storageFolders } from "@/config/storage";
 import { getFontFormat } from "@/lib/fontStorage";
 import { removeStoredAssetFoldersFromPaths } from "@/lib/storage/deleteStoredEntry";
-import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { operationLogService } from "@/services/operationLogService";
 import { uploadRecordService } from "@/services/uploadRecordService";
 import type { DeleteResult, MutationResult } from "@/types/serviceResult";
@@ -24,6 +24,11 @@ function matchesKeyword(font: FontAsset, keyword?: string) {
   return `${font.name} ${font.description} ${font.category} ${font.designer ?? ""} ${font.tags.join(" ")}`.toLowerCase().includes(keyword.toLowerCase());
 }
 
+async function getFontsWithReader(reader: typeof readJsonFile, keyword?: string) {
+  const fonts = await reader<FontAsset[]>(FONTS_FILE, []);
+  return fonts.filter((font) => matchesKeyword(font, keyword)).sort(sortFonts);
+}
+
 async function captureWarning(action: () => Promise<void>) {
   try {
     await action();
@@ -36,8 +41,11 @@ async function captureWarning(action: () => Promise<void>) {
 
 export const fontService = {
   async getFonts(keyword?: string): Promise<FontAsset[]> {
-    const fonts = await readJsonFile<FontAsset[]>(FONTS_FILE, []);
-    return fonts.filter((font) => matchesKeyword(font, keyword)).sort(sortFonts);
+    return getFontsWithReader(readJsonFile, keyword);
+  },
+
+  async getFontsForKnowledge(keyword?: string): Promise<FontAsset[]> {
+    return getFontsWithReader(readJsonFileReadonly, keyword);
   },
 
   async countFonts() {
@@ -51,6 +59,11 @@ export const fontService = {
 
   async getFontVersions(fontId: string) {
     const versions = await readJsonFile<FontVersion[]>(FONT_VERSIONS_FILE, []);
+    return versions.filter((version) => version.fontId === fontId).sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  },
+
+  async getFontVersionsForKnowledge(fontId: string) {
+    const versions = await readJsonFileReadonly<FontVersion[]>(FONT_VERSIONS_FILE, []);
     return versions.filter((version) => version.fontId === fontId).sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
   },
 

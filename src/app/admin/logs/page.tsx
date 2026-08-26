@@ -8,12 +8,10 @@ export default async function AdminLogsPage() {
 
   return (
     <AdminGuard>
-      <main className="mx-auto max-w-7xl px-5 py-14 md:py-20">
-        <p className="font-mono text-sm uppercase tracking-[0.22em] text-muted-foreground">Operation Logs</p>
-        <h1 className="mt-6 max-w-4xl text-3xl font-black leading-tight">更新日志</h1>
-        <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">记录新增、编辑、删除、版本、登录和退出登录等关键操作。</p>
-        <AdminWorkspace><section><OperationLogList logs={logs} /></section></AdminWorkspace>
-      </main>
+      <main><AdminWorkspace>
+        <header className="admin-page-header"><div><h1 className="text-lg font-black tracking-[-0.02em]">更新日志</h1><p className="mt-0.5 text-xs text-muted-foreground">记录资产与账号相关的关键操作。</p></div></header>
+        <div className="admin-page-content"><OperationLogList logs={logs} /></div>
+      </AdminWorkspace></main>
     </AdminGuard>
   );
 }

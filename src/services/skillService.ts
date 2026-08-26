@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { resolveDataPath, storageFolders } from "@/config/storage";
 import { removeStoredAssetFoldersFromPaths } from "@/lib/storage/deleteStoredEntry";
-import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { operationLogService } from "@/services/operationLogService";
 import { tagService } from "@/services/tagService";
 import { uploadRecordService } from "@/services/uploadRecordService";
@@ -45,8 +45,8 @@ function normalizeSkill(skill: Partial<Skill>): Skill {
   };
 }
 
-async function readSkills() {
-  return (await readJsonFile<Partial<Skill>[]>(SKILLS_FILE, [])).map(normalizeSkill);
+async function readSkills(reader: typeof readJsonFile = readJsonFile) {
+  return (await reader<Partial<Skill>[]>(SKILLS_FILE, [])).map(normalizeSkill);
 }
 
 async function syncUsageScenarioTags(skills: Skill[]) {
@@ -75,6 +75,11 @@ export const skillService = {
     return skills.filter((skill) => matchesKeyword(skill, keyword)).sort(sortSkills);
   },
 
+  async getSkillsForKnowledge(keyword?: string): Promise<Skill[]> {
+    const skills = await readSkills(readJsonFileReadonly);
+    return skills.filter((skill) => matchesKeyword(skill, keyword)).sort(sortSkills);
+  },
+
   async countSkills(): Promise<number> {
     return (await readSkills()).length;
   },
@@ -86,6 +91,11 @@ export const skillService = {
 
   async getSkillVersions(skillId: string): Promise<SkillVersion[]> {
     const versions = await readJsonFile<SkillVersion[]>(VERSIONS_FILE, []);
+    return versions.filter((version) => version.skillId === skillId).sort(sortVersions);
+  },
+
+  async getSkillVersionsForKnowledge(skillId: string): Promise<SkillVersion[]> {
+    const versions = await readJsonFileReadonly<SkillVersion[]>(VERSIONS_FILE, []);
     return versions.filter((version) => version.skillId === skillId).sort(sortVersions);
   },
 

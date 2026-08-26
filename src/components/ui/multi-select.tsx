@@ -50,7 +50,7 @@ export function MultiSelect({
 
   return (
     <div className={cn("relative", className)}>
-      <div className="flex min-h-[var(--control-height-md)] flex-wrap items-center gap-1.5 border border-input bg-white px-2 py-1.5 transition-[border-color,box-shadow] hover:border-foreground/40 focus-within:border-foreground focus-within:shadow-[0_0_0_1px_hsl(var(--foreground))]">
+      <div className="flex min-h-[var(--control-height-md)] flex-wrap items-center gap-1.5 border border-input bg-[hsl(var(--surface-raised))] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition-[border-color,box-shadow] hover:border-[hsl(var(--border-strong))] focus-within:border-foreground focus-within:shadow-[0_0_0_1px_hsl(var(--foreground))]">
         {value.map((item) => (
           <span key={normalize(item)} className="inline-flex h-6 items-center gap-1.5 bg-muted px-2 text-xs font-bold">
             {item}
@@ -83,7 +83,7 @@ export function MultiSelect({
         </Button>
       </div>
       {open && (filtered.length || query.trim()) ? (
-        <div id={listboxId} role="listbox" className="absolute inset-x-0 top-[calc(100%+1px)] z-30 max-h-52 overflow-y-auto border border-input bg-white p-1 shadow-[0_12px_32px_rgba(0,0,0,0.1)]">
+        <div id={listboxId} role="listbox" className="absolute inset-x-0 top-[calc(100%+3px)] z-30 max-h-52 overflow-y-auto border border-[hsl(var(--border-strong))] bg-[hsl(var(--surface-raised))] p-1 shadow-[var(--shadow-raised)]">
           {filtered.slice(0, 12).map((option) => (
             <button key={option.value} type="button" role="option" aria-selected="false" onMouseDown={(event) => event.preventDefault()} onClick={() => void add(option.value)} className="flex min-h-9 w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted">
               <span>{option.label}</span>{option.meta !== undefined ? <span className="font-mono text-xs text-muted-foreground">{option.meta}</span> : null}

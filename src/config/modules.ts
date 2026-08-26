@@ -6,6 +6,13 @@ export const agentModule = {
   href: "/agent"
 };
 
+export const primaryNavigation = [
+  { name: "首页", href: "/" },
+  agentModule,
+  { name: "知识库", href: "/knowledge" },
+  { name: "测试环境", href: "/test-environments" }
+] as const;
+
 export const openModules: Record<OpenModuleId, { name: string; description: string; href: string; tone: string }> = {
   products: {
     name: "Vibe Product",
@@ -55,4 +62,15 @@ export const openModules: Record<OpenModuleId, { name: string; description: stri
     href: "/test-environments",
     tone: "environment"
   }
+};
+
+export const knowledgeModuleHrefs: Record<OpenModuleId, string> = {
+  products: "/knowledge?section=product-tool&type=vibe-product",
+  components: "/knowledge?section=document&type=component-spec",
+  sops: "/knowledge?section=document&type=sop",
+  skills: "/knowledge?section=ai&type=skill",
+  fonts: "/knowledge?section=resource&type=font",
+  prompts: "/knowledge?section=ai&type=prompt",
+  training: "/knowledge?section=training",
+  testEnvironments: "/test-environments"
 };

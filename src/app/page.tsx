@@ -1,4 +1,3 @@
-import { AssetCategoriesSection } from "@/components/home/AssetCategoriesSection";
 import { HeroSection } from "@/components/home/HeroSection";
 import { RecentUpdatesSection } from "@/components/home/RecentUpdatesSection";
 import { componentSpecService } from "@/services/componentSpecService";
@@ -27,8 +26,7 @@ export default async function HomePage() {
   return (
     <>
       <HeroSection modules={modules} />
-      <AssetCategoriesSection modules={modules} />
-      <RecentUpdatesSection products={products} components={components} sops={sops} skills={skills} fonts={fonts} prompts={prompts} training={training} />
+      <RecentUpdatesSection products={products} components={components} sops={sops} skills={skills} fonts={fonts} prompts={prompts} training={training} tone="dark" />
     </>
   );
 }

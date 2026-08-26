@@ -23,7 +23,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(function 
         ref={ref}
         data-ui-control
         className={cn(
-          "w-full appearance-none rounded-[var(--radius)] border border-input bg-white text-foreground outline-none transition-[border-color,box-shadow] hover:border-foreground/40 focus:border-foreground focus:shadow-[0_0_0_1px_hsl(var(--foreground))] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70 aria-[invalid=true]:border-destructive aria-[invalid=true]:shadow-[0_0_0_1px_hsl(var(--destructive))]",
+          "w-full appearance-none rounded-[var(--radius)] border border-input bg-[hsl(var(--surface-raised))] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] outline-none transition-[border-color,box-shadow] hover:border-[hsl(var(--border-strong))] focus:border-foreground focus:shadow-[0_0_0_1px_hsl(var(--foreground))] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70 aria-[invalid=true]:border-destructive aria-[invalid=true]:shadow-[0_0_0_1px_hsl(var(--destructive))]",
           selectSizes[controlSize],
           className
         )}

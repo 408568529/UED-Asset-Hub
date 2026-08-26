@@ -17,8 +17,8 @@ export function FormField({
   className?: string;
 }) {
   return (
-    <label className={cn("grid gap-2", className)}>
-      <span className="text-sm font-bold leading-5">
+    <label className={cn("grid gap-2.5", className)}>
+      <span className="text-[13px] font-bold leading-5 text-foreground">
         {label}{required ? <span className="ml-1 text-destructive">*</span> : null}
       </span>
       {children}

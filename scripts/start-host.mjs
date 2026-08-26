@@ -14,10 +14,10 @@ loadEnvConfig(process.cwd());
 const projectDir = process.cwd();
 const expectedVersion = JSON.parse(await readFile(path.join(projectDir, "agent-integration/dsh/version.json"), "utf8"));
 const loopbackHosts = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
-const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const services = new Map();
 let stopping = false;
 let edgeServer;
+const edgeSockets = new Set();
 
 function fail(message) {
   throw new Error(`[Host Runner] ${message}`);
@@ -158,6 +158,11 @@ function startEdgeServer({ host, port, assetHubPort, proxyPort }) {
     edge.web(request, response, { target: assetHubTarget, changeOrigin: false });
   });
 
+  edgeServer.on("connection", (socket) => {
+    edgeSockets.add(socket);
+    socket.once("close", () => edgeSockets.delete(socket));
+  });
+
   edgeServer.on("upgrade", (request, socket, head) => {
     const requestUrl = new URL(request.url || "/", "http://localhost");
     if (belongsToAgentRuntime(request, requestUrl)) {
@@ -183,8 +188,11 @@ function startEdgeServer({ host, port, assetHubPort, proxyPort }) {
 function stopEdgeServer() {
   if (!edgeServer) return Promise.resolve();
   return new Promise((resolve) => {
-    edgeServer.close(() => resolve());
+    const server = edgeServer;
     edgeServer = undefined;
+    for (const socket of edgeSockets) socket.destroy();
+    edgeSockets.clear();
+    server.close(() => resolve());
   });
 }
 
@@ -193,6 +201,7 @@ function startService(service) {
     cwd: service.cwd,
     env: process.env,
     stdio: "inherit",
+    detached: process.platform !== "win32",
     shell: process.platform === "win32" && service.command.endsWith(".cmd")
   });
   service.child = child;
@@ -229,7 +238,11 @@ function stopService(service) {
     });
   }
 
-  service.child.kill("SIGTERM");
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch {
+    service.child.kill("SIGTERM");
+  }
   return new Promise((resolve) => setTimeout(resolve, 250));
 }
 
@@ -251,6 +264,7 @@ async function main() {
   await Promise.all(["dsh-home", "workspaces", "artifacts", "logs"].map((directory) => mkdir(path.join(agentRuntimeDir, directory), { recursive: true })));
   process.env.DSH_HOME = path.join(agentRuntimeDir, "dsh-home");
   process.env.DSH_TELEMETRY_DISABLED = "1";
+  process.env.AGENT_WORKSPACE_ROOT = path.join(agentRuntimeDir, "workspaces");
   process.env.AGENT_PROXY_HOST = "127.0.0.1";
   process.env.AGENT_PROXY_BASE_PATH = "/agent-runtime";
   const trainingMediaDir = process.env.TRAINING_MEDIA_DIR?.trim();
@@ -281,7 +295,8 @@ async function main() {
   console.log(`[Host Runner] DATA_DIR: ${dataDir}`);
   console.log(`[Host Runner] AGENT_RUNTIME_DIR: ${agentRuntimeDir}`);
 
-  const dsh = { label: "DSH Runtime", command: pnpmCommand, args: ["dsh", "web", "--host", "127.0.0.1", "--port", String(dshPort)], cwd: dshSourceDir, restartCount: 0 };
+  const workspacePickerOverlay = path.join(projectDir, "agent-integration", "dsh", "workspace-picker.overlay.yml");
+  const dsh = { label: "DSH Runtime", command: process.execPath, args: ["--import", "tsx/esm", "apps/cli/src/bin.ts", "web", "--patch", workspacePickerOverlay, "--host", "127.0.0.1", "--port", String(dshPort)], cwd: dshSourceDir, restartCount: 0 };
   const proxy = { label: "Agent Proxy", command: process.execPath, args: ["agent-integration/scripts/start-agent-proxy.mjs"], cwd: projectDir, restartCount: 0 };
   const assetHub = { label: "Asset Hub", command: process.execPath, args: ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(internalAssetHubPort)], cwd: projectDir, restartCount: 0 };
   services.set("dsh", dsh);

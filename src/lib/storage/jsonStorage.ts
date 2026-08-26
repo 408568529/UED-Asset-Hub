@@ -44,6 +44,25 @@ export async function readJsonFile<T>(fileName: string, fallback: T): Promise<T>
   }
 }
 
+/**
+ * Reads the current or legacy JSON file without creating directories, copying
+ * legacy data, or persisting a fallback. Use this for read-only projections.
+ */
+export async function readJsonFileReadonly<T>(fileName: string, fallback: T): Promise<T> {
+  const filePath = path.join(META_DIR, fileName);
+  const legacyPath = path.join(DATA_DIR, fileName);
+
+  for (const candidate of [filePath, legacyPath]) {
+    try {
+      return JSON.parse(await fs.readFile(candidate, "utf8")) as T;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+
+  return fallback;
+}
+
 export async function writeJsonFile<T>(fileName: string, data: T): Promise<void> {
   await enqueueWrite(fileName, async () => {
     await ensureDataDir();

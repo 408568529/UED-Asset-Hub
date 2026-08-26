@@ -26,7 +26,7 @@ export function LoginForm() {
   }
 
   return (
-    <form action={submit} className="mt-10 max-w-md space-y-5 border-t border-foreground/10 pt-8">
+    <form action={submit} className="workflow-form max-w-md space-y-6">
       <label className="block space-y-2">
         <span className="text-sm font-bold">账号</span>
         <Input name="username" autoComplete="username" placeholder="请输入账号" />

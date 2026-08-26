@@ -115,7 +115,7 @@ export function SkillForm({ skill }: { skill?: Skill }) {
   }
 
   return (
-    <form action={submit} className="mt-10 max-w-2xl space-y-5 border-t border-foreground/10 pt-8">
+    <form action={submit} className="workflow-form space-y-6">
       {toast ? <FormToast message={toast.message} tone={toast.tone} /> : null}
       <LabeledField label="Skill 名称" required>
         <Input name="name" required defaultValue={skill?.name} placeholder="请输入 Skill 名称" />
@@ -147,12 +147,12 @@ export function SkillForm({ skill }: { skill?: Skill }) {
       {isEdit ? (
         <LabeledField label="更新类型">
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="cursor-pointer border border-foreground/10 bg-white p-4 transition hover:border-foreground">
+            <label className="cursor-pointer border border-border bg-[hsl(var(--surface-raised))] p-4 transition hover:border-foreground">
               <Radio name="updateType" value="version" defaultChecked className="mr-2 align-[-2px]" />
               <span className="text-sm font-bold">版本更新</span>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">保留旧版本，新增一条版本记录。</p>
             </label>
-            <label className="cursor-pointer border border-foreground/10 bg-white p-4 transition hover:border-foreground">
+            <label className="cursor-pointer border border-border bg-[hsl(var(--surface-raised))] p-4 transition hover:border-foreground">
               <Radio name="updateType" value="overwrite" className="mr-2 align-[-2px]" />
               <span className="text-sm font-bold">覆盖上传</span>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">替换当前版本包，不新增版本记录。</p>

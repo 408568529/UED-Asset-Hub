@@ -14,22 +14,26 @@ export function ModulePageHeader({
   children: ReactNode;
 }) {
   return (
-    <header className="border-b border-foreground/[0.1] pb-12 md:pb-16">
-      <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-end">
-        <div>
-          <div className="flex items-center gap-4">
-            <span className="h-px w-10 bg-primary" />
-            <p className="font-mono text-xs uppercase tracking-[0.22em] text-muted-foreground">{eyebrow}</p>
+    <header className="surface-panel relative overflow-hidden border-t-[3px] border-t-primary">
+      <div className="grid lg:grid-cols-[10.5rem_minmax(0,1fr)_23rem]">
+        <div className="flex items-start justify-between border-b border-border bg-[hsl(var(--surface-subtle)/0.65)] p-5 lg:flex-col lg:border-b-0 lg:border-r lg:p-6">
+          <p className="section-kicker">{eyebrow}</p>
+          <div className="text-right lg:text-left">
+            <p className="font-mono text-4xl font-black leading-none tabular-nums md:text-5xl">{String(count).padStart(2, "0")}</p>
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">indexed assets</p>
           </div>
-          <h1 className="mt-7 max-w-5xl text-2xl font-black leading-tight md:text-3xl">{title}</h1>
-          <p className="mt-5 max-w-2xl text-base leading-8 text-muted-foreground md:text-lg">{description}</p>
         </div>
 
-        <div>
-          {children}
-          <div className="mt-4 flex items-center justify-between border-t border-foreground/[0.1] pt-3 font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
-            <span>Library Index</span>
-            <span>{String(count).padStart(2, "0")} Assets</span>
+        <div className="border-b border-border p-6 md:p-8 lg:border-b-0 lg:border-r lg:p-9">
+          <h1 className="max-w-4xl text-3xl font-black leading-[1.06] tracking-[-0.025em] md:text-4xl">{title}</h1>
+          <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">{description}</p>
+        </div>
+
+        <div className="flex min-h-36 flex-col justify-center p-5 md:p-6">
+          {children ? children : <p className="text-sm leading-6 text-muted-foreground">浏览当前模块的全部内容，数据由本地主机实时读取。</p>}
+          <div className="mt-4 flex items-center justify-between border-t border-border pt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            <span>Library index</span>
+            <span className="inline-flex items-center gap-2"><span className="h-1.5 w-1.5 bg-primary" />Live</span>
           </div>
         </div>
       </div>

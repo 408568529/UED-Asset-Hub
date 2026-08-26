@@ -1,27 +1,36 @@
+"use client";
+
 import Link from "next/link";
-import { openModules } from "@/config/modules";
+import { usePathname } from "next/navigation";
+import { knowledgeModuleHrefs, openModules } from "@/config/modules";
 
 export function Footer() {
+  const pathname = usePathname();
+  const isHome = pathname === "/";
+  if (pathname === "/knowledge" || pathname.startsWith("/knowledge/") || pathname === "/admin" || pathname.startsWith("/admin/") || pathname === "/test-environments") return null;
+  const mutedText = isHome ? "text-white/48" : "text-muted-foreground";
+  const hoverText = isHome ? "hover:text-[#eef1e8]" : "hover:text-foreground";
+
   return (
-    <footer className="mt-auto border-t border-foreground/10 bg-foreground text-white">
-      <div className="mx-auto max-w-7xl px-5 py-12 md:py-16">
-        <div className="grid gap-12 lg:grid-cols-[1fr_1.2fr] lg:items-end">
-          <div>
-            <p className="font-mono text-xs uppercase tracking-[0.22em] text-white/45">UED Asset Studio</p>
-            <p className="mt-6 max-w-2xl text-4xl font-black leading-[0.96] text-white md:text-6xl">Ideas become assets.</p>
-            <p className="mt-5 max-w-md text-sm leading-7 text-white/55">让团队资产像内容一样被发现、下载和持续复用。</p>
+    <footer className={`mt-auto border-t ${isHome ? "border-white/15 bg-[#080b0a] text-[#eef1e8]" : "border-border bg-[hsl(var(--surface-subtle)/0.62)]"}`}>
+      <div className="page-shell py-9 md:py-11">
+        <div className="grid gap-8 lg:grid-cols-[17rem_1fr] lg:items-start">
+          <div className="border-l-2 border-primary pl-4">
+            <p className={`font-mono text-[11px] uppercase tracking-[0.2em] ${mutedText}`}>UED Asset Studio</p>
+            <p className="mt-2 text-lg font-black">Ideas become assets.</p>
+            <p className={`mt-2 text-sm leading-6 ${mutedText}`}>让团队经验持续被发现与复用。</p>
           </div>
-          <nav className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm text-white/65 sm:grid-cols-3" aria-label="页脚导航">
-            {Object.values(openModules).map((module) => (
-              <Link key={module.href} href={module.href} className="transition hover:text-primary">{module.name}</Link>
+          <nav className={`grid grid-cols-2 gap-x-8 gap-y-3 text-sm ${mutedText} sm:grid-cols-4 lg:justify-self-end`} aria-label="页脚导航">
+            {Object.entries(openModules).map(([id, module]) => (
+              <Link key={module.href} href={knowledgeModuleHrefs[id as keyof typeof knowledgeModuleHrefs]} className={`transition ${hoverText}`}>{module.name}</Link>
             ))}
           </nav>
         </div>
-        <div className="mt-12 flex flex-col gap-4 border-t border-white/15 pt-5 font-mono text-[11px] uppercase tracking-[0.14em] text-white/40 sm:flex-row sm:items-center sm:justify-between">
-          <span>UED Asset Hub</span>
+        <div className={`mt-8 flex flex-col gap-4 border-t pt-5 font-mono text-[10px] uppercase tracking-[0.16em] sm:flex-row sm:items-center sm:justify-between ${isHome ? "border-white/15 text-white/42" : "border-border text-muted-foreground"}`}>
+          <span>UED Asset Hub / Local-first library</span>
           <div className="flex gap-5">
-            <Link href="/search" className="hover:text-white">Search</Link>
-            <Link href="/admin" className="hover:text-white">Admin</Link>
+            <Link href="/search" className={hoverText}>Search</Link>
+            <Link href="/admin" className={hoverText}>Admin</Link>
           </div>
         </div>
       </div>

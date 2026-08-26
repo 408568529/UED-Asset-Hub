@@ -14,7 +14,7 @@ export function AdminToolbar() {
   }
 
   return (
-    <div className="flex flex-wrap gap-3">
+    <div className="flex flex-wrap items-center gap-2.5">
       <CreateAssetMenu />
       <Button type="button" variant="outline" onClick={() => void logout()}>退出登录</Button>
     </div>

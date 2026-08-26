@@ -14,11 +14,11 @@ export function AdminOverview({
   ];
 
   return (
-    <section className="grid border-y border-border sm:grid-cols-3">
+    <section aria-label="资产概览" className="flex flex-wrap items-center gap-x-7 gap-y-2 border-b border-border bg-[hsl(var(--surface-subtle)/0.38)] px-4 py-2.5 text-xs text-muted-foreground">
       {items.map((item) => (
-        <div key={item.label} className="py-6 sm:border-r sm:border-border sm:px-6 sm:first:pl-0 sm:last:border-r-0 sm:last:pr-0">
-          <p className="text-3xl font-black leading-none md:text-4xl">{item.value}</p>
-          <p className="mt-3 font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">{item.label}</p>
+        <div key={item.label} className="flex items-baseline gap-2">
+          <p className="font-mono text-base font-black leading-none tabular-nums text-foreground">{item.value}</p>
+          <p>{item.label}</p>
         </div>
       ))}
     </section>

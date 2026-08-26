@@ -1,4 +1,4 @@
-import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { storageFolders } from "@/config/storage";
 import { removeStoredModuleEntry } from "@/lib/storage/deleteStoredEntry";
 import { operationLogService } from "@/services/operationLogService";
@@ -21,6 +21,11 @@ function sortPrompts(a: PromptAsset, b: PromptAsset) {
   return b.copyCount - a.copyCount || b.viewCount - a.viewCount || +new Date(b.updatedAt) - +new Date(a.updatedAt);
 }
 
+async function getPromptsWithReader(reader: typeof readJsonFile, keyword?: string) {
+  const prompts = await reader<PromptAsset[]>(FILE_NAME, []);
+  return prompts.filter((prompt) => matchesPrompt(prompt, keyword)).sort(sortPrompts);
+}
+
 async function captureWarning(action: () => Promise<void>) {
   try {
     await action();
@@ -33,8 +38,11 @@ async function captureWarning(action: () => Promise<void>) {
 
 export const promptService = {
   async getPrompts(keyword?: string): Promise<PromptAsset[]> {
-    const prompts = await readJsonFile<PromptAsset[]>(FILE_NAME, []);
-    return prompts.filter((prompt) => matchesPrompt(prompt, keyword)).sort(sortPrompts);
+    return getPromptsWithReader(readJsonFile, keyword);
+  },
+
+  async getPromptsForKnowledge(keyword?: string): Promise<PromptAsset[]> {
+    return getPromptsWithReader(readJsonFileReadonly, keyword);
   },
 
   async countPrompts() {

@@ -1,6 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { mkdir, readdir, realpath, stat } from "node:fs/promises";
 import http from "node:http";
 import { createRequire } from "node:module";
+import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require("@next/env");
@@ -27,6 +29,11 @@ const cookieName = "ued_admin_session";
 const username = process.env.ADMIN_USERNAME || "admin";
 const password = process.env.ADMIN_PASSWORD || "admin123";
 const sessionSecret = process.env.ADMIN_SESSION_SECRET || `${username}:${password}:ued-asset-hub`;
+const agentRuntimeDir = process.env.AGENT_RUNTIME_DIR?.trim();
+if (!agentRuntimeDir) throw new Error("AGENT_RUNTIME_DIR must be configured before starting the Agent Proxy.");
+const workspaceRoot = path.resolve(process.env.AGENT_WORKSPACE_ROOT || path.join(agentRuntimeDir, "workspaces"));
+await mkdir(workspaceRoot, { recursive: true });
+const workspaceRootRealPath = await realpath(workspaceRoot);
 
 const themeCss = `
 /* Asset Hub only overrides DSH semantic color tokens. Layout, typography and motion remain official DSH. */
@@ -159,6 +166,149 @@ function isDshHealthy() {
   });
 }
 
+function isInsideWorkspaceRoot(candidate) {
+  const relative = path.relative(workspaceRootRealPath, candidate);
+  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
+}
+
+function rpcError(response, request, code, message, details) {
+  response.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+  response.end(JSON.stringify({
+    type: "server-response",
+    rpcId: typeof request?.rpcId === "string" ? request.rpcId : "asset-hub-workspace",
+    result: { ok: false, error: { code, message, details } }
+  }));
+}
+
+function rpcSuccess(response, request, value) {
+  response.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+  response.end(JSON.stringify({
+    type: "server-response",
+    rpcId: request.rpcId,
+    result: { ok: true, value }
+  }));
+}
+
+async function readJson(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+async function resolveManagedDirectory(candidate) {
+  const requestedPath = candidate ? path.resolve(candidate) : workspaceRootRealPath;
+  if (!isInsideWorkspaceRoot(requestedPath)) {
+    throw { code: "workspace-invalid-path", message: "Workspace 必须位于悠鼎 Agent 工作区内。", details: { path: requestedPath } };
+  }
+  let canonicalPath;
+  try {
+    canonicalPath = await realpath(requestedPath);
+  } catch {
+    throw { code: "directory-unreadable", message: "无法读取该工作区目录。", details: { path: requestedPath } };
+  }
+  if (!isInsideWorkspaceRoot(canonicalPath) || !(await stat(canonicalPath)).isDirectory()) {
+    throw { code: "workspace-invalid-path", message: "Workspace 必须位于悠鼎 Agent 工作区内。", details: { path: requestedPath } };
+  }
+  return canonicalPath;
+}
+
+function workspaceCrumbs(directory) {
+  const relative = path.relative(workspaceRootRealPath, directory);
+  const crumbs = [{ name: "悠鼎 Agent 工作区", path: workspaceRootRealPath, hidden: false }];
+  if (!relative) return crumbs;
+  let current = workspaceRootRealPath;
+  for (const segment of relative.split(path.sep)) {
+    current = path.join(current, segment);
+    crumbs.push({ name: segment, path: current, hidden: false });
+  }
+  return crumbs;
+}
+
+async function listManagedDirectory(candidate) {
+  const directory = await resolveManagedDirectory(candidate);
+  const entries = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+    try {
+      const canonicalPath = await realpath(entryPath);
+      if ((await stat(canonicalPath)).isDirectory() && isInsideWorkspaceRoot(canonicalPath)) {
+        entries.push({ name: entry.name, path: canonicalPath, hidden: entry.name.startsWith(".") });
+      }
+    } catch {
+      // Broken or inaccessible symlinks are not valid Workspace choices.
+    }
+  }
+  entries.sort((left, right) => left.name.localeCompare(right.name));
+  return { path: directory, home: workspaceRootRealPath, crumbs: workspaceCrumbs(directory), entries, truncated: false };
+}
+
+async function createManagedDirectory(parentPath, rawName) {
+  const name = String(rawName ?? "").trim();
+  if (!name || name === "." || name === ".." || /[/\\\\]/.test(name)) {
+    throw { code: "directory-create-failed", message: "文件夹名称无效。", details: { path: String(parentPath ?? workspaceRootRealPath) } };
+  }
+  const parent = await resolveManagedDirectory(parentPath);
+  const createdPath = path.join(parent, name);
+  if (!isInsideWorkspaceRoot(createdPath)) {
+    throw { code: "workspace-invalid-path", message: "Workspace 必须位于悠鼎 Agent 工作区内。", details: { path: createdPath } };
+  }
+  try {
+    await mkdir(createdPath);
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "EEXIST") {
+      throw { code: "directory-exists", message: "同名文件夹已存在。", details: { path: createdPath } };
+    }
+    throw { code: "directory-create-failed", message: "无法创建工作区文件夹。", details: { path: createdPath } };
+  }
+  return resolveManagedDirectory(createdPath);
+}
+
+async function forwardRpcRequest(url, payload, response) {
+  const upstream = await fetch(new URL(`${url.pathname}${url.search}`, target), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", origin: target.origin, referer: `${target.origin}/` },
+    body: JSON.stringify(payload)
+  });
+  const body = Buffer.from(await upstream.arrayBuffer());
+  response.writeHead(upstream.status, { "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8", "Cache-Control": "no-store" });
+  response.end(body);
+}
+
+async function handleManagedWorkspaceRequest(request, response, url) {
+  if (request.method !== "POST") return false;
+  const methods = new Set(["/api/host.listDirectory", "/api/host.createDirectory", "/api/workspace.create"]);
+  if (!methods.has(url.pathname)) return false;
+
+  let payload;
+  try {
+    payload = await readJson(request);
+  } catch {
+    rpcError(response, null, "bad-request", "无法读取 Workspace 请求。", { issues: [] });
+    return true;
+  }
+
+  try {
+    if (url.pathname === "/api/host.listDirectory") {
+      rpcSuccess(response, payload, await listManagedDirectory(payload?.payload?.path));
+      return true;
+    }
+    if (url.pathname === "/api/host.createDirectory") {
+      rpcSuccess(response, payload, { path: await createManagedDirectory(payload?.payload?.path, payload?.payload?.name) });
+      return true;
+    }
+    const workspacePath = await resolveManagedDirectory(payload?.payload?.path);
+    await forwardRpcRequest(url, { ...payload, payload: { ...payload.payload, path: workspacePath } }, response);
+    return true;
+  } catch (error) {
+    const failure = error && typeof error === "object" && "code" in error
+      ? error
+      : { code: "internal", message: "Workspace Adapter 处理失败。", details: {} };
+    rpcError(response, payload, failure.code, failure.message, failure.details);
+    return true;
+  }
+}
+
 const proxy = httpProxy.createProxyServer({ changeOrigin: true, selfHandleResponse: true, ws: true });
 
 proxy.on("proxyRes", (proxyResponse, request, response) => {
@@ -204,6 +354,7 @@ const server = http.createServer(async (request, response) => {
     response.end(brandScript);
     return;
   }
+  if (await handleManagedWorkspaceRequest(request, response, url)) return;
   proxy.web(request, response, { target: target.origin, headers: { origin: target.origin, referer: `${target.origin}/` } });
 });
 

@@ -6,7 +6,7 @@ import { Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { isAdminLoggedIn, logoutAdmin } from "@/lib/adminSession";
 
-export function AdminNavActions() {
+export function AdminNavActions({ tone = "light" }: { tone?: "light" | "dark" }) {
   const [loggedIn, setLoggedIn] = useState(false);
 
   useEffect(() => {
@@ -26,19 +26,19 @@ export function AdminNavActions() {
   if (loggedIn) {
     return (
       <div className="flex items-center gap-2">
-        <Button asChild size="sm">
+        <Button asChild size="sm" className={tone === "dark" ? "bg-[#b6ea4a] text-[#0a0d0b] hover:bg-[#d2ff6c]" : undefined}>
           <Link href="/admin">
             <Settings size={16} />
             管理台
           </Link>
         </Button>
-        <Button type="button" size="sm" variant="outline" onClick={() => void logoutAdmin()}>退出登录</Button>
+        <Button type="button" size="sm" variant="outline" className={tone === "dark" ? "border-white/20 bg-transparent text-[#eef1e8] hover:border-white/60 hover:bg-white hover:text-[#0a0d0b]" : undefined} onClick={() => void logoutAdmin()}>退出登录</Button>
       </div>
     );
   }
 
   return (
-    <Button asChild size="sm">
+    <Button asChild size="sm" className={tone === "dark" ? "bg-[#b6ea4a] text-[#0a0d0b] hover:bg-[#d2ff6c]" : undefined}>
       <Link href="/admin/login">
         <Settings size={16} />
         管理入口

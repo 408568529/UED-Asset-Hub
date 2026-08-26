@@ -39,13 +39,13 @@ export function CreateAssetMenu() {
         <ChevronDown size={16} />
       </Button>
       {open ? (
-        <div className="absolute right-0 top-14 z-20 w-72 border border-foreground/10 bg-[#fffefa] p-2 shadow-2xl">
+        <div className="absolute right-0 top-12 z-20 w-72 border border-foreground/10 bg-[#fffefa] p-2 shadow-[0_18px_38px_-24px_rgba(16,16,14,0.42)]">
           {actions.map((action) => (
             <Link
               key={action.href}
               href={action.href}
               onClick={() => setOpen(false)}
-              className="block border-b border-foreground/10 px-4 py-3 last:border-b-0 hover:bg-foreground hover:text-white"
+              className="block border-b border-foreground/10 px-4 py-3 last:border-b-0 transition-colors hover:bg-foreground hover:text-white"
             >
               <span className="block text-sm font-black">{action.label}</span>
               <span className="mt-1 block text-xs opacity-70">{action.description}</span>

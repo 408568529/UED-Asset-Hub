@@ -14,6 +14,7 @@ import { Radio } from "@/components/ui/radio";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { createClientId } from "@/lib/clientId";
+import { getAdminReturnTo } from "@/lib/adminNavigation";
 import type { TrainingFolder, TrainingServerFile, TrainingSourceMode, TrainingVideo, TrainingVideoInput } from "@/types/training";
 
 type UploadProgress = { status: string; percent: number; speed: number; eta: number; error?: string };
@@ -31,8 +32,9 @@ function formatEta(seconds: number) {
   return minutes ? `${minutes} 分 ${Math.ceil(seconds % 60)} 秒` : `${Math.ceil(seconds)} 秒`;
 }
 
-export function TrainingForm({ video, initialFolderName = "" }: { video?: TrainingVideo; initialFolderName?: string }) {
+export function TrainingForm({ video, initialFolderName = "", returnTo }: { video?: TrainingVideo; initialFolderName?: string; returnTo?: string }) {
   const router = useRouter();
+  const destination = getAdminReturnTo(returnTo ?? null, "/admin/training");
   const xhrRef = useRef<XMLHttpRequest | null>(null);
   const [input, setInput] = useState<TrainingVideoInput>({ title: video?.title ?? "", description: video?.description ?? "", groupName: video?.groupName ?? initialFolderName, speaker: video?.speaker ?? "", eventDate: video?.eventDate ?? "", tags: video?.tags ?? [], duration: video?.duration ?? 0, rating: video ? video.rating : 3 });
   const [sourceMode, setSourceMode] = useState<TrainingSourceMode>(video?.sourceMode ?? "upload");
@@ -151,7 +153,7 @@ export function TrainingForm({ video, initialFolderName = "" }: { video?: Traini
       await uploadCover(result.data.id);
       setProgress({ status: "上传成功", percent: 100, speed: 0, eta: 0 });
       setToast({ message: result.warning ?? (video ? "培训资料保存成功。" : "培训视频上传成功。"), tone: result.warning ? "warning" : "success" });
-      window.setTimeout(() => router.push("/admin/training"), 800);
+      window.setTimeout(() => router.push(destination), 800);
     } catch (error) {
       const message = error instanceof Error ? error.message : "培训资料保存失败。";
       setProgress((current) => ({ ...current, status: message === "上传已取消。" ? "已取消" : "上传失败", error: message }));
@@ -161,7 +163,7 @@ export function TrainingForm({ video, initialFolderName = "" }: { video?: Traini
   }
 
   return (
-    <form onSubmit={submit} className="mt-10 max-w-3xl space-y-5 border-t border-foreground/10 pt-8">
+    <form onSubmit={submit} className="workflow-form space-y-6">
       {toast ? <FormToast message={toast.message} tone={toast.tone} /> : null}
       <LabeledField label="视频标题"><Input value={input.title} onChange={(event) => update("title", event.target.value)} placeholder="留空时自动使用视频文件名" /></LabeledField>
       <LabeledField label="所属文件夹" required><TrainingFolderField folders={folders} value={input.groupName} onChange={(groupName) => update("groupName", groupName)} onCreated={(folder) => setFolders((current) => [folder, ...current])} /></LabeledField>
@@ -170,17 +172,17 @@ export function TrainingForm({ video, initialFolderName = "" }: { video?: Traini
       <LabeledField label="推荐指数"><TrainingRatingField value={input.rating ?? undefined} onChange={(rating) => update("rating", rating ?? null)} /></LabeledField>
       <LabeledField label="标签"><TagMultiSelectField type="training-tag" value={input.tags} onChange={(tags) => update("tags", tags)} /></LabeledField>
 
-      {video ? <LabeledField label="视频文件"><label className="flex items-center gap-3 border border-foreground/10 bg-white p-4 text-sm font-bold"><Checkbox checked={replaceVideo} onChange={(event) => setReplaceVideo(event.target.checked)} />更换当前视频文件<p className="font-normal text-muted-foreground">当前：{video.fileName} · {formatBytes(video.fileSize)}</p></label></LabeledField> : null}
-      {(!video || replaceVideo) ? <LabeledField label="上传方式" required><div className="grid gap-3 sm:grid-cols-2"><label className={`cursor-pointer border p-4 ${sourceMode === "upload" ? "border-foreground bg-foreground text-white" : "border-foreground/[0.1] bg-white"}`}><Radio className="mr-2 align-[-2px]" name="sourceMode" value="upload" checked={sourceMode === "upload"} onChange={() => setSourceMode("upload")} />常规上传<p className="mt-2 text-xs opacity-65">从当前电脑上传到服务器。</p></label><label className={`cursor-pointer border p-4 ${sourceMode === "server-local" ? "border-foreground bg-foreground text-white" : "border-foreground/[0.1] bg-white"}`}><Radio className="mr-2 align-[-2px]" name="sourceMode" value="server-local" checked={sourceMode === "server-local"} onChange={() => setSourceMode("server-local")} />关联本地文件<p className="mt-2 text-xs opacity-65">选择服务器媒体目录中的已有视频。</p></label></div></LabeledField> : null}
+      {video ? <LabeledField label="视频文件"><label className="flex items-center gap-3 border border-border bg-[hsl(var(--surface-raised))] p-4 text-sm font-bold"><Checkbox checked={replaceVideo} onChange={(event) => setReplaceVideo(event.target.checked)} />更换当前视频文件<p className="font-normal text-muted-foreground">当前：{video.fileName} · {formatBytes(video.fileSize)}</p></label></LabeledField> : null}
+      {(!video || replaceVideo) ? <LabeledField label="上传方式" required><div className="grid gap-3 sm:grid-cols-2"><label className={`cursor-pointer border p-4 transition-colors ${sourceMode === "upload" ? "border-foreground bg-primary/20" : "border-border bg-[hsl(var(--surface-raised))] hover:border-[hsl(var(--border-strong))]"}`}><Radio className="mr-2 align-[-2px]" name="sourceMode" value="upload" checked={sourceMode === "upload"} onChange={() => setSourceMode("upload")} />常规上传<p className="mt-2 text-xs text-muted-foreground">从当前电脑上传到服务器。</p></label><label className={`cursor-pointer border p-4 transition-colors ${sourceMode === "server-local" ? "border-foreground bg-primary/20" : "border-border bg-[hsl(var(--surface-raised))] hover:border-[hsl(var(--border-strong))]"}`}><Radio className="mr-2 align-[-2px]" name="sourceMode" value="server-local" checked={sourceMode === "server-local"} onChange={() => setSourceMode("server-local")} />关联本地文件<p className="mt-2 text-xs text-muted-foreground">选择服务器媒体目录中的已有视频。</p></label></div></LabeledField> : null}
 
       {(!video || replaceVideo) && sourceMode === "upload" ? <LabeledField label="视频文件" required><Input type="file" required accept="video/mp4,video/webm,video/quicktime,video/ogg,.m4v" onChange={(event) => { const file = event.target.files?.[0] ?? null; setVideoFile(file); if (file) readDuration(file); }} />{videoFile ? <p className="text-xs text-muted-foreground">{videoFile.name} · {formatBytes(videoFile.size)}</p> : null}</LabeledField> : null}
       {(!video || replaceVideo) && sourceMode === "server-local" ? <LabeledField label="服务器本地视频" required><Select required value={serverFile} onChange={(event) => setServerFile(event.target.value)}><option value="">请选择 TRAINING_MEDIA_DIR 中的文件</option>{serverFiles.map((file) => <option key={file.relativePath} value={file.relativePath}>{file.relativePath} · {formatBytes(file.fileSize)}</option>)}</Select>{!serverFiles.length ? <p className="text-xs text-muted-foreground">媒体目录暂无可关联视频，请先将文件复制到主机配置目录。</p> : null}</LabeledField> : null}
       {video && replaceVideo ? <label className="flex items-center gap-2 text-sm"><Checkbox checked={deleteOriginalFile} onChange={(event) => setDeleteOriginalFile(event.target.checked)} />替换成功后删除原视频文件{video.sourceMode === "server-local" ? "（会删除 training-media 中的原文件）" : ""}</label> : null}
       <LabeledField label="视频封面（可选）"><Input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setCoverFile(event.target.files?.[0] ?? null)} /></LabeledField>
 
-      {(!video || replaceVideo) && (submitting || progress.error) ? <div className="border border-foreground/[0.1] bg-white p-5"><div className="flex items-center justify-between text-sm font-bold"><span>{progress.status}</span><span>{progress.percent}%</span></div><div className="mt-3 h-2 bg-foreground/[0.08]"><div className="h-full bg-primary transition-[width]" style={{ width: `${progress.percent}%` }} /></div>{progress.status === "正在上传" ? <div className="mt-3 flex flex-wrap gap-5 font-mono text-xs text-muted-foreground"><span>速度 {formatBytes(progress.speed)}/s</span><span>预计剩余 {formatEta(progress.eta)}</span></div> : null}{progress.error ? <p className="mt-3 text-sm text-red-600">失败原因：{progress.error}</p> : null}</div> : null}
+      {(!video || replaceVideo) && (submitting || progress.error) ? <div className="border border-border bg-[hsl(var(--surface-raised))] p-5"><div className="flex items-center justify-between text-sm font-bold"><span>{progress.status}</span><span>{progress.percent}%</span></div><div className="mt-3 h-2 bg-foreground/[0.08]"><div className="h-full bg-primary transition-[width]" style={{ width: `${progress.percent}%` }} /></div>{progress.status === "正在上传" ? <div className="mt-3 flex flex-wrap gap-5 font-mono text-xs text-muted-foreground"><span>速度 {formatBytes(progress.speed)}/s</span><span>预计剩余 {formatEta(progress.eta)}</span></div> : null}{progress.error ? <p className="mt-3 text-sm text-red-600">失败原因：{progress.error}</p> : null}</div> : null}
 
-      <div className="flex flex-wrap gap-3"><Button type="submit" disabled={submitting}>{submitting ? progress.status : video ? replaceVideo ? "替换培训视频" : "保存培训资料" : progress.error ? "重新上传" : "上传培训视频"}</Button>{submitting && sourceMode === "upload" ? <Button type="button" variant="outline" onClick={() => xhrRef.current?.abort()}>取消上传</Button> : null}<Button type="button" variant="outline" disabled={submitting} onClick={() => router.push("/admin/training")}>返回</Button></div>
+      <div className="flex flex-wrap gap-3"><Button type="submit" disabled={submitting}>{submitting ? progress.status : video ? replaceVideo ? "替换培训视频" : "保存培训资料" : progress.error ? "重新上传" : "上传培训视频"}</Button>{submitting && sourceMode === "upload" ? <Button type="button" variant="outline" onClick={() => xhrRef.current?.abort()}>取消上传</Button> : null}<Button type="button" variant="outline" disabled={submitting} onClick={() => router.push(destination)}>返回</Button></div>
     </form>
   );
 }

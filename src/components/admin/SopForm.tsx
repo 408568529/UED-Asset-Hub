@@ -53,7 +53,7 @@ export function SopForm({ sop }: { sop?: Sop }) {
   }
 
   return (
-    <form action={submit} className="mt-10 max-w-2xl space-y-5 border-t border-foreground/10 pt-8">
+    <form action={submit} className="workflow-form max-w-3xl space-y-6">
       <LabeledField label="SOP名称">
         <Input name="name" required defaultValue={sop?.name} placeholder="请输入 SOP 名称" />
       </LabeledField>

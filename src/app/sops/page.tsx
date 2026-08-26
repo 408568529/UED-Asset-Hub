@@ -8,14 +8,14 @@ export default async function SopsPage({ searchParams }: { searchParams: Promise
   const sops = await sopService.getSops(q);
 
   return (
-    <main className="mx-auto max-w-7xl px-5 py-20 md:py-28">
+    <main className="page-shell page-frame">
       <ModulePageHeader eyebrow="Standard SOP" title="标准流程资产库" description="集中管理设计走查、交付协作、评审验收等标准流程。" count={sops.length}>
         <form action="/sops">
           <Input name="q" defaultValue={q} placeholder="搜索 SOP 名称或介绍" controlSize="lg" />
         </form>
       </ModulePageHeader>
 
-      <section className="mt-16 md:mt-20">
+      <section className="library-list mt-10 md:mt-12">
         {sops.map((sop) => (
           <SopCard key={sop.id} sop={sop} />
         ))}

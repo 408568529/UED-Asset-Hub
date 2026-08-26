@@ -1,5 +1,5 @@
 import { promises as fs } from "node:fs";
-import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { normalizeTrainingName } from "@/lib/trainingUtils";
 import { getLinkedServerFile, removeLinkedServerFile, removeTrainingVideoFiles, resolveTrainingCoverPath, resolveTrainingVideoPath } from "@/lib/trainingStorage";
 import { operationLogService } from "@/services/operationLogService";
@@ -93,6 +93,14 @@ function matchesVideo(video: TrainingVideo, keyword?: string) {
   return [video.title, video.description, video.groupName, video.speaker, ...(video.tags ?? [])].filter(Boolean).join(" ").toLocaleLowerCase().includes(normalized);
 }
 
+async function getVideosWithReader(reader: typeof readJsonFile, filters?: { keyword?: string; groupId?: string }) {
+  const videos = (await reader<Partial<TrainingVideo>[]>(VIDEOS_FILE, [])).map(normalizeVideo);
+  return videos
+    .filter((video) => matchesVideo(video, filters?.keyword))
+    .filter((video) => !filters?.groupId || video.groupId === filters.groupId)
+    .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
+}
+
 export const trainingService = {
   async getGroups() {
     return (await readJsonFile<TrainingGroup[]>(GROUPS_FILE, [])).sort((a, b) => a.name.localeCompare(b.name));
@@ -158,11 +166,11 @@ export const trainingService = {
   },
 
   async getVideos(filters?: { keyword?: string; groupId?: string }) {
-    const videos = (await readJsonFile<Partial<TrainingVideo>[]>(VIDEOS_FILE, [])).map(normalizeVideo);
-    return videos
-      .filter((video) => matchesVideo(video, filters?.keyword))
-      .filter((video) => !filters?.groupId || video.groupId === filters.groupId)
-      .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
+    return getVideosWithReader(readJsonFile, filters);
+  },
+
+  async getVideosForKnowledge(filters?: { keyword?: string; groupId?: string }) {
+    return getVideosWithReader(readJsonFileReadonly, filters);
   },
 
   async countVideos() {

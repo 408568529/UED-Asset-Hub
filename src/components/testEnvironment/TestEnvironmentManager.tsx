@@ -191,12 +191,12 @@ export function TestEnvironmentManager({ adminMode = false }: { adminMode?: bool
   return (
     <section>
       {toast ? <FormToast message={toast.message} tone={toast.tone} /> : null}
-      <div className="flex flex-col gap-3 border-y border-foreground/[0.1] py-4 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-3 border-b border-border pb-3 md:flex-row md:items-center md:justify-between">
         <Input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索产品、版本、环境地址或账号" className="min-w-0 flex-1 md:max-w-lg" />
         <div className="flex items-center gap-3">{adminMode ? <span className="text-xs text-muted-foreground">{keyword.trim() ? "清空搜索后可拖拽排序" : "拖拽行可调整顺序"}</span> : null}{adminMode ? <Button type="button" onClick={addRow}><Plus size={16} />新增一行</Button> : null}</div>
       </div>
       {loading ? <p className="py-12 text-muted-foreground">正在读取测试环境...</p> : null}
-      {!loading ? <div className="overflow-x-auto"><Table className="mt-6 min-w-[1460px] table-fixed"><colgroup><col className="w-[180px]" /><col className="w-[160px]" /><col className="w-[120px]" /><col className="w-[300px]" /><col className="w-[160px]" /><col className="w-[180px]" /><col className="w-[240px]" /><col className="w-[180px]" /></colgroup><TableHeader><TableRow className="border-foreground/[0.14]"><TableHead>产品名称</TableHead><TableHead>客户版本</TableHead><TableHead>环境类型</TableHead><TableHead>环境地址</TableHead><TableHead>账号</TableHead><TableHead>密码</TableHead><TableHead>说明</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>
+      {!loading ? <div className="overflow-x-auto"><Table className="min-w-[1320px] table-fixed"><colgroup><col className="w-[180px]" /><col className="w-[160px]" /><col className="w-[112px]" /><col className="w-[300px]" /><col className="w-[160px]" /><col className="w-[180px]" /><col className="w-[240px]" /><col className="w-[180px]" /></colgroup><TableHeader><TableRow className="border-foreground/[0.14] bg-[hsl(var(--surface-subtle)/0.48)]"><TableHead>产品名称</TableHead><TableHead>客户版本</TableHead><TableHead>环境类型</TableHead><TableHead>环境地址</TableHead><TableHead>账号</TableHead><TableHead>密码</TableHead><TableHead>说明</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>
         {filtered.map((item) => {
           const draft = drafts[item.id] ?? toDraft(item);
           const isEditing = editing.has(item.id);

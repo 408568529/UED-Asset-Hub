@@ -74,7 +74,7 @@ export function PromptForm({ prompt }: { prompt?: PromptAsset }) {
   }
 
   return (
-    <form action={submit} className="mt-10 max-w-3xl space-y-5 border-t border-foreground/10 pt-8">
+    <form action={submit} className="workflow-form space-y-6">
       {toast ? <FormToast message={toast.message} tone={toast.tone} /> : null}
       <LabeledField label="Prompt 名称">
         <Input name="name" required defaultValue={prompt?.name} placeholder="例如：PRD → React 页面生成 Prompt" />
@@ -101,7 +101,7 @@ export function PromptForm({ prompt }: { prompt?: PromptAsset }) {
       <LabeledField label="适用模型">
         <div className="grid gap-2 sm:grid-cols-3">
           {models.map((model) => (
-            <label key={model} className="border border-foreground/10 bg-white p-3 text-sm font-bold">
+            <label key={model} className="border border-border bg-[hsl(var(--surface-raised))] p-3 text-sm font-bold transition-colors hover:border-[hsl(var(--border-strong))]">
               <Checkbox name="models" value={model} defaultChecked={(prompt?.models ?? ["ChatGPT", "Codex"]).includes(model)} className="mr-2 align-[-2px]" />
               {model}
             </label>
@@ -111,7 +111,7 @@ export function PromptForm({ prompt }: { prompt?: PromptAsset }) {
       <LabeledField label="输出类型">
         <div className="grid gap-2 sm:grid-cols-4">
           {outputTypes.map((outputType) => (
-            <label key={outputType} className="border border-foreground/10 bg-white p-3 text-sm font-bold">
+            <label key={outputType} className="border border-border bg-[hsl(var(--surface-raised))] p-3 text-sm font-bold transition-colors hover:border-[hsl(var(--border-strong))]">
               <Checkbox name="outputTypes" value={outputType} defaultChecked={(prompt?.outputTypes ?? ["Markdown"]).includes(outputType)} className="mr-2 align-[-2px]" />
               {outputType}
             </label>

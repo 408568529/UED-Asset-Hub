@@ -1,4 +1,4 @@
-import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { storageFolders } from "@/config/storage";
 import { diffProduct } from "@/lib/auditDiff";
 import { removeStoredModuleEntry } from "@/lib/storage/deleteStoredEntry";
@@ -23,6 +23,11 @@ function sortProducts(a: Product, b: Product) {
   return (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999) || +new Date(b.updatedAt) - +new Date(a.updatedAt);
 }
 
+async function getProductsWithReader(reader: typeof readJsonFile, keyword?: string) {
+  const products = await reader<Product[]>(FILE_NAME, []);
+  return products.filter((product) => matchesKeyword(product, keyword)).sort(sortProducts);
+}
+
 async function captureWarning(action: () => Promise<void>) {
   try {
     await action();
@@ -35,10 +40,11 @@ async function captureWarning(action: () => Promise<void>) {
 
 export const productService = {
   async getProducts(keyword?: string): Promise<Product[]> {
-    const products = await readJsonFile<Product[]>(FILE_NAME, []);
-    return products
-      .filter((product) => matchesKeyword(product, keyword))
-      .sort(sortProducts);
+    return getProductsWithReader(readJsonFile, keyword);
+  },
+
+  async getProductsForKnowledge(keyword?: string): Promise<Product[]> {
+    return getProductsWithReader(readJsonFileReadonly, keyword);
   },
 
   async countProducts(): Promise<number> {

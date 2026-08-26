@@ -1,4 +1,4 @@
-import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { storageFolders } from "@/config/storage";
 import { diffComponent } from "@/lib/auditDiff";
 import { removeStoredModuleEntry } from "@/lib/storage/deleteStoredEntry";
@@ -23,6 +23,11 @@ function sortComponents(a: ComponentSpec, b: ComponentSpec) {
   return (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999) || +new Date(b.updatedAt) - +new Date(a.updatedAt);
 }
 
+async function getComponentsWithReader(reader: typeof readJsonFile, keyword?: string) {
+  const components = await reader<ComponentSpec[]>(FILE_NAME, []);
+  return components.filter((component) => matchesKeyword(component, keyword)).sort(sortComponents);
+}
+
 async function captureWarning(action: () => Promise<void>) {
   try {
     await action();
@@ -35,10 +40,11 @@ async function captureWarning(action: () => Promise<void>) {
 
 export const componentSpecService = {
   async getComponents(keyword?: string): Promise<ComponentSpec[]> {
-    const components = await readJsonFile<ComponentSpec[]>(FILE_NAME, []);
-    return components
-      .filter((component) => matchesKeyword(component, keyword))
-      .sort(sortComponents);
+    return getComponentsWithReader(readJsonFile, keyword);
+  },
+
+  async getComponentsForKnowledge(keyword?: string): Promise<ComponentSpec[]> {
+    return getComponentsWithReader(readJsonFileReadonly, keyword);
   },
 
   async countComponents(): Promise<number> {
