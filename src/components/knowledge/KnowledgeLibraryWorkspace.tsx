@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, BookOpen, Bot, Boxes, ExternalLink, FileText, GraduationCap, LoaderCircle, Search, SlidersHorizontal, Type, Wrench } from "lucide-react";
+import { ArrowUpRight, BookOpen, Bot, Boxes, ExternalLink, FileText, GraduationCap, Search, SlidersHorizontal, Type, Wrench } from "lucide-react";
 import { useState } from "react";
 import { KnowledgeCreateMenu } from "@/components/knowledge/KnowledgeCreateMenu";
 import { Badge } from "@/components/ui/badge";
@@ -61,12 +61,6 @@ function AssetIcon({ type }: { type: KnowledgeAssetType }) {
 function AssetRow({ item, query }: { item: KnowledgeAssetView; query: KnowledgeLibraryQuery }) {
   const href = buildHref(query, { asset: item.key });
 
-  function markNavigationPending(event: React.MouseEvent<HTMLAnchorElement>) {
-    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.currentTarget.dataset.pending = "true";
-    event.currentTarget.setAttribute("aria-busy", "true");
-  }
-
   const content = (
     <>
       <div className="flex min-w-0 items-center gap-3">
@@ -89,14 +83,13 @@ function AssetRow({ item, query }: { item: KnowledgeAssetView; query: KnowledgeL
       </div>
       <time dateTime={item.updatedAt} className="hidden text-xs tabular-nums text-muted-foreground md:block">{formatDate(item.updatedAt)}</time>
       <ArrowUpRight className="library-row-arrow ml-auto text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" size={16} aria-hidden="true" />
-      <LoaderCircle className="library-row-loading ml-auto hidden animate-spin text-muted-foreground" size={16} aria-label="正在打开详情" />
     </>
   );
 
   const className = "library-row group grid min-h-16 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3 lg:grid-cols-[minmax(18rem,1.8fr)_minmax(9rem,0.75fr)_minmax(10rem,0.9fr)_5.5rem_1.25rem] lg:gap-4 lg:px-6";
   return item.route.kind === "external"
     ? <a href={item.route.href} target="_blank" rel="noreferrer" className={className}>{content}</a>
-    : <Link href={href} prefetch={false} onClick={markNavigationPending} className={className}>{content}</Link>;
+    : <a href={href} className={className}>{content}</a>;
 }
 
 function SecondaryNavigation({ activeSection, query }: { activeSection: "all" | KnowledgeSection; query: KnowledgeLibraryQuery }) {
