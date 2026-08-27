@@ -12,7 +12,7 @@ export function TabsTrigger({ active = false, className, ...props }: React.Butto
       role="tab"
       aria-selected={active}
       data-ui-control
-      className={cn("relative -mb-px inline-flex h-[var(--control-height-md)] shrink-0 items-center gap-1 border-b-2 border-transparent px-0 text-sm font-bold text-muted-foreground transition-colors hover:text-foreground focus-visible:shadow-[0_1px_0_hsl(var(--foreground))]", active && "border-foreground text-foreground", className)}
+      className={cn("relative -mb-px inline-flex h-[var(--control-height-md)] shrink-0 items-center gap-1 border-b-2 border-transparent px-0 text-sm font-bold text-muted-foreground transition-[background-color,border-color,color,box-shadow,opacity] duration-[var(--motion-base)] ease-[var(--ease-standard)] hover:text-foreground focus-visible:shadow-[0_1px_0_hsl(var(--foreground)/0.5)]", active && "border-foreground text-foreground", className)}
       {...props}
     />
   );

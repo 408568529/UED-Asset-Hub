@@ -23,7 +23,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(function 
         ref={ref}
         data-ui-control
         className={cn(
-          "w-full appearance-none rounded-[var(--radius)] border border-input bg-[hsl(var(--surface-raised))] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] outline-none transition-[border-color,box-shadow] hover:border-[hsl(var(--border-strong))] focus:border-foreground focus:shadow-[0_0_0_1px_hsl(var(--foreground))] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70 aria-[invalid=true]:border-destructive aria-[invalid=true]:shadow-[0_0_0_1px_hsl(var(--destructive))]",
+          "w-full appearance-none rounded-[var(--radius-control)] border border-input bg-[hsl(var(--surface-raised))] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] outline-none transition-[border-color,box-shadow,background-color,color,opacity] duration-[var(--motion-fast)] ease-[var(--ease-standard)] hover:border-[hsl(var(--border-strong))] focus:border-foreground focus:shadow-[0_0_0_2px_hsl(var(--foreground)/0.14)] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-70 aria-[invalid=true]:border-destructive aria-[invalid=true]:shadow-[0_0_0_2px_hsl(var(--destructive)/0.14)]",
           selectSizes[controlSize],
           className
         )}

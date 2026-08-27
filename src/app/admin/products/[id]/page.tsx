@@ -11,7 +11,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ id
 
   return (
     <AdminGuard>
-      <AdminPageFrame title="编辑 Vibe Product"><ProductForm product={product} /></AdminPageFrame>
+      <AdminPageFrame title="编辑 Vibe Product" contentLayout="form"><ProductForm product={product} /></AdminPageFrame>
     </AdminGuard>
   );
 }

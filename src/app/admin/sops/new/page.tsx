@@ -5,7 +5,7 @@ import { SopForm } from "@/components/admin/SopForm";
 export default function NewSopPage() {
   return (
     <AdminGuard>
-      <AdminPageFrame title="新建标准 SOP"><SopForm /></AdminPageFrame>
+      <AdminPageFrame title="新建标准 SOP" contentLayout="form"><SopForm /></AdminPageFrame>
     </AdminGuard>
   );
 }

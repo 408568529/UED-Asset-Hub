@@ -53,7 +53,7 @@ export function ComponentSpecForm({ component }: { component?: ComponentSpec }) 
   }
 
   return (
-    <form action={submit} className="workflow-form max-w-3xl space-y-6">
+    <form action={submit} className="workflow-form space-y-6">
       <LabeledField label="组件名称">
         <Input name="name" required defaultValue={component?.name} placeholder="请输入组件名称" />
       </LabeledField>

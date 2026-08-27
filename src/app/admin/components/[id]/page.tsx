@@ -11,7 +11,7 @@ export default async function EditComponentPage({ params }: { params: Promise<{ 
 
   return (
     <AdminGuard>
-      <AdminPageFrame title="编辑组件规范"><ComponentSpecForm component={component} /></AdminPageFrame>
+      <AdminPageFrame title="编辑组件规范" contentLayout="form"><ComponentSpecForm component={component} /></AdminPageFrame>
     </AdminGuard>
   );
 }

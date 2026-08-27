@@ -1,6 +1,8 @@
 import { adaptComponentSpec, adaptFont, adaptProduct, adaptPrompt, adaptSkill, adaptSop, adaptTraining } from "@/services/knowledgeAdapters";
 import { componentSpecService } from "@/services/componentSpecService";
 import { fontService } from "@/services/fontService";
+import { adaptMarkdownKnowledge } from "@/services/markdownKnowledgeAdapter";
+import { markdownKnowledgeService } from "@/services/markdownKnowledgeService";
 import { productService } from "@/services/productService";
 import { promptService } from "@/services/promptService";
 import { skillService } from "@/services/skillService";
@@ -15,6 +17,7 @@ type KnowledgeSource = {
 };
 
 const knowledgeSources: KnowledgeSource[] = [
+  { source: "markdownKnowledgeService", label: "Markdown Knowledge", load: async () => (await markdownKnowledgeService.list()).documents.map(adaptMarkdownKnowledge) },
   { source: "sopService", label: "SOP", load: async () => (await sopService.getSopsForKnowledge()).map(adaptSop) },
   { source: "componentSpecService", label: "组件规范", load: async () => (await componentSpecService.getComponentsForKnowledge()).map(adaptComponentSpec) },
   { source: "promptService", label: "Prompt", load: async () => (await promptService.getPromptsForKnowledge()).map(adaptPrompt) },
@@ -41,7 +44,7 @@ function matchesQuery(item: KnowledgeAssetView, query: KnowledgeLibraryQuery) {
   const keyword = normalize(query.q);
   if (!keyword) return true;
 
-  return [item.title, item.description, item.assetTypeLabel, item.businessCategory ?? "", item.owner ?? "", ...item.tags]
+  return [item.title, item.description, item.assetTypeLabel, item.businessCategory ?? "", item.owner ?? "", item.specTopic ?? "", item.specTopicLabel ?? "", ...(item.relatedScopes ?? []), ...(item.relatedScopeLabels ?? []), ...item.tags]
     .join(" ")
     .toLocaleLowerCase()
     .includes(keyword);

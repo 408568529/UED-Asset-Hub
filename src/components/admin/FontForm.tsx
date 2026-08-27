@@ -118,7 +118,7 @@ export function FontForm({ font }: { font?: FontAsset }) {
   }
 
   return (
-    <form action={submit} className="workflow-form max-w-3xl space-y-6">
+    <form action={submit} className="workflow-form space-y-6">
       {toast ? <FormToast message={toast.message} tone={toast.tone} /> : null}
       <LabeledField label="字体名称">
         <Input name="name" required defaultValue={font?.name} placeholder="例如：PingFang Team Pack" />

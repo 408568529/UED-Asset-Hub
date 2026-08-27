@@ -11,7 +11,7 @@ export default async function EditSkillPage({ params }: { params: Promise<{ id: 
 
   return (
     <AdminGuard>
-      <AdminPageFrame title="编辑 Skill"><SkillForm skill={skill} /></AdminPageFrame>
+      <AdminPageFrame title="编辑 Skill" contentLayout="form"><SkillForm skill={skill} /></AdminPageFrame>
     </AdminGuard>
   );
 }

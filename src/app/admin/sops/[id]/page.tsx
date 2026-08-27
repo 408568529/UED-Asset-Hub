@@ -11,7 +11,7 @@ export default async function EditSopPage({ params }: { params: Promise<{ id: st
 
   return (
     <AdminGuard>
-      <AdminPageFrame title="编辑标准 SOP"><SopForm sop={sop} /></AdminPageFrame>
+      <AdminPageFrame title="编辑标准 SOP" contentLayout="form"><SopForm sop={sop} /></AdminPageFrame>
     </AdminGuard>
   );
 }

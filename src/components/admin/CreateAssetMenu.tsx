@@ -6,6 +6,9 @@ import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const actions = [
+  { href: "/admin/knowledge/new?type=knowledge", label: "知识文章", description: "新建 Markdown 知识文章" },
+  { href: "/admin/knowledge/new?type=project", label: "项目沉淀", description: "新建 Markdown 项目沉淀" },
+  { href: "/admin/knowledge/new?type=micro-spec", label: "微规范", description: "在线创建或上传 Markdown" },
   { href: "/admin/products/new", label: "Vibe Product", description: "新增团队自研工具" },
   { href: "/admin/skills/new", label: "Skill Center", description: "上传团队 Skill ZIP 包" },
   { href: "/admin/fonts/new", label: "Font Library", description: "上传字体资源和版本" },

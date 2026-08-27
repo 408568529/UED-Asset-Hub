@@ -2,6 +2,7 @@ import { KnowledgeWorkspaceDetail, type KnowledgeWorkspaceDetailData } from "@/c
 import { KnowledgeLibraryWorkspace } from "@/components/knowledge/KnowledgeLibraryWorkspace";
 import { fontService } from "@/services/fontService";
 import { knowledgeAggregatorService } from "@/services/knowledgeAggregatorService";
+import { markdownKnowledgeService } from "@/services/markdownKnowledgeService";
 import { promptService } from "@/services/promptService";
 import { skillService } from "@/services/skillService";
 import { trainingService } from "@/services/trainingService";
@@ -46,6 +47,11 @@ async function getWorkspaceDetail(assetKey: KnowledgeLibraryQuery["asset"], fall
   if (!assetKey) return null;
   const asset = fallback.items.find((item) => item.key === assetKey && item.route.kind === "internal");
   if (!asset) return null;
+
+  if (asset.assetType === "knowledge" || asset.assetType === "project" || asset.assetType === "micro-spec") {
+    const item = await markdownKnowledgeService.getById(asset.id).catch(() => null);
+    return item && item.metadata.documentType === asset.assetType ? { asset, kind: "markdown", item } : null;
+  }
 
   if (asset.assetType === "prompt") {
     const item = (await promptService.getPromptsForKnowledge()).find((prompt) => prompt.id === asset.id);

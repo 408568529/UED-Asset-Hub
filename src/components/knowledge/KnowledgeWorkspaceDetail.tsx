@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ArrowLeft, Download, ExternalLink, FileText, Play, Type } from "lucide-react";
+import { ArrowLeft, Download, ExternalLink, Pencil, Play } from "lucide-react";
+import { MarkdownKnowledgeDetail } from "@/components/knowledge/MarkdownKnowledgeDetail";
 import { FontPreview } from "@/components/font/FontPreview";
 import { PromptCopyButton } from "@/components/prompt/PromptCopyButton";
 import { TrainingPlayer } from "@/components/training/TrainingPlayer";
@@ -12,8 +13,12 @@ import type { Skill } from "@/types/skill";
 import type { FontVersion } from "@/types/font";
 import type { SkillVersion } from "@/types/skill";
 import type { TrainingVideo } from "@/types/training";
+import type { MarkdownKnowledgeDocument } from "@/types/markdownKnowledge";
+import { markdownKnowledgeRelatedScopes, markdownKnowledgeSpecTopics } from "@/types/markdownKnowledge";
+import { appendKnowledgeReturnHref } from "@/lib/knowledgeNavigation";
 
 export type KnowledgeWorkspaceDetailData =
+  | { asset: KnowledgeAssetView; kind: "markdown"; item: MarkdownKnowledgeDocument }
   | { asset: KnowledgeAssetView; kind: "prompt"; item: PromptAsset }
   | { asset: KnowledgeAssetView; kind: "skill"; item: Skill; versions: SkillVersion[] }
   | { asset: KnowledgeAssetView; kind: "font"; item: FontAsset; versions: FontVersion[] }
@@ -24,13 +29,16 @@ function formatDate(value: string) {
   return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
-function DetailMetadata({ asset }: { asset: KnowledgeAssetView }) {
+function DetailMetadata({ asset, markdown }: { asset: KnowledgeAssetView; markdown?: MarkdownKnowledgeDocument }) {
+  const microSpec = markdown?.metadata.documentType === "micro-spec" ? markdown.metadata : null;
   return (
     <aside className="border-t border-border px-4 py-5 xl:border-l xl:border-t-0 xl:px-6" aria-label="资产元数据">
       <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Metadata</p>
       <dl className="mt-4 grid gap-4 text-sm">
         <div><dt className="text-xs text-muted-foreground">类型</dt><dd className="mt-1 font-bold">{asset.assetTypeLabel}</dd></div>
         <div><dt className="text-xs text-muted-foreground">分类</dt><dd className="mt-1 font-bold">{asset.businessCategory || "未分类"}</dd></div>
+        {microSpec ? <div><dt className="text-xs text-muted-foreground">规范主题</dt><dd className="mt-1 font-bold">{markdownKnowledgeSpecTopics.find((option) => option.value === microSpec.specTopic)?.label ?? microSpec.specTopic}</dd></div> : null}
+        {microSpec ? <div><dt className="text-xs text-muted-foreground">关联类目</dt><dd className="mt-2 flex flex-wrap gap-1.5">{microSpec.relatedScopes.map((scope) => <Badge key={scope}>{markdownKnowledgeRelatedScopes.find((option) => option.value === scope)?.label ?? scope}</Badge>)}</dd></div> : null}
         <div><dt className="text-xs text-muted-foreground">作者 / 来源</dt><dd className="mt-1 font-bold">{asset.owner || "未填写"}</dd></div>
         <div><dt className="text-xs text-muted-foreground">更新时间</dt><dd className="mt-1 font-bold tabular-nums">{formatDate(asset.updatedAt)}</dd></div>
         <div><dt className="text-xs text-muted-foreground">标签</dt><dd className="mt-2 flex flex-wrap gap-1.5">{asset.tags.length ? asset.tags.map((tag) => <Badge key={tag}>#{tag}</Badge>) : <span className="text-muted-foreground">—</span>}</dd></div>
@@ -51,7 +59,9 @@ export function KnowledgeWorkspaceDetail({ detail, backHref }: { detail: Knowled
       ? <Button asChild size="sm"><a href={`/api/skills/${detail.item.id}/download`}><Download size={15} />下载 Skill</a></Button>
       : detail.kind === "font"
         ? <Button asChild size="sm"><a href={`/api/fonts/${detail.item.id}/download`}><Download size={15} />下载字体</a></Button>
-        : null;
+        : detail.kind === "markdown"
+          ? <Button asChild size="sm"><Link href={appendKnowledgeReturnHref(`/admin/knowledge/${encodeURIComponent(detail.item.metadata.id)}/edit`, backHref)}><Pencil size={15} />编辑 Markdown</Link></Button>
+          : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" aria-label={`${asset.title} 详情`}>
@@ -74,6 +84,7 @@ export function KnowledgeWorkspaceDetail({ detail, backHref }: { detail: Knowled
             <DetailSection title="使用说明">{detail.item.usageGuide || "暂无使用说明。"}</DetailSection>
             {(detail.item.exampleInput || detail.item.exampleOutput) ? <div className="grid md:grid-cols-2"><DetailSection title="示例输入"><pre className="whitespace-pre-wrap">{detail.item.exampleInput || "—"}</pre></DetailSection><DetailSection title="示例输出"><pre className="whitespace-pre-wrap">{detail.item.exampleOutput || "—"}</pre></DetailSection></div> : null}
           </> : null}
+          {detail.kind === "markdown" ? <MarkdownKnowledgeDetail content={detail.item.content} /> : null}
           {detail.kind === "skill" ? <>
             <DetailSection title="README"><pre className="whitespace-pre-wrap bg-[hsl(var(--surface-subtle)/0.55)] p-4 font-sans text-sm leading-7 text-foreground">{detail.item.readme || "暂无 README。"}</pre></DetailSection>
             <DetailSection title="使用场景">{detail.item.usageScenarios.length ? <div className="flex flex-wrap gap-2">{detail.item.usageScenarios.map((scenario) => <Badge key={scenario}>{scenario}</Badge>)}</div> : "未填写使用场景。"}</DetailSection>
@@ -91,7 +102,7 @@ export function KnowledgeWorkspaceDetail({ detail, backHref }: { detail: Knowled
             <DetailSection title="视频说明">{detail.item.description || "暂无视频简介。"}</DetailSection>
           </> : null}
         </article>
-        <DetailMetadata asset={asset} />
+        <DetailMetadata asset={asset} markdown={detail.kind === "markdown" ? detail.item : undefined} />
       </div>
     </div>
   );

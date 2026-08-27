@@ -16,8 +16,9 @@ import type { PromptAsset } from "@/types/prompt";
 import type { Skill } from "@/types/skill";
 import type { Sop } from "@/types/sop";
 import type { TrainingVideo } from "@/types/training";
+import type { MarkdownKnowledgeMetadata } from "@/types/markdownKnowledge";
 
-type Category = "all" | "product" | "skill" | "font" | "prompt" | "component" | "sop" | "training";
+type Category = "all" | "knowledge" | "project" | "micro-spec" | "product" | "skill" | "font" | "prompt" | "component" | "sop" | "training";
 type SortMode = "latest" | "created" | "title";
 type CategoryCounts = Record<Exclude<Category, "all">, number>;
 
@@ -38,6 +39,9 @@ type AdminAssetRow = {
 
 const filters: { id: Category; label: string }[] = [
   { id: "all", label: "全部" },
+  { id: "knowledge", label: "知识文章" },
+  { id: "project", label: "项目沉淀" },
+  { id: "micro-spec", label: "微规范" },
   { id: "product", label: "Vibe Product" },
   { id: "skill", label: "Skill Center" },
   { id: "font", label: "Font Library" },
@@ -47,8 +51,21 @@ const filters: { id: Category; label: string }[] = [
   { id: "training", label: "培训资料" }
 ];
 
-function toRows(products: Product[], components: ComponentSpec[], sops: Sop[], skills: Skill[], fonts: FontAsset[], prompts: PromptAsset[], training: TrainingVideo[]): AdminAssetRow[] {
+function toRows(markdownKnowledge: MarkdownKnowledgeMetadata[], products: Product[], components: ComponentSpec[], sops: Sop[], skills: Skill[], fonts: FontAsset[], prompts: PromptAsset[], training: TrainingVideo[]): AdminAssetRow[] {
   return [
+    ...markdownKnowledge.map((document) => ({
+      id: document.id,
+      title: document.title,
+      description: document.description,
+      tags: document.tags,
+      category: document.documentType,
+      categoryLabel: document.documentType === "micro-spec" ? "微规范" : document.documentType === "project" ? "项目沉淀" : "知识文章",
+      updatedAt: document.updatedAt,
+      createdAt: document.createdAt,
+      viewHref: `/knowledge?asset=${encodeURIComponent(`${document.documentType}:${document.id}`)}`,
+      editHref: `/admin/knowledge/${encodeURIComponent(document.id)}/edit`,
+      meta: document.documentType === "micro-spec" ? `Topic：${document.specTopic} · Scope：${document.relatedScopes.join(", ")}` : undefined
+    })),
     ...products.map((product) => ({
       id: product.id,
       title: product.name,
@@ -146,6 +163,7 @@ function toRows(products: Product[], components: ComponentSpec[], sops: Sop[], s
 }
 
 export function AdminList({
+  markdownKnowledge,
   products,
   components,
   sops,
@@ -156,6 +174,7 @@ export function AdminList({
   categoryCounts,
   children
 }: {
+  markdownKnowledge: MarkdownKnowledgeMetadata[];
   products: Product[];
   components: ComponentSpec[];
   sops: Sop[];
@@ -175,7 +194,7 @@ export function AdminList({
 
   const rows = useMemo(() => {
     const lowerKeyword = keyword.trim().toLowerCase();
-    return toRows(products, components, sops, skills, fonts, prompts, training)
+    return toRows(markdownKnowledge, products, components, sops, skills, fonts, prompts, training)
       .filter((row) => (category === "all" ? true : row.category === category))
       .filter((row) => {
         if (!lowerKeyword) return true;
@@ -186,7 +205,7 @@ export function AdminList({
         if (sortMode === "created") return +new Date(a.createdAt || 0) - +new Date(b.createdAt || 0);
         return +new Date(b.updatedAt || 0) - +new Date(a.updatedAt || 0);
       });
-  }, [category, components, fonts, keyword, products, prompts, skills, sops, sortMode, training]);
+  }, [category, components, fonts, keyword, markdownKnowledge, products, prompts, skills, sops, sortMode, training]);
 
   async function confirmDelete() {
     if (!deleteTarget) return;

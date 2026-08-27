@@ -32,7 +32,7 @@ export function UploadForm() {
   }
 
   return (
-    <form action={submit} className="workflow-form max-w-3xl space-y-6">
+    <form action={submit} className="workflow-form space-y-6">
       {toast ? <FormToast message={toast.message} tone={toast.tone} /> : null}
       <LabeledField label="选择文件">
         <Input name="file" type="file" required />

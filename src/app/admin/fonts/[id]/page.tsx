@@ -11,7 +11,7 @@ export default async function EditFontPage({ params }: { params: Promise<{ id: s
 
   return (
     <AdminGuard>
-      <AdminPageFrame title="编辑 Font Library"><FontForm font={font} /></AdminPageFrame>
+      <AdminPageFrame title="编辑 Font Library" contentLayout="form"><FontForm font={font} /></AdminPageFrame>
     </AdminGuard>
   );
 }

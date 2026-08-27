@@ -5,7 +5,7 @@ import { PromptForm } from "@/components/admin/PromptForm";
 export default function NewPromptPage() {
   return (
     <AdminGuard>
-      <AdminPageFrame title="新建 Prompt Library"><PromptForm /></AdminPageFrame>
+      <AdminPageFrame title="新建 Prompt Library" contentLayout="form"><PromptForm /></AdminPageFrame>
     </AdminGuard>
   );
 }

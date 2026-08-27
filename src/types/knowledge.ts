@@ -1,11 +1,11 @@
 export const knowledgeSections = ["document", "ai", "training", "product-tool", "resource"] as const;
-export const knowledgeAssetTypes = ["knowledge", "sop", "component-spec", "project", "prompt", "skill", "training", "vibe-product", "font"] as const;
+export const knowledgeAssetTypes = ["knowledge", "sop", "component-spec", "micro-spec", "project", "prompt", "skill", "training", "vibe-product", "font"] as const;
 export const knowledgeSorts = ["updated-desc", "title-asc", "title-desc"] as const;
 
 export type KnowledgeSection = (typeof knowledgeSections)[number];
 export type KnowledgeAssetType = (typeof knowledgeAssetTypes)[number];
 export type KnowledgeSort = (typeof knowledgeSorts)[number];
-export type KnowledgeAssetSource = "sopService" | "componentSpecService" | "promptService" | "skillService" | "trainingService" | "productService" | "fontService";
+export type KnowledgeAssetSource = "markdownKnowledgeService" | "sopService" | "componentSpecService" | "promptService" | "skillService" | "trainingService" | "productService" | "fontService";
 
 export interface KnowledgeAssetView {
   key: `${KnowledgeAssetType}:${string}`;
@@ -29,6 +29,10 @@ export interface KnowledgeAssetView {
     kind: "internal" | "external";
   };
   owner?: string;
+  specTopic?: string;
+  specTopicLabel?: string;
+  relatedScopes?: string[];
+  relatedScopeLabels?: string[];
   source: KnowledgeAssetSource;
 }
 

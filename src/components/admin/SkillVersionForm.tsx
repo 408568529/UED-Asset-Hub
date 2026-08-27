@@ -30,7 +30,7 @@ export function SkillVersionForm({ skillId }: { skillId: string }) {
   }
 
   return (
-    <form action={submit} className="workflow-form max-w-3xl space-y-6">
+    <form action={submit} className="workflow-form space-y-6">
       {toast ? <FormToast message={toast.message} tone={toast.tone} /> : null}
       <LabeledField label="版本号">
         <Input name="version" required defaultValue="v1.0.1" />

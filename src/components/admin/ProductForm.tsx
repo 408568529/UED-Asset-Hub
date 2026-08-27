@@ -53,7 +53,7 @@ export function ProductForm({ product }: { product?: Product }) {
   }
 
   return (
-    <form action={submit} className="workflow-form max-w-3xl space-y-6">
+    <form action={submit} className="workflow-form space-y-6">
       <LabeledField label="产品名称">
         <Input name="name" required defaultValue={product?.name} placeholder="请输入产品名称" />
       </LabeledField>

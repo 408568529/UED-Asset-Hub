@@ -11,7 +11,7 @@ export default async function EditPromptPage({ params }: { params: Promise<{ id:
 
   return (
     <AdminGuard>
-      <AdminPageFrame title="编辑 Prompt Library"><PromptForm prompt={prompt} /></AdminPageFrame>
+      <AdminPageFrame title="编辑 Prompt Library" contentLayout="form"><PromptForm prompt={prompt} /></AdminPageFrame>
     </AdminGuard>
   );
 }

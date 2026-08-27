@@ -11,7 +11,7 @@ export default async function NewSkillVersionPage({ params }: { params: Promise<
 
   return (
     <AdminGuard>
-      <AdminPageFrame title="上传新版本" description={skill.name}><SkillVersionForm skillId={skill.id} /></AdminPageFrame>
+      <AdminPageFrame title="上传新版本" description={skill.name} contentLayout="form"><SkillVersionForm skillId={skill.id} /></AdminPageFrame>
     </AdminGuard>
   );
 }

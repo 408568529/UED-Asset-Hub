@@ -13,7 +13,7 @@ export function DeleteConfirmDialog({
   onConfirm: () => void;
 }) {
   return (
-    <AlertDialog label="确认删除资产">
+    <AlertDialog label="确认删除资产" onClose={onCancel}>
         <p className="font-mono text-xs uppercase tracking-[0.22em] text-muted-foreground">Delete Asset</p>
         <h2 className="mt-4 text-3xl font-black">确认删除该资产？</h2>
         <p className="mt-5 text-sm leading-7 text-muted-foreground">

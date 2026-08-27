@@ -8,7 +8,7 @@ import { Radio } from "@/components/ui/radio";
 export function TrainingDeleteDialog({ title, sourceMode, onCancel, onConfirm }: { title: string; sourceMode: "upload" | "server-local"; onCancel: () => void; onConfirm: (deleteFile: boolean) => void }) {
   const [deleteFile, setDeleteFile] = useState(false);
   return (
-    <AlertDialog label="确认删除培训资料" className="max-w-lg">
+    <AlertDialog label="确认删除培训资料" className="max-w-lg" onClose={onCancel}>
         <p className="font-mono text-xs uppercase tracking-[0.22em] text-muted-foreground">Delete Training</p>
         <h2 className="mt-4 text-2xl font-black">确认删除“{title}”？</h2>
         <div className="mt-6 space-y-3">

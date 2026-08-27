@@ -5,7 +5,7 @@ import { ProductForm } from "@/components/admin/ProductForm";
 export default function NewProductPage() {
   return (
     <AdminGuard>
-      <AdminPageFrame title="新建 Vibe Product"><ProductForm /></AdminPageFrame>
+      <AdminPageFrame title="新建 Vibe Product" contentLayout="form"><ProductForm /></AdminPageFrame>
     </AdminGuard>
   );
 }

@@ -10,6 +10,7 @@ import { promptService } from "@/services/promptService";
 import { skillService } from "@/services/skillService";
 import { sopService } from "@/services/sopService";
 import { trainingService } from "@/services/trainingService";
+import { markdownKnowledgeService } from "@/services/markdownKnowledgeService";
 
 function formatRelativeTime(value?: string) {
   if (!value) return "--";
@@ -21,7 +22,8 @@ function formatRelativeTime(value?: string) {
 }
 
 export default async function AdminPage() {
-  const [products, components, sops, skills, fonts, prompts, training] = await Promise.all([
+  const [markdownKnowledgeResult, products, components, sops, skills, fonts, prompts, training] = await Promise.all([
+    markdownKnowledgeService.list().catch(() => ({ documents: [], diagnostics: [] })),
     productService.getProducts(),
     componentSpecService.getComponents(),
     sopService.getSops(),
@@ -30,7 +32,8 @@ export default async function AdminPage() {
     promptService.getPrompts(),
     trainingService.getVideos()
   ]);
-  const managedAssets = [...products, ...components, ...sops, ...skills, ...fonts, ...prompts, ...training];
+  const markdownKnowledge = markdownKnowledgeResult.documents;
+  const managedAssets = [...markdownKnowledge, ...products, ...components, ...sops, ...skills, ...fonts, ...prompts, ...training];
   const monthStart = new Date();
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
@@ -44,6 +47,7 @@ export default async function AdminPage() {
           <AdminOverview assetTotal={managedAssets.length} monthlyNewCount={managedAssets.filter((asset) => new Date(asset.createdAt).getTime() >= monthStart.getTime()).length} lastUpdatedLabel={formatRelativeTime(latestUpdatedAt)} />
           <div className="admin-page-content">
             <AdminList
+              markdownKnowledge={markdownKnowledge}
               products={products}
               components={components}
               sops={sops}
@@ -51,7 +55,18 @@ export default async function AdminPage() {
               fonts={fonts}
               prompts={prompts}
               training={training}
-              categoryCounts={{ product: products.length, component: components.length, sop: sops.length, skill: skills.length, font: fonts.length, prompt: prompts.length, training: training.length }}
+              categoryCounts={{
+                knowledge: markdownKnowledge.filter((item) => item.documentType === "knowledge").length,
+                project: markdownKnowledge.filter((item) => item.documentType === "project").length,
+                "micro-spec": markdownKnowledge.filter((item) => item.documentType === "micro-spec").length,
+                product: products.length,
+                component: components.length,
+                sop: sops.length,
+                skill: skills.length,
+                font: fonts.length,
+                prompt: prompts.length,
+                training: training.length
+              }}
             />
           </div>
         </AdminWorkspace>

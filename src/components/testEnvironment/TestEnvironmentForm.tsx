@@ -57,7 +57,7 @@ export function TestEnvironmentForm({ environmentId }: { environmentId?: string 
   if (loading) return <p className="mt-10 text-muted-foreground">正在读取测试环境...</p>;
 
   return (
-    <form onSubmit={submit} className="workflow-form max-w-3xl space-y-6">
+    <form onSubmit={submit} className="workflow-form space-y-6">
       {toast ? <FormToast message={toast.message} tone={toast.tone} /> : null}
       <LabeledField label="产品名称" required><Input value={value.productName} onChange={(event) => update("productName", event.target.value)} required /></LabeledField>
       <LabeledField label="客户版本名称" required><Input value={value.clientVersionName} onChange={(event) => update("clientVersionName", event.target.value)} required /></LabeledField>

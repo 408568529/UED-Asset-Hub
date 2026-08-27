@@ -5,7 +5,7 @@ import { FontForm } from "@/components/admin/FontForm";
 export default function NewFontPage() {
   return (
     <AdminGuard>
-      <AdminPageFrame title="新建 Font Library"><FontForm /></AdminPageFrame>
+      <AdminPageFrame title="新建 Font Library" contentLayout="form"><FontForm /></AdminPageFrame>
     </AdminGuard>
   );
 }

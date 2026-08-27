@@ -3,5 +3,5 @@ import { AdminPageFrame } from "@/components/admin/AdminPageFrame";
 import { TestEnvironmentForm } from "@/components/testEnvironment/TestEnvironmentForm";
 
 export default function NewTestEnvironmentPage() {
-  return <AdminGuard><AdminPageFrame title="新建测试环境"><TestEnvironmentForm /></AdminPageFrame></AdminGuard>;
+  return <AdminGuard><AdminPageFrame title="新建测试环境" contentLayout="form" returnHref="/admin/test-environments" returnLabel="返回测试环境"><TestEnvironmentForm /></AdminPageFrame></AdminGuard>;
 }
