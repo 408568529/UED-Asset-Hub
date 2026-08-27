@@ -174,19 +174,6 @@ textarea {
     background: hsl(var(--primary) / 0.07);
   }
 
-  .library-row[data-pending="true"] {
-    cursor: progress;
-    background: hsl(var(--primary) / 0.12);
-  }
-
-  .library-row[data-pending="true"] .library-row-arrow {
-    display: none;
-  }
-
-  .library-row[data-pending="true"] .library-row-loading {
-    display: block;
-  }
-
   .markdown-editor {
     --crepe-color-background: hsl(var(--surface-raised));
     --crepe-color-on-background: hsl(var(--foreground));

@@ -166,9 +166,11 @@ export function MarkdownKnowledgeForm({ documentType, document, returnHref = "/k
         <LabeledField label="标签" hint="多个标签请使用逗号分隔"><Input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="例如：Portal, 表格" /></LabeledField>
       </div>
 
-      <LabeledField label="Markdown 正文" required hint="支持标准 Markdown 与 GFM 表格；详情页默认显示渲染视图。">
+      <div className="grid gap-[var(--field-label-gap)]">
+        <span className="text-[13px] font-bold leading-5 text-foreground">Markdown 正文<span className="ml-1 text-destructive">*</span></span>
         <MarkdownEditor markdown={content} onChange={setContent} />
-      </LabeledField>
+        <span className="text-[13px] leading-5 text-muted-foreground">支持标准 Markdown 与 GFM 表格；详情页默认显示渲染视图。</span>
+      </div>
 
       <div className="flex flex-wrap gap-3 border-t border-border pt-5">
         <Button type="submit" disabled={saving}>{saving ? "保存中…" : isEdit ? "保存修改" : isMicroSpec ? "创建微规范" : "创建文档"}</Button>
