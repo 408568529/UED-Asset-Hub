@@ -40,7 +40,7 @@ async function captureWarning(action: () => Promise<void>) {
 
 export const productService = {
   async getProducts(keyword?: string): Promise<Product[]> {
-    return getProductsWithReader(readJsonFile, keyword);
+    return getProductsWithReader(readJsonFileReadonly, keyword);
   },
 
   async getProductsForKnowledge(keyword?: string): Promise<Product[]> {
@@ -48,7 +48,7 @@ export const productService = {
   },
 
   async countProducts(): Promise<number> {
-    return (await readJsonFile<Product[]>(FILE_NAME, [])).length;
+    return (await readJsonFileReadonly<Product[]>(FILE_NAME, [])).length;
   },
 
   async createProduct(input: ProductInput, operator = "admin"): Promise<MutationResult<Product>> {
@@ -149,7 +149,7 @@ export const productService = {
   },
 
   async getProductById(id: string): Promise<Product | null> {
-    const products = await readJsonFile<Product[]>(FILE_NAME, []);
+    const products = await readJsonFileReadonly<Product[]>(FILE_NAME, []);
     return products.find((product) => product.id === id) ?? null;
   }
 };

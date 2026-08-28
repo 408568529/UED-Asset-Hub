@@ -1,9 +1,11 @@
 import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import { createServer } from "node:net";
-import { access, mkdir, readFile, stat } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { assertAgentRuntimeBoundary, isInside, runtimeEnvironmentProfiles } from "../agent-integration/scripts/runtime-boundary.mjs";
+import { validateDshSource } from "../agent-integration/scripts/dsh-source-validator.mjs";
 
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require("@next/env");
@@ -27,11 +29,6 @@ function getRequiredPath(name) {
   const value = process.env[name]?.trim();
   if (!value) fail(`缺少 ${name}。请在主机 .env.local 中配置。`);
   return path.resolve(value);
-}
-
-function isInside(parentPath, candidatePath) {
-  const relative = path.relative(parentPath, candidatePath);
-  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
 }
 
 async function requireExternalDirectory(name, { create = false } = {}) {
@@ -70,14 +67,19 @@ function assertNodeVersion() {
   if (major < 22 || (major === 22 && minor < 19)) fail(`Node.js ${process.versions.node} 不满足 DSH 需要的 22.19+。`);
 }
 
-function assertDshSource(sourceDir) {
+async function assertDshSource(sourceDir) {
   if (isInside(projectDir, sourceDir)) fail("DSH_SOURCE_DIR 必须位于 Asset Hub Git 目录外。");
-  const revision = spawnSync("git", ["-C", sourceDir, "rev-parse", "HEAD"], { encoding: "utf8" });
-  if (revision.status !== 0) fail(`无法读取 DSH_SOURCE_DIR 的 Git 版本：${sourceDir}`);
-  const actualCommit = revision.stdout.trim();
-  if (actualCommit !== expectedVersion.sourceCommit) {
-    fail(`DSH 固定版本不匹配。期望 ${expectedVersion.sourceCommit}，实际 ${actualCommit}。`);
-  }
+  try { return await validateDshSource(sourceDir, expectedVersion); } catch (error) { fail(error instanceof Error ? error.message : "DSH Source 校验失败。"); }
+}
+
+async function installRestrictedAgentPreset(agentRuntimeDir) {
+  const sourceDir = path.join(projectDir, "agent-integration", "dsh", "agent-presets", "asset-hub-restricted");
+  const destinationDir = path.join(agentRuntimeDir, "dsh-home", ".agent-presets", "asset-hub-restricted");
+  const sourceFiles = ["agent.cordis.yml", "preset.yml"];
+  for (const file of sourceFiles) await access(path.join(sourceDir, file));
+  await mkdir(destinationDir, { recursive: true });
+  await Promise.all(sourceFiles.map((file) => copyFile(path.join(sourceDir, file), path.join(destinationDir, file))));
+  return destinationDir;
 }
 
 async function assertPortAvailable(port, name) {
@@ -108,7 +110,7 @@ async function request(url, init) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 2_500);
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal, cache: "no-store" });
+    const response = await fetch(url, { ...init, headers: { Accept: "application/json, text/event-stream", ...init?.headers }, signal: controller.signal, cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response;
   } finally {
@@ -143,6 +145,11 @@ function startEdgeServer({ host, port, assetHubPort, proxyPort }) {
 
   edgeServer = http.createServer((request, response) => {
     const requestUrl = new URL(request.url || "/", "http://localhost");
+    if (requestUrl.pathname === "/api/knowledge-gateway" || requestUrl.pathname.startsWith("/api/knowledge-gateway/")) {
+      response.writeHead(404, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: { code: "not-found", message: "Not found." } }));
+      return;
+    }
     if (requestUrl.pathname === "/agent-runtime") {
       response.writeHead(308, { Location: "/agent-runtime/" });
       response.end();
@@ -199,7 +206,7 @@ function stopEdgeServer() {
 function startService(service) {
   const child = spawn(service.command, service.args, {
     cwd: service.cwd,
-    env: process.env,
+    env: service.env,
     stdio: "inherit",
     detached: process.platform !== "win32",
     shell: process.platform === "win32" && service.command.endsWith(".cmd")
@@ -261,7 +268,9 @@ async function main() {
 
   const dataDir = await requireExternalDirectory("DATA_DIR");
   const agentRuntimeDir = await requireExternalDirectory("AGENT_RUNTIME_DIR", { create: true });
+  await assertAgentRuntimeBoundary({ dataDir, agentRuntimeDir });
   await Promise.all(["dsh-home", "workspaces", "artifacts", "logs"].map((directory) => mkdir(path.join(agentRuntimeDir, directory), { recursive: true })));
+  const restrictedPresetDir = await installRestrictedAgentPreset(agentRuntimeDir);
   process.env.DSH_HOME = path.join(agentRuntimeDir, "dsh-home");
   process.env.DSH_TELEMETRY_DISABLED = "1";
   process.env.AGENT_WORKSPACE_ROOT = path.join(agentRuntimeDir, "workspaces");
@@ -270,7 +279,7 @@ async function main() {
   const trainingMediaDir = process.env.TRAINING_MEDIA_DIR?.trim();
   if (trainingMediaDir && isInside(projectDir, path.resolve(trainingMediaDir))) fail("TRAINING_MEDIA_DIR 必须位于 Git 代码目录外。");
   const dshSourceDir = getRequiredPath("DSH_SOURCE_DIR");
-  assertDshSource(dshSourceDir);
+  const dshIdentity = await assertDshSource(dshSourceDir);
 
   const dshUrl = parseDshUrl();
   const dshPort = Number.parseInt(dshUrl.port || "3080", 10);
@@ -278,13 +287,16 @@ async function main() {
   const proxyPort = parsePort("AGENT_PROXY_PORT", 3081);
   const hostPort = parsePort("HOST_PORT", 3027);
   const internalAssetHubPort = parsePort("HOST_INTERNAL_PORT", 3028);
+  const gatewayMcpPort = parsePort("KNOWLEDGE_GATEWAY_MCP_PORT", 3082);
   const hostBindHost = process.env.HOST_BIND_HOST || "0.0.0.0";
-  if (new Set([dshPort, proxyPort, hostPort, internalAssetHubPort]).size !== 4) fail("DSH、Agent Proxy、公开 Asset Hub 与内部 Asset Hub 必须使用不同端口。");
+  if (!process.env.AGENT_GATEWAY_TOKEN?.trim()) fail("缺少 AGENT_GATEWAY_TOKEN。Host Runner 需要独立的 Gateway 鉴权令牌。");
+  if (new Set([dshPort, proxyPort, hostPort, internalAssetHubPort, gatewayMcpPort]).size !== 5) fail("DSH、Agent Proxy、Gateway MCP、公开 Asset Hub 与内部 Asset Hub 必须使用不同端口。");
   await Promise.all([
     assertPortAvailable(dshPort, "DSH"),
     assertPortAvailable(proxyPort, "Agent Proxy"),
     assertPortAvailable(hostPort, "公开 Asset Hub"),
-    assertPortAvailable(internalAssetHubPort, "内部 Asset Hub")
+    assertPortAvailable(internalAssetHubPort, "内部 Asset Hub"),
+    assertPortAvailable(gatewayMcpPort, "Knowledge Gateway MCP")
   ]);
   try {
     await access(path.join(projectDir, ".next", "BUILD_ID"));
@@ -294,15 +306,33 @@ async function main() {
 
   console.log(`[Host Runner] DATA_DIR: ${dataDir}`);
   console.log(`[Host Runner] AGENT_RUNTIME_DIR: ${agentRuntimeDir}`);
+  console.log(`[Host Runner] Restricted Agent Preset: ${restrictedPresetDir}`);
+  console.log(`[Host Runner] DSH Source: ${dshIdentity.sourceType} ${dshIdentity.version} ${dshIdentity.fingerprint}`);
 
-  const workspacePickerOverlay = path.join(projectDir, "agent-integration", "dsh", "workspace-picker.overlay.yml");
-  const dsh = { label: "DSH Runtime", command: process.execPath, args: ["--import", "tsx/esm", "apps/cli/src/bin.ts", "web", "--patch", workspacePickerOverlay, "--host", "127.0.0.1", "--port", String(dshPort)], cwd: dshSourceDir, restartCount: 0 };
-  const proxy = { label: "Agent Proxy", command: process.execPath, args: ["agent-integration/scripts/start-agent-proxy.mjs"], cwd: projectDir, restartCount: 0 };
-  const assetHub = { label: "Asset Hub", command: process.execPath, args: ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(internalAssetHubPort)], cwd: projectDir, restartCount: 0 };
+  const restrictedProfile = path.join(projectDir, "agent-integration", "dsh", "asset-hub-agent.overlay.yml");
+  const runtimeValues = {
+    DSH_HOME: path.join(agentRuntimeDir, "dsh-home"),
+    DSH_TELEMETRY_DISABLED: "1",
+    AGENT_WORKSPACE_ROOT: path.join(agentRuntimeDir, "workspaces"),
+    AGENT_PROXY_HOST: "127.0.0.1",
+    AGENT_PROXY_BASE_PATH: "/agent-runtime",
+    ASSET_HUB_MCP_URL: `http://127.0.0.1:${gatewayMcpPort}/mcp`,
+    KNOWLEDGE_GATEWAY_MCP_PORT: String(gatewayMcpPort),
+    KNOWLEDGE_GATEWAY_INTERNAL_URL: `http://127.0.0.1:${internalAssetHubPort}`
+  };
+  const dsh = { label: "DSH Runtime", command: process.execPath, args: ["--import", "tsx/esm", "apps/cli/src/bin.ts", "web", "--patch", restrictedProfile, "--host", "127.0.0.1", "--port", String(dshPort)], cwd: dshSourceDir, restartCount: 0, env: runtimeEnvironmentProfiles.dsh(process.env, { DSH_HOME: runtimeValues.DSH_HOME, DSH_TELEMETRY_DISABLED: runtimeValues.DSH_TELEMETRY_DISABLED, AGENT_WORKSPACE_ROOT: runtimeValues.AGENT_WORKSPACE_ROOT, ASSET_HUB_MCP_URL: runtimeValues.ASSET_HUB_MCP_URL }) };
+  const proxy = { label: "Agent Proxy", command: process.execPath, args: ["agent-integration/scripts/start-agent-proxy.mjs"], cwd: projectDir, restartCount: 0, env: runtimeEnvironmentProfiles.agentProxy(process.env, { AGENT_PROXY_HOST: runtimeValues.AGENT_PROXY_HOST, AGENT_PROXY_BASE_PATH: runtimeValues.AGENT_PROXY_BASE_PATH, AGENT_WORKSPACE_ROOT: runtimeValues.AGENT_WORKSPACE_ROOT }) };
+  const assetHub = { label: "Asset Hub", command: process.execPath, args: ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(internalAssetHubPort)], cwd: projectDir, restartCount: 0, env: runtimeEnvironmentProfiles.assetHub(process.env) };
+  const gatewayMcp = { label: "Knowledge Gateway MCP", command: process.execPath, args: ["agent-integration/scripts/start-knowledge-gateway-mcp.mjs"], cwd: projectDir, restartCount: 0, env: runtimeEnvironmentProfiles.gatewayBridge(process.env, { KNOWLEDGE_GATEWAY_MCP_PORT: runtimeValues.KNOWLEDGE_GATEWAY_MCP_PORT, KNOWLEDGE_GATEWAY_INTERNAL_URL: runtimeValues.KNOWLEDGE_GATEWAY_INTERNAL_URL }) };
   services.set("dsh", dsh);
   services.set("proxy", proxy);
   services.set("assetHub", assetHub);
+  services.set("gatewayMcp", gatewayMcp);
 
+  startService(assetHub);
+  await waitFor("Asset Hub", () => request(`http://127.0.0.1:${internalAssetHubPort}/api/auth/session`));
+  startService(gatewayMcp);
+  await waitFor("Knowledge Gateway MCP", () => request(`http://127.0.0.1:${gatewayMcpPort}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "health", method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "host-runner", version: "2.1.0.1" } } }) }));
   startService(dsh);
   await waitFor("DSH Runtime", async () => {
     const response = await request(new URL("/api/session.list", dshUrl), {
@@ -317,10 +347,8 @@ async function main() {
   startService(proxy);
   await waitFor("Agent Proxy", () => request(`http://127.0.0.1:${proxyPort}/healthz`));
 
-  startService(assetHub);
-  await waitFor("Asset Hub", () => request(`http://127.0.0.1:${internalAssetHubPort}/`));
   await startEdgeServer({ host: hostBindHost, port: hostPort, assetHubPort: internalAssetHubPort, proxyPort });
-  await waitFor("Public Asset Hub", () => request(`http://127.0.0.1:${hostPort}/`));
+  await waitFor("Public Asset Hub", () => request(`http://127.0.0.1:${hostPort}/api/auth/session`));
   console.log(`[Host Runner] UED Asset Hub is ready at http://主机IP:${hostPort}`);
 }
 

@@ -1,5 +1,5 @@
 import { decryptServerValue, encryptServerValue } from "@/lib/serverEncryption";
-import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { operationLogService } from "@/services/operationLogService";
 import type { DeleteResult, MutationResult } from "@/types/serviceResult";
 import type { SafeTestEnvironment, TestEnvironment, TestEnvironmentInput } from "@/types/testEnvironment";
@@ -44,12 +44,12 @@ async function captureWarning(action: () => Promise<void>) {
 
 export const testEnvironmentService = {
   async getProducts() {
-    const environments = await readJsonFile<TestEnvironment[]>(FILE_NAME, []);
+    const environments = await readJsonFileReadonly<TestEnvironment[]>(FILE_NAME, []);
     return [...new Set(environments.map((item) => item.productName))].sort();
   },
 
   async getEnvironments(keyword?: string): Promise<SafeTestEnvironment[]> {
-    const environments = await readJsonFile<TestEnvironment[]>(FILE_NAME, []);
+    const environments = await readJsonFileReadonly<TestEnvironment[]>(FILE_NAME, []);
     return environments
       .filter((environment) => matches(environment, keyword))
       .sort(sortEnvironments)
@@ -57,13 +57,13 @@ export const testEnvironmentService = {
   },
 
   async getEnvironmentById(id: string) {
-    const environments = await readJsonFile<TestEnvironment[]>(FILE_NAME, []);
+    const environments = await readJsonFileReadonly<TestEnvironment[]>(FILE_NAME, []);
     const environment = environments.find((item) => item.id === id);
     return environment ? toSafe(environment) : null;
   },
 
   async countEnvironments() {
-    return (await readJsonFile<TestEnvironment[]>(FILE_NAME, [])).length;
+    return (await readJsonFileReadonly<TestEnvironment[]>(FILE_NAME, [])).length;
   },
 
   async createEnvironment(input: TestEnvironmentInput, operator = "admin"): Promise<MutationResult<SafeTestEnvironment>> {

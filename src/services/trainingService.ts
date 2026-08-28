@@ -103,7 +103,7 @@ async function getVideosWithReader(reader: typeof readJsonFile, filters?: { keyw
 
 export const trainingService = {
   async getGroups() {
-    return (await readJsonFile<TrainingGroup[]>(GROUPS_FILE, [])).sort((a, b) => a.name.localeCompare(b.name));
+    return (await readJsonFileReadonly<TrainingGroup[]>(GROUPS_FILE, [])).sort((a, b) => a.name.localeCompare(b.name));
   },
 
   async getFolders(keyword?: string): Promise<TrainingFolder[]> {
@@ -139,7 +139,7 @@ export const trainingService = {
   },
 
   async getTopics(groupId?: string) {
-    return (await readJsonFile<TrainingTopic[]>(TOPICS_FILE, [])).filter((topic) => !groupId || topic.groupId === groupId).sort((a, b) => a.name.localeCompare(b.name));
+    return (await readJsonFileReadonly<TrainingTopic[]>(TOPICS_FILE, [])).filter((topic) => !groupId || topic.groupId === groupId).sort((a, b) => a.name.localeCompare(b.name));
   },
 
   async createGroup(name: string) {
@@ -166,7 +166,7 @@ export const trainingService = {
   },
 
   async getVideos(filters?: { keyword?: string; groupId?: string }) {
-    return getVideosWithReader(readJsonFile, filters);
+    return getVideosWithReader(readJsonFileReadonly, filters);
   },
 
   async getVideosForKnowledge(filters?: { keyword?: string; groupId?: string }) {
@@ -360,7 +360,7 @@ export const trainingService = {
   },
 
   async getUploadTask(id: string) {
-    return (await readJsonFile<TrainingUploadTask[]>(TASKS_FILE, [])).find((task) => task.id === id) ?? null;
+    return (await readJsonFileReadonly<TrainingUploadTask[]>(TASKS_FILE, [])).find((task) => task.id === id) ?? null;
   },
 
   async upsertUploadTask(task: TrainingUploadTask) {

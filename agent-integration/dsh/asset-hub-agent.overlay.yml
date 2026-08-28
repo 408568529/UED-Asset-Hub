@@ -1,0 +1,22 @@
+# Gateway-only profile: DSH receives no formal-data paths or credentials.
+# The official CLI keeps its shipped preset root and appends DSH_HOME's user
+# preset root. Host Runner installs the Asset Hub-owned preset there.
+- id: directory-picker
+  disabled: true
+- id: agent-presets
+  config:
+    default: asset-hub-restricted
+    includeUserRoot: true
+- insert:
+    - id: directory-picker-browse
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+    - id: ui-directory-picker-browse
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
+    - id: mcp-asset-hub-knowledge
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: asset_hub
+        transport: streamable-http
+        url: !!js process.env.ASSET_HUB_MCP_URL
+        toolCallTimeoutMs: 15000
+        failOnStartupError: true

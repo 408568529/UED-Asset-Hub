@@ -38,7 +38,7 @@ async function captureWarning(action: () => Promise<void>) {
 
 export const sopService = {
   async getSops(keyword?: string): Promise<Sop[]> {
-    return getSopsWithReader(readJsonFile, keyword);
+    return getSopsWithReader(readJsonFileReadonly, keyword);
   },
 
   async getSopsForKnowledge(keyword?: string): Promise<Sop[]> {
@@ -46,11 +46,11 @@ export const sopService = {
   },
 
   async countSops(): Promise<number> {
-    return (await readJsonFile<Sop[]>(FILE_NAME, [])).length;
+    return (await readJsonFileReadonly<Sop[]>(FILE_NAME, [])).length;
   },
 
   async getSopById(id: string): Promise<Sop | null> {
-    const sops = await readJsonFile<Sop[]>(FILE_NAME, []);
+    const sops = await readJsonFileReadonly<Sop[]>(FILE_NAME, []);
     return sops.find((sop) => sop.id === id) ?? null;
   },
 

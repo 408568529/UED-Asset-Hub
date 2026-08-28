@@ -1,4 +1,4 @@
-import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import type { OperationLog } from "@/types/audit";
 
 const FILE_NAME = "logs.json";
@@ -7,7 +7,7 @@ type OperationLogInput = Omit<OperationLog, "id" | "createdAt"> & { createdAt?: 
 
 export const operationLogService = {
   async getLogs(limit?: number): Promise<OperationLog[]> {
-    const logs = await readJsonFile<OperationLog[]>(FILE_NAME, []);
+    const logs = await readJsonFileReadonly<OperationLog[]>(FILE_NAME, []);
     const result = logs.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
     return limit ? result.slice(0, limit) : result;
   },

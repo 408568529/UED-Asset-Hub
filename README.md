@@ -161,22 +161,17 @@ AGENT_PROXY_HOST=127.0.0.1
 HOST_BIND_HOST=0.0.0.0
 HOST_PORT=3027
 HOST_INTERNAL_PORT=3028
+AGENT_GATEWAY_TOKEN=<long-random-server-only-token>
+KNOWLEDGE_GATEWAY_MCP_PORT=3082
 ```
 
-先在 Asset Hub Git 仓库外准备固定版本的 DSH 源码，再启动 DSH（Windows PowerShell）：
+先在 Asset Hub Git 仓库外准备固定版本的 DSH 源码（Windows PowerShell）：
 
 ```powershell
 .\agent-integration\scripts\setup-dsh.ps1 -DshSourceDir "D:\UED-Asset-Hub-DSH\deepseek-harness"
-.\agent-integration\scripts\start-dsh.ps1 -RuntimeDir "D:\UED-Asset-Hub\agent-data" -DshSourceDir "D:\UED-Asset-Hub-DSH\deepseek-harness"
 ```
 
-在另一个 PowerShell 窗口启动官方 Web UI 的受保护代理：
-
-```powershell
-npm run start:agent-proxy
-```
-
-DSH 和 Agent Proxy 都只监听主机本机回环地址（分别为 `127.0.0.1:3080`、`127.0.0.1:3081`）。正式运行时 Host Runner 将 `/agent-runtime` 同源转发到 Proxy，验证 Asset Hub 管理员会话后才转发官方 DSH Web UI、HTTP 请求和 WebSocket 事件流；浏览器不会直接访问 DSH 或 Proxy。`/agent` 会自动嵌入该官方工作台，保留 DSH 的字体、布局、控件、动效与交互，只将品牌强调色映射为 Asset Hub 绿色。
+DSH 和 Agent Proxy 都只监听主机本机回环地址（分别为 `127.0.0.1:3080`、`127.0.0.1:3081`）。从 V2.1.0.1 起应仅使用 Host Runner 启动完整的 `Asset Hub -> Gateway MCP -> DSH -> Proxy` 链路；独立的 `start-dsh.ps1` 只保留诊断用途，且必须已提供本机 MCP URL。正式运行时 Host Runner 将 `/agent-runtime` 同源转发到 Proxy，验证 Asset Hub 管理员会话后才转发官方 DSH Web UI、HTTP 请求和 WebSocket 事件流；浏览器不会直接访问 DSH 或 Proxy。`/agent` 会自动嵌入该官方工作台，保留 DSH 的字体、布局、控件、动效与交互，只将品牌强调色映射为 Asset Hub 绿色。
 
 再启动 Asset Hub 后，以管理员身份访问 `/agent`。运行状态检查：
 
@@ -184,7 +179,9 @@ DSH 和 Agent Proxy 都只监听主机本机回环地址（分别为 `127.0.0.1:
 npm run verify:agent-runtime
 ```
 
-`agent-data` 与 `DATA_DIR` 完全分开：前者保存 DSH Session、附件、Workspace 与后续 Artifact，后者仅保存正式资产数据。两者均在 Git 仓库外，执行 `git pull` 更新代码不会覆盖。
+`agent-data` 与 `DATA_DIR` 必须是互不包含的真实目录：前者保存 DSH Session、附件、Workspace 与后续 Artifact，后者仅保存正式资产数据。Host Runner 通过 `realpath` 再次校验；`KNOWLEDGE_DIR` 固定为 `DATA_DIR/knowledge`，不允许落入 Agent Runtime。两者均在 Git 仓库外，执行 `git pull` 更新代码不会覆盖。
+
+V2.1.0.1 的 Knowledge Gateway 仅通过本机 MCP Bridge 向 DSH 暴露 `search_knowledge`、`search_micro_specs`、`get_knowledge_asset` 三个只读工具。Gateway token 只交给 Asset Hub 与 Bridge；DSH、Agent Proxy 和浏览器均不接收。公开端口拒绝 `/api/knowledge-gateway/*`，Bridge 从 `127.0.0.1:3028` 的内部 Asset Hub 调用鉴权 API。
 
 ## Windows 主机正式运行
 
@@ -194,7 +191,9 @@ npm run verify:agent-runtime
 npm run start:host
 ```
 
-Host Runner 会在启动前检查仓库外的 `DATA_DIR`、`AGENT_RUNTIME_DIR`、`DSH_SOURCE_DIR`、固定 DSH 提交、生产构建和四个端口；它仅接受 `DSH_BASE_URL=http://127.0.0.1:3080`，然后依次启动 `DSH Runtime -> Agent Proxy -> Asset Hub`，并在公开的 Asset Hub 端口同源转发 `/agent-runtime`。任何一个子进程异常退出都会按最多 30 秒的退避间隔自动重启；按 `Ctrl + C` 会统一停止三者。正式用户只需访问 `http://主机IP:3027`。
+Host Runner 会在启动前检查仓库外且互不包含的 `DATA_DIR`、`AGENT_RUNTIME_DIR`、`DSH_SOURCE_DIR`、固定 DSH 提交、生产构建和五个端口；它以最小环境白名单依次启动 `Asset Hub -> Knowledge Gateway MCP -> DSH Runtime -> Agent Proxy`，并在公开的 Asset Hub 端口同源转发 `/agent-runtime`。DSH 使用 Gateway-only Profile：保留会话、受 Proxy 限制的 Workspace 选择与 MCP，不加载通用 Bash、文件系统、文件搜索和编辑器工具。任何一个子进程异常退出都会按最多 30 秒的退避间隔自动重启；按 `Ctrl + C` 会统一停止四者。正式用户只需访问 `http://主机IP:3027`。
+
+生产 Windows 主机还应使用独立的非管理员服务账号运行 Host Runner：仅授予该账号 `AGENT_RUNTIME_DIR` 的读写权限；将 `DATA_DIR`（含 `knowledge/`）、DSH 源码、项目 `.env.local` 和其他业务目录从该账号 ACL 中移除。不要依赖 DSH cwd 作为文件隔离边界。
 
 Windows 可使用任务计划程序创建开机或登录后自动启动任务：
 

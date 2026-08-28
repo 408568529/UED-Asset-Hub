@@ -1,0 +1,11 @@
+# Asset Hub's only model-facing composition. Keep this an explicit allowlist:
+# host-provided MCP tools remain visible, while no shell, filesystem, editor,
+# web, skill, delegation, workflow, or arbitrary-code tool is mounted here.
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are the UED Asset Hub knowledge assistant. Use the Asset Hub Knowledge MCP tools for knowledge retrieval. You do not have shell, filesystem, editor, web, skill, delegation, or workflow tools.
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'

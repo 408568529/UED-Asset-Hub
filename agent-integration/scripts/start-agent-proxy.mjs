@@ -32,6 +32,7 @@ const sessionSecret = process.env.ADMIN_SESSION_SECRET || `${username}:${passwor
 const agentRuntimeDir = process.env.AGENT_RUNTIME_DIR?.trim();
 if (!agentRuntimeDir) throw new Error("AGENT_RUNTIME_DIR must be configured before starting the Agent Proxy.");
 const workspaceRoot = path.resolve(process.env.AGENT_WORKSPACE_ROOT || path.join(agentRuntimeDir, "workspaces"));
+const restrictedPreset = "asset-hub-restricted";
 await mkdir(workspaceRoot, { recursive: true });
 const workspaceRootRealPath = await realpath(workspaceRoot);
 
@@ -309,6 +310,34 @@ async function handleManagedWorkspaceRequest(request, response, url) {
   }
 }
 
+async function handlePresetBoundaryRequest(request, response, url) {
+  if (request.method !== "POST") return false;
+  if (url.pathname !== "/api/session.create" && url.pathname !== "/api/agentPreset.select") return false;
+
+  let payload;
+  try {
+    payload = await readJson(request);
+  } catch {
+    rpcError(response, null, "bad-request", "无法读取 Agent Preset 请求。", { issues: [] });
+    return true;
+  }
+
+  if (url.pathname === "/api/session.create") {
+    await forwardRpcRequest(url, {
+      ...payload,
+      payload: { ...(payload?.payload || {}), agentPreset: restrictedPreset }
+    }, response);
+    return true;
+  }
+
+  if (payload?.payload?.agentPreset !== restrictedPreset) {
+    rpcError(response, payload, "agent-preset-restricted", "悠鼎 Agent 只允许使用 asset-hub-restricted 预设。", { agentPreset: payload?.payload?.agentPreset, required: restrictedPreset });
+    return true;
+  }
+  await forwardRpcRequest(url, payload, response);
+  return true;
+}
+
 const proxy = httpProxy.createProxyServer({ changeOrigin: true, selfHandleResponse: true, ws: true });
 
 proxy.on("proxyRes", (proxyResponse, request, response) => {
@@ -354,6 +383,7 @@ const server = http.createServer(async (request, response) => {
     response.end(brandScript);
     return;
   }
+  if (await handlePresetBoundaryRequest(request, response, url)) return;
   if (await handleManagedWorkspaceRequest(request, response, url)) return;
   proxy.web(request, response, { target: target.origin, headers: { origin: target.origin, referer: `${target.origin}/` } });
 });

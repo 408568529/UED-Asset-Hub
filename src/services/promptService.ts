@@ -38,7 +38,7 @@ async function captureWarning(action: () => Promise<void>) {
 
 export const promptService = {
   async getPrompts(keyword?: string): Promise<PromptAsset[]> {
-    return getPromptsWithReader(readJsonFile, keyword);
+    return getPromptsWithReader(readJsonFileReadonly, keyword);
   },
 
   async getPromptsForKnowledge(keyword?: string): Promise<PromptAsset[]> {
@@ -46,11 +46,16 @@ export const promptService = {
   },
 
   async countPrompts() {
-    return (await readJsonFile<PromptAsset[]>(FILE_NAME, [])).length;
+    return (await readJsonFileReadonly<PromptAsset[]>(FILE_NAME, [])).length;
   },
 
   async getPromptById(id: string) {
-    const prompts = await readJsonFile<PromptAsset[]>(FILE_NAME, []);
+    const prompts = await readJsonFileReadonly<PromptAsset[]>(FILE_NAME, []);
+    return prompts.find((prompt) => prompt.id === id) ?? null;
+  },
+
+  async getPromptForKnowledgeById(id: string) {
+    const prompts = await readJsonFileReadonly<PromptAsset[]>(FILE_NAME, []);
     return prompts.find((prompt) => prompt.id === id) ?? null;
   },
 
