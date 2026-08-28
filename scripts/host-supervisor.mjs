@@ -19,6 +19,16 @@ const projectDir = process.cwd();
 const loopbackHosts = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
 function fail(message) { throw new Error(`[Host Supervisor] ${message}`); }
+export function createSharedShutdown(run) {
+  let shutdownPromise = null;
+  return (...args) => {
+    if (!shutdownPromise) {
+      try { shutdownPromise = Promise.resolve(run(...args)); }
+      catch (error) { shutdownPromise = Promise.reject(error); }
+    }
+    return shutdownPromise;
+  };
+}
 function value(name) { return process.env[name]?.trim() || ""; }
 function requiredPath(name) { const raw = value(name); if (!raw) fail(`缺少 ${name}。`); return path.resolve(raw); }
 function optionalPath(name) { const raw = value(name); return raw ? path.resolve(raw) : null; }
@@ -149,6 +159,9 @@ export async function main() {
   let stopping = false;
   let runtimePaths = null;
   let releaseLock = async () => {};
+  const logLifecycle = (event) => {
+    void appendLifecycleLog(runtimePaths, event).catch((error) => console.error(`[Host Supervisor] Lifecycle log write failed: ${error instanceof Error ? error.message : error}`));
+  };
   if (agentRuntimeDir) {
     const inspected = await inspectRuntimePaths({ dataDir, agentRuntimeDir }).catch(() => null);
     if (inspected?.directories?.supervisor) {
@@ -161,8 +174,12 @@ export async function main() {
   const controller = new ManagedProcessController({
     supervisorInstanceId: instanceId,
     metadataPath: runtimePaths ? managedMetadataPath(runtimePaths.directories) : undefined,
+    onPersistenceError: (error) => {
+      console.error(`[Host Supervisor] Managed process metadata write failed: ${error instanceof Error ? error.message : error}`);
+      logLifecycle({ status: "metadata_persistence_failed", reasonCode: "metadata_persistence_failed" });
+    },
     onProcessEvent: (event) => {
-      void appendLifecycleLog(runtimePaths, { component: event.component, pid: event.record?.pid, generation: event.generation, status: event.type, reasonCode: event.intentional ? "intentional_stop" : null });
+      logLifecycle({ component: event.component, pid: event.record?.pid, generation: event.generation, status: event.type, reasonCode: event.intentional ? "intentional_stop" : null });
       if (stopping || event.type !== "exit") return;
       if (event.component === "assetHub") {
         controller.scheduleRestart("assetHub", async () => { try { await controller.start("assetHub", specifications.assetHub); await waitFor("Asset Hub", () => request(`http://127.0.0.1:${internalPort}/api/auth/session`)); } catch (error) { console.error(`[Host Supervisor] Asset Hub recovery failed: ${error instanceof Error ? error.message : error}`); } }, 1_000);
@@ -234,7 +251,7 @@ export async function main() {
     },
     stopComponents: async (components = ["proxy", "dsh", "gateway"]) => { for (const component of components) await controller.stop(component); },
     onStateChange: (state) => {
-      void appendLifecycleLog(runtimePaths, { ...state, dshCommit: expectedVersion.sourceCommit, health: state.status === "ready" ? "pass" : null });
+      logLifecycle({ ...state, dshCommit: expectedVersion.sourceCommit, health: state.status === "ready" ? "pass" : null });
       console.log(`[Host Supervisor] Agent Runtime ${state.status}${state.phase ? ` (${state.phase})` : ""}${state.reasonCode ? `: ${state.reasonCode}` : ""}.`);
     }
   });
@@ -248,16 +265,29 @@ export async function main() {
   console.log(`[Host Supervisor] Asset Hub Shell is ready at http://主机IP:${publicPort}.`);
   const state = await core.ensureReady();
   if (state.status !== "ready") console.error(`[Host Supervisor] Agent Runtime is ${state.status}${state.reasonCode ? `: ${state.reasonCode}` : ""}. Asset Hub Shell remains available.`);
-  const shutdown = async (signal, exitCode = 0) => {
-    if (stopping) return;
+  const shutdown = createSharedShutdown(async (signal, exitCode = 0) => {
     stopping = true;
-    console.log(`\n[Host Supervisor] Received ${signal}. Stopping managed services...`);
-    await core.stopForShutdown();
-    await edge.stop();
-    await controller.stopAll(["assetHub"]);
-    await releaseLock();
-    process.exit(exitCode);
+    controller.beginShutdown();
+    let releaseAllowed = false;
+    try {
+      console.log(`\n[Host Supervisor] Received ${signal}. Stopping managed services...`);
+      await core.stopForShutdown();
+      await edge.stop();
+      await controller.stopAll(["assetHub"]);
+      await controller.flushMetadata();
+      controller.assertAllExited();
+      releaseAllowed = true;
+    } finally {
+      if (releaseAllowed) await releaseLock();
+    }
+    return exitCode;
+  });
+  const handleSignal = (signal) => {
+    void shutdown(signal).then((exitCode) => process.exit(exitCode)).catch((error) => {
+      console.error(`[Host Supervisor] Shutdown failed: ${error instanceof Error ? error.message : error}`);
+      process.exitCode = 1;
+    });
   };
-  process.on("SIGINT", () => { void shutdown("SIGINT"); });
-  process.on("SIGTERM", () => { void shutdown("SIGTERM"); });
+  process.on("SIGINT", () => handleSignal("SIGINT"));
+  process.on("SIGTERM", () => handleSignal("SIGTERM"));
 }

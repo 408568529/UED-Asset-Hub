@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdtemp, mkdir, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { ManagedProcessController, assertNoLiveManagedOrphans } from "./managed-process-controller.mjs";
 import { RuntimeLifecycleCore } from "./runtime-lifecycle-core.mjs";
 import { ensureRuntimePaths, inspectRuntimePaths } from "./runtime-path-safety.mjs";
 import { acquireSupervisorLock } from "./supervisor-lock.mjs";
+import { createSharedShutdown } from "./host-supervisor.mjs";
 
 function runtime({ credentialStatus = "configured" } = {}) {
   return { dsh: true, gateway: true, proxy: true, mcp: true, credentialStatus };
@@ -69,6 +70,28 @@ async function testRecoveryAndGeneration() {
   assert.deepEqual(value.starts, ["prepare", "gateway", "dsh", "proxy"]);
 }
 
+async function testShutdownDuringStart() {
+  let releasePrepare;
+  const starts = [];
+  const stops = [];
+  const core = new RuntimeLifecycleCore({
+    controller: { get: () => ({ generation: 1 }) },
+    inspectStatic: async () => ({ ok: true }),
+    inspectRuntime: async () => runtime(),
+    prepareRuntime: async () => { starts.push("prepare"); await new Promise((resolve) => { releasePrepare = resolve; }); },
+    startComponent: async (component) => { starts.push(component); },
+    stopComponents: async () => { stops.push("agent"); }
+  });
+  const starting = core.ensureReady();
+  await new Promise((resolve) => setImmediate(resolve));
+  const stopping = core.stopForShutdown();
+  releasePrepare();
+  await Promise.all([starting, stopping]);
+  assert.deepEqual(starts, ["prepare"], "shutdown barrier prevents the next Runtime component from starting");
+  assert.deepEqual(stops, ["agent"], "shutdown still stops confirmed Runtime components");
+  assert.equal((await core.ensureReady()).status, "starting", "shutdown refuses a new Lifecycle start");
+}
+
 async function testSupervisorLock() {
   const root = await mkdtemp(path.join(os.tmpdir(), "ued-supervisor-lock-"));
   const lockPath = path.join(root, "supervisor-lock.json");
@@ -86,6 +109,10 @@ async function testOrphanMetadataFailsClosed() {
 }
 
 async function testControllerShutdown() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ued-controller-shutdown-"));
+  const metadataPath = path.join(root, "managed-processes.json");
+  const lockPath = path.join(root, "supervisor-lock.json");
+  const releaseLock = await acquireSupervisorLock({ lockPath, instanceId: "test" });
   const children = [];
   const spawnImpl = () => {
     const child = new EventEmitter();
@@ -96,13 +123,76 @@ async function testControllerShutdown() {
     return child;
   };
   const events = [];
-  const controller = new ManagedProcessController({ supervisorInstanceId: "test", spawnImpl, platform: "darwin", onProcessEvent: (event) => events.push(event) });
-  await controller.start("dsh", { command: "node", args: [], cwd: process.cwd(), env: process.env });
+  const controller = new ManagedProcessController({ supervisorInstanceId: "test", metadataPath, spawnImpl, platform: "darwin", onProcessEvent: (event) => events.push(event) });
+  for (const component of ["assetHub", "gateway", "dsh", "proxy"]) await controller.start(component, { command: "node", args: [], cwd: process.cwd(), env: process.env });
   controller.scheduleRestart("dsh", () => { throw new Error("shutdown restart timer was not cancelled"); }, 5);
-  await controller.stopAll(["dsh"]);
+  const firstShutdown = controller.stopAll(["proxy", "dsh", "gateway", "assetHub"]);
+  const secondShutdown = controller.stopAll(["proxy", "dsh", "gateway", "assetHub"]);
+  await Promise.all([firstShutdown, secondShutdown]);
   await new Promise((resolve) => setTimeout(resolve, 15));
-  assert.equal(controller.isRunning("dsh"), false);
-  assert.equal(events.filter((event) => event.type === "exit").length, 1, "exit is emitted once even when multiple child events are possible");
+  controller.assertAllExited();
+  assert.equal(events.filter((event) => event.type === "exit").length, 4, "each confirmed child exits exactly once during repeated shutdown");
+  assert.equal(controller.restartTimers.size, 0, "shutdown cancels all restart timers");
+  const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+  assert.equal(metadata.processes.every((record) => record.managedState === "exited" && record.running === false), true, "final metadata accurately records exited processes");
+  await readFile(lockPath, "utf8");
+  await releaseLock();
+  await rm(root, { recursive: true, force: true });
+}
+
+async function testMetadataPersistence() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ued-controller-metadata-"));
+  const metadataPath = path.join(root, "managed-processes.json");
+  const children = [];
+  const spawnImpl = () => {
+    const child = new EventEmitter();
+    child.pid = 5000 + children.length;
+    child.exitCode = null;
+    child.kill = () => { child.exitCode = 0; queueMicrotask(() => child.emit("exit", 0, "SIGTERM")); return true; };
+    children.push(child);
+    return child;
+  };
+  const persistenceErrors = [];
+  const controller = new ManagedProcessController({ supervisorInstanceId: "test", metadataPath, spawnImpl, platform: "darwin", onPersistenceError: (error) => persistenceErrors.push(error) });
+  await Promise.all(["gateway", "dsh", "proxy"].map((component) => controller.start(component, { command: "node", args: [], cwd: process.cwd(), env: process.env })));
+  for (const child of children) { child.exitCode = 0; child.emit("exit", 0, "SIGTERM"); }
+  await controller.flushMetadata();
+  const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+  assert.equal(metadata.processes.every((record) => record.managedState === "exited" && record.running === false), true, "concurrent exit persistence is serialized and ordered");
+  assert.deepEqual(persistenceErrors, []);
+
+  const failingChildren = [];
+  const failingSpawn = () => {
+    const child = new EventEmitter();
+    child.pid = 6000 + failingChildren.length;
+    child.exitCode = null;
+    child.kill = () => true;
+    failingChildren.push(child);
+    return child;
+  };
+  const failingRoot = await mkdtemp(path.join(os.tmpdir(), "ued-controller-persist-failure-"));
+  const failingController = new ManagedProcessController({ supervisorInstanceId: "test", metadataPath: path.join(failingRoot, "managed-processes.json"), spawnImpl: failingSpawn, platform: "darwin", onPersistenceError: (error) => persistenceErrors.push(error) });
+  await failingController.start("dsh", { command: "node", args: [], cwd: process.cwd(), env: process.env });
+  failingController.fileSystem = { writeFile: async () => { throw new Error("test persistence failure"); }, rename };
+  let unhandled = null;
+  const observeUnhandled = (error) => { unhandled = error; };
+  process.once("unhandledRejection", observeUnhandled);
+  failingChildren[0].exitCode = 0;
+  failingChildren[0].emit("exit", 0, "SIGTERM");
+  await new Promise((resolve) => setImmediate(resolve));
+  process.removeListener("unhandledRejection", observeUnhandled);
+  assert.equal(unhandled, null, "exit persistence failure never becomes an unhandled rejection");
+  assert.equal(persistenceErrors.length > 0, true, "exit persistence failure is reported to Supervisor");
+  await rm(failingRoot, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true });
+}
+
+async function testSharedShutdownPromise() {
+  let calls = 0;
+  const shutdown = createSharedShutdown(async () => { calls += 1; await new Promise((resolve) => setTimeout(resolve, 5)); return "done"; });
+  const [first, second, third] = await Promise.all([shutdown("SIGTERM"), shutdown("SIGINT"), shutdown("SIGTERM")]);
+  assert.equal(calls, 1, "repeated shutdown calls share one teardown chain");
+  assert.deepEqual([first, second, third], ["done", "done", "done"]);
 }
 
 async function testRuntimePathSafety() {
@@ -123,7 +213,10 @@ async function testRuntimePathSafety() {
 
 await testLifecycleStates();
 await testRecoveryAndGeneration();
+await testShutdownDuringStart();
 await testControllerShutdown();
+await testMetadataPersistence();
+await testSharedShutdownPromise();
 await testRuntimePathSafety();
 await testSupervisorLock();
 await testOrphanMetadataFailsClosed();

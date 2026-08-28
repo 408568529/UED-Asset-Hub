@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -7,19 +8,22 @@ function delay(milliseconds) {
 }
 
 export class ManagedProcessController {
-  constructor({ supervisorInstanceId, metadataPath, onProcessEvent = () => {}, spawnImpl = spawn, platform = process.platform } = {}) {
+  constructor({ supervisorInstanceId, metadataPath, onProcessEvent = () => {}, onPersistenceError = () => {}, spawnImpl = spawn, platform = process.platform, fileSystem = { writeFile, rename } } = {}) {
     this.supervisorInstanceId = supervisorInstanceId;
     this.metadataPath = metadataPath;
     this.onProcessEvent = onProcessEvent;
+    this.onPersistenceError = onPersistenceError;
     this.spawnImpl = spawnImpl;
     this.platform = platform;
+    this.fileSystem = fileSystem;
     this.records = new Map();
     this.restartTimers = new Map();
     this.shuttingDown = false;
+    this.persistenceQueue = Promise.resolve();
   }
 
   snapshot() {
-    return [...this.records.values()].map(({ child, exitPromise, ...record }) => ({ ...record, running: Boolean(child && child.exitCode === null) }));
+    return [...this.records.values()].map(({ child, exitPromise, exitPersistence, ...record }) => ({ ...record, running: record.managedState !== "exited" && Boolean(child && child.exitCode === null) }));
   }
 
   get(component) {
@@ -39,9 +43,28 @@ export class ManagedProcessController {
   async persistMetadata() {
     if (!this.metadataPath) return;
     const payload = JSON.stringify({ version: 1, supervisorInstanceId: this.supervisorInstanceId, processes: this.snapshot() }, null, 2);
-    const temporaryPath = `${this.metadataPath}.next`;
-    await writeFile(temporaryPath, payload, { mode: 0o600 });
-    await rename(temporaryPath, this.metadataPath);
+    const temporaryPath = `${this.metadataPath}.${randomUUID()}.next`;
+    const persist = async () => {
+      await this.fileSystem.writeFile(temporaryPath, payload, { mode: 0o600 });
+      await this.fileSystem.rename(temporaryPath, this.metadataPath);
+    };
+    const task = this.persistenceQueue.then(persist, persist);
+    this.persistenceQueue = task.catch((error) => { this.onPersistenceError(error); });
+    return task;
+  }
+
+  async flushMetadata() {
+    await this.persistenceQueue;
+  }
+
+  beginShutdown() {
+    this.shuttingDown = true;
+    this.cancelAllRestarts();
+  }
+
+  assertAllExited() {
+    const active = [...this.records.values()].filter((record) => record.managedState !== "exited" && record.child?.exitCode === null);
+    if (active.length > 0) throw new Error(`受管进程尚未全部退出：${active.map((record) => record.component).join(", ")}。`);
   }
 
   async start(component, specification) {
@@ -72,8 +95,8 @@ export class ManagedProcessController {
     const emitExit = (reason) => {
       if (this.records.get(component) !== record || record.managedState === "exited") return;
       record.managedState = "exited";
+      record.exitPersistence = Promise.resolve(this.persistMetadata()).catch(() => {});
       resolveExit?.();
-      void this.persistMetadata();
       this.onProcessEvent({ type: "exit", component, generation, intentional: record.intentionalStop === true, record: this.publicRecord(record), ...reason });
     };
     child.once("error", (error) => emitExit({ error: error.message }));
@@ -83,8 +106,8 @@ export class ManagedProcessController {
     return record;
   }
 
-  publicRecord({ child, exitPromise, ...record }) {
-    return { ...record, running: Boolean(child && child.exitCode === null) };
+  publicRecord({ child, exitPromise, exitPersistence, ...record }) {
+    return { ...record, running: record.managedState !== "exited" && Boolean(child && child.exitCode === null) };
   }
 
   scheduleRestart(component, callback, delayMs) {
@@ -110,15 +133,22 @@ export class ManagedProcessController {
     this.cancelRestart(component);
     const record = this.records.get(component);
     if (!record?.child || record.child.exitCode !== null) return;
+    if (record.managedState === "stopping") {
+      await record.exitPromise;
+      await record.exitPersistence;
+      return;
+    }
     record.intentionalStop = true;
     record.managedState = "stopping";
-    await this.persistMetadata();
+    await this.persistMetadata().catch(() => {});
     this.sendGracefulStop(record);
     const exited = await Promise.race([record.exitPromise.then(() => true), delay(timeoutMs).then(() => false)]);
     if (!exited && this.records.get(component) === record) {
       this.forceStop(record);
-      await Promise.race([record.exitPromise, delay(2_000)]);
+      const forcedExit = await Promise.race([record.exitPromise.then(() => true), delay(2_000).then(() => false)]);
+      if (!forcedExit) throw new Error(`已确认归属的 ${component} 进程未在强制停止后退出。`);
     }
+    await record.exitPersistence;
   }
 
   sendGracefulStop(record) {
@@ -142,10 +172,10 @@ export class ManagedProcessController {
   }
 
   async stopAll(components) {
-    this.shuttingDown = true;
-    this.cancelAllRestarts();
+    this.beginShutdown();
     for (const component of components) await this.stop(component);
     await this.persistMetadata();
+    await this.flushMetadata();
   }
 }
 
