@@ -45,4 +45,12 @@ if (agentRuntimeDir && isInside(projectDir, path.resolve(agentRuntimeDir))) {
   fail("AGENT_RUNTIME_DIR 位于 Git 代码目录内。请改为仓库外路径，例如 D:/UED-Asset-Hub/agent-data。");
 }
 
+if (dataDir && agentRuntimeDir) {
+  const dataRoot = path.resolve(dataDir);
+  const agentRoot = path.resolve(agentRuntimeDir);
+  if (dataRoot === agentRoot || isInside(dataRoot, agentRoot) || isInside(agentRoot, dataRoot)) {
+    fail("DATA_DIR 与 AGENT_RUNTIME_DIR 必须彼此独立且互不包含。");
+  }
+}
+
 console.log("[UED Asset Hub] Runtime data protection check passed.");

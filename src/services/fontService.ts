@@ -41,7 +41,7 @@ async function captureWarning(action: () => Promise<void>) {
 
 export const fontService = {
   async getFonts(keyword?: string): Promise<FontAsset[]> {
-    return getFontsWithReader(readJsonFile, keyword);
+    return getFontsWithReader(readJsonFileReadonly, keyword);
   },
 
   async getFontsForKnowledge(keyword?: string): Promise<FontAsset[]> {
@@ -49,16 +49,16 @@ export const fontService = {
   },
 
   async countFonts() {
-    return (await readJsonFile<FontAsset[]>(FONTS_FILE, [])).length;
+    return (await readJsonFileReadonly<FontAsset[]>(FONTS_FILE, [])).length;
   },
 
   async getFontById(id: string) {
-    const fonts = await readJsonFile<FontAsset[]>(FONTS_FILE, []);
+    const fonts = await readJsonFileReadonly<FontAsset[]>(FONTS_FILE, []);
     return fonts.find((font) => font.id === id) ?? null;
   },
 
   async getFontVersions(fontId: string) {
-    const versions = await readJsonFile<FontVersion[]>(FONT_VERSIONS_FILE, []);
+    const versions = await readJsonFileReadonly<FontVersion[]>(FONT_VERSIONS_FILE, []);
     return versions.filter((version) => version.fontId === fontId).sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
   },
 

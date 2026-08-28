@@ -40,7 +40,7 @@ async function captureWarning(action: () => Promise<void>) {
 
 export const componentSpecService = {
   async getComponents(keyword?: string): Promise<ComponentSpec[]> {
-    return getComponentsWithReader(readJsonFile, keyword);
+    return getComponentsWithReader(readJsonFileReadonly, keyword);
   },
 
   async getComponentsForKnowledge(keyword?: string): Promise<ComponentSpec[]> {
@@ -48,7 +48,7 @@ export const componentSpecService = {
   },
 
   async countComponents(): Promise<number> {
-    return (await readJsonFile<ComponentSpec[]>(FILE_NAME, [])).length;
+    return (await readJsonFileReadonly<ComponentSpec[]>(FILE_NAME, [])).length;
   },
 
   async createComponent(input: ComponentSpecInput, operator = "admin"): Promise<MutationResult<ComponentSpec>> {
@@ -149,7 +149,7 @@ export const componentSpecService = {
   },
 
   async getComponentById(id: string): Promise<ComponentSpec | null> {
-    const components = await readJsonFile<ComponentSpec[]>(FILE_NAME, []);
+    const components = await readJsonFileReadonly<ComponentSpec[]>(FILE_NAME, []);
     return components.find((component) => component.id === id) ?? null;
   }
 };

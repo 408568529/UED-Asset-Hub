@@ -37,13 +37,23 @@ New-Item -ItemType Directory -Force -Path $runtimePath, (Join-Path $runtimePath 
 $env:DSH_HOME = Join-Path $runtimePath "dsh-home"
 $env:DSH_TELEMETRY_DISABLED = "1"
 $env:AGENT_WORKSPACE_ROOT = Join-Path $runtimePath "workspaces"
-$workspacePickerOverlay = Join-Path $repoRoot "agent-integration\dsh\workspace-picker.overlay.yml"
+$restrictedProfile = Join-Path $repoRoot "agent-integration\dsh\asset-hub-agent.overlay.yml"
+
+if (-not $env:ASSET_HUB_MCP_URL) {
+  throw "ASSET_HUB_MCP_URL 未配置。请使用 npm run start:host 启动完整的受限 Agent 链路。"
+}
+
+# The DSH process must never inherit formal-data paths, Gateway credentials, or
+# Asset Hub administrator secrets. Model-provider variables remain untouched.
+"DATA_DIR", "TRAINING_MEDIA_DIR", "AGENT_RUNTIME_DIR", "AGENT_GATEWAY_TOKEN", "ADMIN_USERNAME", "ADMIN_PASSWORD", "ADMIN_SESSION_SECRET", "TEST_ENV_ENCRYPTION_KEY" | ForEach-Object {
+  Remove-Item "Env:$_" -ErrorAction SilentlyContinue
+}
 
 Write-Host "Starting DeepSeek Harness 0.1.0-rc.5 on 127.0.0.1:$Port"
 Write-Host "DSH_HOME: $env:DSH_HOME"
 Push-Location $dshSourcePath
 try {
-  pnpm dsh web --patch $workspacePickerOverlay --host 127.0.0.1 --port $Port
+  pnpm dsh web --patch $restrictedProfile --host 127.0.0.1 --port $Port
 } finally {
   Pop-Location
 }

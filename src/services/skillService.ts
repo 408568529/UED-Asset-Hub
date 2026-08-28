@@ -71,7 +71,7 @@ async function captureWarning(action: () => Promise<void>) {
 
 export const skillService = {
   async getSkills(keyword?: string): Promise<Skill[]> {
-    const skills = await readSkills();
+    const skills = await readSkills(readJsonFileReadonly);
     return skills.filter((skill) => matchesKeyword(skill, keyword)).sort(sortSkills);
   },
 
@@ -81,16 +81,21 @@ export const skillService = {
   },
 
   async countSkills(): Promise<number> {
-    return (await readSkills()).length;
+    return (await readSkills(readJsonFileReadonly)).length;
   },
 
   async getSkillById(id: string): Promise<Skill | null> {
-    const skills = await readSkills();
+    const skills = await readSkills(readJsonFileReadonly);
+    return skills.find((skill) => skill.id === id) ?? null;
+  },
+
+  async getSkillForKnowledgeById(id: string): Promise<Skill | null> {
+    const skills = await readSkills(readJsonFileReadonly);
     return skills.find((skill) => skill.id === id) ?? null;
   },
 
   async getSkillVersions(skillId: string): Promise<SkillVersion[]> {
-    const versions = await readJsonFile<SkillVersion[]>(VERSIONS_FILE, []);
+    const versions = await readJsonFileReadonly<SkillVersion[]>(VERSIONS_FILE, []);
     return versions.filter((version) => version.skillId === skillId).sort(sortVersions);
   },
 

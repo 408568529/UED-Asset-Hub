@@ -22,6 +22,8 @@ agent-data/
 
 These files are never part of Asset Hub `DATA_DIR` and must not be committed.
 
+`DATA_DIR` and `AGENT_RUNTIME_DIR` must resolve to independent directories; neither may contain the other. The V2.1.0.1 Host Runner checks this with `realpath`, and DSH receives neither `DATA_DIR` nor its formal-data credentials. The Asset Hub profile disables generic shell, filesystem, filesystem-search and editor plugins. It retains the constrained browser workspace picker and the read-only Asset Hub Knowledge Gateway MCP tools.
+
 ## Windows Setup And Start
 
 The verified release is not available as the matching npm package version, so the official DSH source must be cloned separately from Asset Hub. The setup script never overwrites an existing DSH checkout with a different commit.
@@ -43,3 +45,5 @@ npm run verify:agent-runtime
 ```
 
 For formal deployment, use `npm run start:host` from Asset Hub. Host Runner starts DSH, the loopback-only Agent Proxy and Asset Hub together. Browser clients access the official workbench through Asset Hub's same-origin `/agent-runtime/` path; they never connect to DSH or the Proxy directly.
+
+Use a separate non-administrator Windows service account for Host Runner. Grant it Modify only on `AGENT_RUNTIME_DIR`; deny it access to `DATA_DIR`, the Asset Hub `.env.local`, DSH source, and unrelated host directories. This ACL boundary is required production defense in depth and does not require any DSH source modification.
