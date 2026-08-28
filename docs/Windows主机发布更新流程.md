@@ -251,7 +251,7 @@ http://主机IP:3027
 
 ## 五、Windows 主机自动启动
 
-正式主机不需要分别手动启动 DSH、Agent Proxy 与 Asset Hub。`npm run start:host` 会先验证外置数据目录、DSH 固定提交和端口，再按 `DSH Runtime -> Agent Proxy -> Asset Hub` 的顺序启动；DSH 与 Agent Proxy 均仅监听 `127.0.0.1`，Host Runner 将公开 Asset Hub 的 `/agent-runtime` 同源转发到 Proxy，任一子进程异常退出后会自动重启。
+正式主机不需要分别手动启动 DSH、Agent Proxy 与 Asset Hub。`npm run start:host` 启动唯一 Host Supervisor：先启动 Asset Hub Internal 与 Public Edge，再使用同一 Runtime Lifecycle Core 启动 `Gateway MCP -> DSH Runtime -> Agent Proxy`。因此 Agent 配置不满足时，Asset Hub Shell 仍可访问；DSH 与 Agent Proxy 均仅监听 `127.0.0.1`，Public Edge 将 `/agent-runtime` 同源转发到 Proxy。
 
 可在管理员 PowerShell 中创建任务计划程序：
 
@@ -276,6 +276,8 @@ nssm install "UED Asset Hub Host Runner" "C:\Windows\System32\cmd.exe" "/c \"D:\
 ```powershell
 nssm start "UED Asset Hub Host Runner"
 ```
+
+开发机可继续使用项目 `.env.local`。正式 Windows 服务优先由 NSSM 或 Windows Service 注入受保护的 Host Config 环境变量（路径、端口、Gateway 配置）；不要将 DeepSeek Credential 放入该 Host Config。
 
 ## 六、生成临时公网演示链接
 

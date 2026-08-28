@@ -191,9 +191,9 @@ V2.1.0.1 的 Knowledge Gateway 仅通过本机 MCP Bridge 向 DSH 暴露 `search
 npm run start:host
 ```
 
-Host Runner 会在启动前检查仓库外且互不包含的 `DATA_DIR`、`AGENT_RUNTIME_DIR`、固定 DSH 提交、生产构建和五个端口；`DSH_SOURCE_DIR` 位于项目内时仅允许精确的 `vendor/deepseek-harness` 独立 Git Repository。它以最小环境白名单依次启动 `Asset Hub -> Knowledge Gateway MCP -> DSH Runtime -> Agent Proxy`，并在公开的 Asset Hub 端口同源转发 `/agent-runtime`。DSH 使用 Gateway-only Profile：保留会话、受 Proxy 限制的 Workspace 选择与 MCP，不加载通用 Bash、文件系统、文件搜索和编辑器工具。任何一个子进程异常退出都会按最多 30 秒的退避间隔自动重启；按 `Ctrl + C` 会统一停止四者。正式用户只需访问 `http://主机IP:3027`。
+`npm run start:host` 启动唯一的 Host Supervisor。它先提供 Public Edge 与 Asset Hub Internal，再以同一个 Runtime Lifecycle Core 管理 `Gateway MCP -> DSH Runtime -> Agent Proxy`；因此 DSH Source、Build 或 Credential 不满足时，Asset Hub Shell 仍可保持可访问。启动前会检查仓库外且互不包含的 `DATA_DIR`、`AGENT_RUNTIME_DIR`、固定 DSH 提交、生产构建和五个端口；`DSH_SOURCE_DIR` 位于项目内时仅允许精确的 `vendor/deepseek-harness` 独立 Git Repository。DSH 使用 Gateway-only Profile：保留会话、受 Proxy 限制的 Workspace 选择与 MCP，不加载通用 Bash、文件系统、文件搜索和编辑器工具。正式用户只需访问 `http://主机IP:3027`。
 
-生产 Windows 主机还应使用独立的非管理员服务账号运行 Host Runner：仅授予该账号 `AGENT_RUNTIME_DIR` 的读写权限；将 `DATA_DIR`（含 `knowledge/`）、DSH 源码、项目 `.env.local` 和其他业务目录从该账号 ACL 中移除。不要依赖 DSH cwd 作为文件隔离边界。
+生产 Windows 主机应使用独立的非管理员服务账号运行 Host Supervisor。开发环境可以由 `.env.local` 提供 Host Config；正式环境优先由 NSSM 或 Windows Service 注入 ACL 受控的环境变量。两种方式都进入同一个 Node Supervisor，且 Host Config 不得包含 DeepSeek Credential。服务账号需要访问生产构建、DSH Source、`DATA_DIR` 与 `AGENT_RUNTIME_DIR`；安全边界由子进程最小环境白名单、Source Validator、Restricted Preset 和 Gateway-only MCP 共同保证，不依赖 DSH cwd。
 
 Windows 可使用任务计划程序创建开机或登录后自动启动任务：
 

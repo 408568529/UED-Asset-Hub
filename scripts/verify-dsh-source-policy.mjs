@@ -58,7 +58,7 @@ try {
   const externalSource = path.join(root, "external-dsh");
   await mkdir(projectDir, { recursive: true });
   const expected = await createDshSource(externalSource);
-  const valid = await validateDshSource(externalSource, expected);
+  const valid = await validateDshSource(externalSource, expected, { readOnly: true });
   assert.equal(valid.sourceType, "git");
   assert.equal(await resolveAllowedDshSourcePath(projectDir, externalSource), externalSource);
   console.log("[DSH Source] official external Git Source: PASS");
@@ -66,7 +66,7 @@ try {
   const vendorSource = path.join(projectDir, "vendor", "deepseek-harness");
   const vendorExpected = await createDshSource(vendorSource);
   assert.equal(await resolveAllowedDshSourcePath(projectDir, vendorSource), vendorSource);
-  await assert.doesNotReject(validateDshSource(vendorSource, vendorExpected));
+  await assert.doesNotReject(validateDshSource(vendorSource, vendorExpected, { readOnly: true }));
   console.log("[DSH Source] exact vendor/deepseek-harness: PASS");
 
   const disallowedSource = path.join(projectDir, "tools", "deepseek-harness");
