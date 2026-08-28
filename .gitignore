@@ -5,6 +5,9 @@ node_modules/
 out/
 dist/
 
+# The official DSH source remains an independent Git repository.
+/vendor/deepseek-harness/
+
 # Runtime business data should live outside Git.
 data/
 !data.example/

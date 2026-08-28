@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$expectedCommit = "47f943859bef60e4160492346772ded9b24f765a"
+$expectedCommit = "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"
 $repository = "https://github.com/deepseek-ai/deepseek-harness.git"
 $sourcePath = [IO.Path]::GetFullPath($DshSourceDir)
 

@@ -5,6 +5,7 @@ import { access, copyFile, mkdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { assertAgentRuntimeBoundary, isInside, runtimeEnvironmentProfiles } from "../agent-integration/scripts/runtime-boundary.mjs";
+import { resolveAllowedDshSourcePath } from "../agent-integration/scripts/dsh-source-policy.mjs";
 import { validateDshSource } from "../agent-integration/scripts/dsh-source-validator.mjs";
 
 const require = createRequire(import.meta.url);
@@ -68,8 +69,12 @@ function assertNodeVersion() {
 }
 
 async function assertDshSource(sourceDir) {
-  if (isInside(projectDir, sourceDir)) fail("DSH_SOURCE_DIR 必须位于 Asset Hub Git 目录外。");
-  try { return await validateDshSource(sourceDir, expectedVersion); } catch (error) { fail(error instanceof Error ? error.message : "DSH Source 校验失败。"); }
+  try {
+    const canonicalSourceDir = await resolveAllowedDshSourcePath(projectDir, sourceDir);
+    return await validateDshSource(canonicalSourceDir, expectedVersion);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : "DSH Source 校验失败。");
+  }
 }
 
 async function installRestrictedAgentPreset(agentRuntimeDir) {

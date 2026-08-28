@@ -101,7 +101,7 @@ DATA_DIR=/UED-Asset-Hub-Storage/data
 TRAINING_MEDIA_DIR=/UED-Asset-Hub-Storage/training-media
 TEST_ENV_ENCRYPTION_KEY=可选：设置后测试环境密码将以服务端加密方式保存
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=admin123
+ADMIN_PASSWORD=REPLACE_WITH_A_UNIQUE_HOST_PASSWORD
 ADMIN_SESSION_SECRET=请设置一段仅保存在主机环境变量中的随机密钥
 # 仅在通过 HTTPS 访问时设置为 true；内网 HTTP 环境保持 false。
 ADMIN_SESSION_SECURE=false
@@ -114,7 +114,7 @@ DATA_DIR=D:/UED-Asset-Hub/data
 TRAINING_MEDIA_DIR=D:/UED-Asset-Hub/training-media
 TEST_ENV_ENCRYPTION_KEY=可选：设置主机专用随机密钥以启用测试密码加密
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=admin123
+ADMIN_PASSWORD=REPLACE_WITH_A_UNIQUE_HOST_PASSWORD
 ADMIN_SESSION_SECRET=请设置主机专用随机密钥
 ```
 
@@ -147,14 +147,14 @@ Copy-Item -Recurse .\data.example\* D:\UED-Asset-Hub\data\
 
 ## 悠鼎 Agent P0 基础运行
 
-悠鼎 Agent 使用官方 DeepSeek Harness 源码固定在 `0.1.0-rc.5 / 47f943859bef60e4160492346772ded9b24f765a`，官方 DSH 源码不进入本项目也不做修改。DSH 仅监听服务器本机 `127.0.0.1:3080`，Asset Hub 通过服务端 Adapter 检查运行状态，浏览器不会直接访问 DSH。
+悠鼎 Agent 使用官方 DeepSeek Harness 源码固定在 `0.1.1-rc.2 / b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`。DSH 可位于项目外或精确的 `vendor/deepseek-harness`；后者必须保持独立 `.git`，并由 `/vendor/deepseek-harness/` 忽略，官方源码不进入 Asset Hub Git 历史也不做修改。DSH 仅监听服务器本机 `127.0.0.1:3080`，Asset Hub 通过服务端 Adapter 检查运行状态，浏览器不会直接访问 DSH。
 
 在主机 `.env.local` 中额外设置仓库外的运行目录：
 
 ```env
 AGENT_RUNTIME_DIR=D:/UED-Asset-Hub/agent-data
 AGENT_ENABLED=true
-DSH_SOURCE_DIR=D:/UED-Asset-Hub-DSH/deepseek-harness
+DSH_SOURCE_DIR=D:/UED-Asset-Hub-Host/UED-Asset-Hub/vendor/deepseek-harness
 DSH_BASE_URL=http://127.0.0.1:3080
 AGENT_PROXY_PORT=3081
 AGENT_PROXY_HOST=127.0.0.1
@@ -165,10 +165,10 @@ AGENT_GATEWAY_TOKEN=<long-random-server-only-token>
 KNOWLEDGE_GATEWAY_MCP_PORT=3082
 ```
 
-先在 Asset Hub Git 仓库外准备固定版本的 DSH 源码（Windows PowerShell）：
+首次部署可在精确 vendor 目录准备固定版本的 DSH 源码（Windows PowerShell）。已有 Repository 的 Source Relocation 必须整体移动，不得用此脚本重新 clone：
 
 ```powershell
-.\agent-integration\scripts\setup-dsh.ps1 -DshSourceDir "D:\UED-Asset-Hub-DSH\deepseek-harness"
+.\agent-integration\scripts\setup-dsh.ps1 -DshSourceDir "D:\UED-Asset-Hub-Host\UED-Asset-Hub\vendor\deepseek-harness"
 ```
 
 DSH 和 Agent Proxy 都只监听主机本机回环地址（分别为 `127.0.0.1:3080`、`127.0.0.1:3081`）。从 V2.1.0.1 起应仅使用 Host Runner 启动完整的 `Asset Hub -> Gateway MCP -> DSH -> Proxy` 链路；独立的 `start-dsh.ps1` 只保留诊断用途，且必须已提供本机 MCP URL。正式运行时 Host Runner 将 `/agent-runtime` 同源转发到 Proxy，验证 Asset Hub 管理员会话后才转发官方 DSH Web UI、HTTP 请求和 WebSocket 事件流；浏览器不会直接访问 DSH 或 Proxy。`/agent` 会自动嵌入该官方工作台，保留 DSH 的字体、布局、控件、动效与交互，只将品牌强调色映射为 Asset Hub 绿色。
@@ -191,7 +191,7 @@ V2.1.0.1 的 Knowledge Gateway 仅通过本机 MCP Bridge 向 DSH 暴露 `search
 npm run start:host
 ```
 
-Host Runner 会在启动前检查仓库外且互不包含的 `DATA_DIR`、`AGENT_RUNTIME_DIR`、`DSH_SOURCE_DIR`、固定 DSH 提交、生产构建和五个端口；它以最小环境白名单依次启动 `Asset Hub -> Knowledge Gateway MCP -> DSH Runtime -> Agent Proxy`，并在公开的 Asset Hub 端口同源转发 `/agent-runtime`。DSH 使用 Gateway-only Profile：保留会话、受 Proxy 限制的 Workspace 选择与 MCP，不加载通用 Bash、文件系统、文件搜索和编辑器工具。任何一个子进程异常退出都会按最多 30 秒的退避间隔自动重启；按 `Ctrl + C` 会统一停止四者。正式用户只需访问 `http://主机IP:3027`。
+Host Runner 会在启动前检查仓库外且互不包含的 `DATA_DIR`、`AGENT_RUNTIME_DIR`、固定 DSH 提交、生产构建和五个端口；`DSH_SOURCE_DIR` 位于项目内时仅允许精确的 `vendor/deepseek-harness` 独立 Git Repository。它以最小环境白名单依次启动 `Asset Hub -> Knowledge Gateway MCP -> DSH Runtime -> Agent Proxy`，并在公开的 Asset Hub 端口同源转发 `/agent-runtime`。DSH 使用 Gateway-only Profile：保留会话、受 Proxy 限制的 Workspace 选择与 MCP，不加载通用 Bash、文件系统、文件搜索和编辑器工具。任何一个子进程异常退出都会按最多 30 秒的退避间隔自动重启；按 `Ctrl + C` 会统一停止四者。正式用户只需访问 `http://主机IP:3027`。
 
 生产 Windows 主机还应使用独立的非管理员服务账号运行 Host Runner：仅授予该账号 `AGENT_RUNTIME_DIR` 的读写权限；将 `DATA_DIR`（含 `knowledge/`）、DSH 源码、项目 `.env.local` 和其他业务目录从该账号 ACL 中移除。不要依赖 DSH cwd 作为文件隔离边界。
 

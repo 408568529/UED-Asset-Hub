@@ -10,7 +10,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\\.."))
 $runtimePath = [IO.Path]::GetFullPath($RuntimeDir)
 $dshSourcePath = [IO.Path]::GetFullPath($DshSourceDir)
-$expectedCommit = "47f943859bef60e4160492346772ded9b24f765a"
+$expectedCommit = "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"
 
 if ($runtimePath.StartsWith($repoRoot, [StringComparison]::OrdinalIgnoreCase)) {
   throw "AGENT_RUNTIME_DIR 必须位于 Git 代码目录外。"
@@ -49,7 +49,7 @@ if (-not $env:ASSET_HUB_MCP_URL) {
   Remove-Item "Env:$_" -ErrorAction SilentlyContinue
 }
 
-Write-Host "Starting DeepSeek Harness 0.1.0-rc.5 on 127.0.0.1:$Port"
+Write-Host "Starting DeepSeek Harness 0.1.1-rc.2 on 127.0.0.1:$Port"
 Write-Host "DSH_HOME: $env:DSH_HOME"
 Push-Location $dshSourcePath
 try {

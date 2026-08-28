@@ -14,6 +14,7 @@
     "verify:e2e-fixture": "node scripts/verify-e2e-fixture.mjs",
     "verify:agent-runtime": "node agent-integration/scripts/verify-dsh.mjs",
     "verify:agent-boundary": "node scripts/verify-agent-runtime-boundary.mjs",
+    "verify:dsh-source-policy": "node scripts/verify-dsh-source-policy.mjs",
     "start:agent-proxy": "node agent-integration/scripts/start-agent-proxy.mjs",
     "start:host": "node scripts/start-host.mjs",
     "lint": "node node_modules/next/dist/bin/next lint",
