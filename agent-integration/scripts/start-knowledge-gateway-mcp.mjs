@@ -1,4 +1,5 @@
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
@@ -23,16 +24,93 @@ function textResult(value) {
   return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }], structuredContent: value };
 }
 
+const assetTypes = ["knowledge", "sop", "component-spec", "micro-spec", "project", "prompt", "skill", "training", "vibe-product", "font"];
+const assetTypeSchema = z.enum(assetTypes);
+const citationSchema = z.object({
+  key: z.string(),
+  assetType: assetTypeSchema,
+  id: z.string(),
+  title: z.string(),
+  href: z.string().startsWith("asset-hub://knowledge/"),
+  source: z.string(),
+  updatedAt: z.string()
+}).strict();
+const microSpecSchema = z.object({
+  specTopic: z.string(),
+  specTopicLabel: z.string(),
+  relatedScopes: z.array(z.string()),
+  relatedScopeLabels: z.array(z.string())
+}).strict();
+const assetSchema = z.object({
+  key: z.string(),
+  assetType: assetTypeSchema,
+  contentStatus: z.enum(["full", "metadata_only"]),
+  id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  category: z.string().optional(),
+  tags: z.array(z.string()),
+  owner: z.string().optional(),
+  updatedAt: z.string(),
+  source: z.string(),
+  section: z.string(),
+  microSpec: microSpecSchema.optional(),
+  citation: citationSchema
+}).strict();
+const diagnosticSchema = z.object({
+  source: z.string(),
+  label: z.string(),
+  code: z.enum(["source-unavailable", "invalid-entry", "missing-metadata", "invalid-metadata", "unsafe-path"]),
+  message: z.string()
+}).strict();
+const searchOutputSchema = z.object({
+  status: z.enum(["ok", "partial"]),
+  items: z.array(assetSchema.extend({
+    relevance: z.object({
+      score: z.number(),
+      matchedFields: z.array(z.string()),
+      matchSource: z.enum(["metadata", "content", "both"]).optional()
+    }).strict()
+  }).strict()),
+  diagnostics: z.array(diagnosticSchema),
+  partial: z.boolean()
+}).strict();
+const detailOutputSchema = z.object({
+  asset: assetSchema,
+  hasContent: z.boolean(),
+  truncated: z.boolean(),
+  content: z.string().optional(),
+  prompt: z.object({
+    models: z.array(z.string()),
+    scenarios: z.array(z.string()),
+    outputTypes: z.array(z.string()),
+    difficulty: z.string(),
+    content: z.string(),
+    usageGuide: z.string(),
+    exampleInput: z.string(),
+    exampleOutput: z.string()
+  }).strict().optional(),
+  skill: z.object({
+    version: z.string(),
+    usageScenarios: z.array(z.string()),
+    readme: z.string(),
+    changeLog: z.string()
+  }).strict().optional(),
+  diagnostics: z.array(diagnosticSchema),
+  partial: z.boolean()
+}).strict();
+
 function buildServer() {
   const server = new McpServer({ name: "ued-asset-hub-knowledge-gateway", version: "2.1.0.1" });
   server.registerTool("search_knowledge", {
-    description: "Read-only search over UED Asset Hub knowledge. Returns citations and partial-failure diagnostics.",
+    description: "Read-only discovery search over UED Asset Hub knowledge. Search results are discovery evidence, not complete document content. For a question that requires body evidence: search, identify an asset, call get_knowledge_asset, then answer and cite the citation returned by that tool. Do not describe a discovery summary as having read a document. matchSource identifies whether a query matched metadata, safe content, or both. metadata_only means no formal body was read. Return citations only from this tool; never invent asset-hub URIs.",
     inputSchema: {
       q: z.string().max(200).optional(),
-      assetTypes: z.array(z.enum(["knowledge", "sop", "component-spec", "micro-spec", "project", "prompt", "skill", "training", "vibe-product", "font"])).max(10).optional(),
+      assetTypes: z.array(assetTypeSchema).max(10).optional(),
       tags: z.array(z.string().max(80)).max(10).optional(),
-      limit: z.number().int().min(1).max(50).optional()
-    }
+      limit: z.number().int().min(1).max(20).optional()
+    },
+    outputSchema: searchOutputSchema
   }, async ({ q, assetTypes, tags, limit }) => {
     const query = new URLSearchParams();
     if (q) query.set("q", q);
@@ -42,14 +120,15 @@ function buildServer() {
     return textResult(await gatewayRequest("/api/knowledge-gateway/search", query));
   });
   server.registerTool("search_micro_specs", {
-    description: "Read-only structured search for formal Micro Specs. Filters scopes, topic and tags before Markdown content matching.",
+    description: "Read-only discovery search for formal Micro Specs. Filters scopes, topic, and tags before safe Markdown content matching. Results are discovery evidence, not complete document content. For a question requiring body evidence: search, identify an asset, call get_knowledge_asset, then answer and cite its returned citation. Do not describe a result summary as having read the complete document. matchSource identifies metadata, content, or both; never invent asset-hub URIs.",
     inputSchema: {
       q: z.string().max(200).optional(),
       relatedScopes: z.array(z.enum(["web-component-library", "app-component-library", "global", "portal", "retail-app"])).max(5).optional(),
       specTopics: z.array(z.enum(["layout", "navigation", "search-filter", "table", "form", "dialog", "feedback", "status", "copywriting", "upload-download", "permission", "i18n", "other"])).max(13).optional(),
       tags: z.array(z.string().max(80)).max(10).optional(),
-      limit: z.number().int().min(1).max(50).optional()
-    }
+      limit: z.number().int().min(1).max(20).optional()
+    },
+    outputSchema: searchOutputSchema
   }, async ({ q, relatedScopes, specTopics, tags, limit }) => {
     const query = new URLSearchParams();
     if (q) query.set("q", q);
@@ -60,24 +139,31 @@ function buildServer() {
     return textResult(await gatewayRequest("/api/knowledge-gateway/micro-specs/search", query));
   });
   server.registerTool("get_knowledge_asset", {
-    description: "Read an allowlisted Knowledge Gateway asset by type and id. Skill responses exclude package paths and download links.",
+    description: "Read one allowlisted Knowledge Gateway asset by type and id after discovery. Inspect contentStatus, hasContent, and truncated before answering. metadata_only means only safe metadata was returned: it may establish that an asset exists, but it is not document content; do not infer docLink, Figma, video, file, or other external content. full with hasContent true and truncated false is complete returned body evidence. full with truncated true is only a returned excerpt, never complete-document evidence. full with hasContent false has no body to invent. Knowledge answers must cite the citation returned by this tool; never construct an asset-hub URI. Responses exclude package paths, download links, filesystem paths, credentials, sessions, and gateway tokens.",
     inputSchema: {
-      assetType: z.enum(["knowledge", "sop", "component-spec", "micro-spec", "project", "prompt", "skill", "training", "vibe-product", "font"]),
+      assetType: assetTypeSchema,
       id: z.string().min(1).max(128)
-    }
+    },
+    outputSchema: detailOutputSchema
   }, async ({ assetType, id }) => textResult(await gatewayRequest(`/api/knowledge-gateway/assets/${encodeURIComponent(assetType)}/${encodeURIComponent(id)}`)));
   return server;
 }
 
-function readBody(request) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    request.on("data", (chunk) => chunks.push(chunk));
-    request.on("end", () => {
-      try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : undefined); } catch { reject(new Error("Invalid JSON request.")); }
-    });
-    request.on("error", reject);
+const sessions = new Map();
+
+async function createSession() {
+  const server = buildServer();
+  let transport;
+  transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: randomUUID,
+    onsessioninitialized: (sessionId) => sessions.set(sessionId, { server, transport })
   });
+  transport.onclose = () => {
+    if (transport.sessionId) sessions.delete(transport.sessionId);
+    void server.close();
+  };
+  await server.connect(transport);
+  return { server, transport };
 }
 
 const service = http.createServer(async (request, response) => {
@@ -87,12 +173,19 @@ const service = http.createServer(async (request, response) => {
     return;
   }
   try {
-    const body = await readBody(request);
-    const server = buildServer();
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    await server.connect(transport);
-    await transport.handleRequest(request, response, body);
-    response.once("close", () => { void transport.close(); void server.close(); });
+    const sessionId = request.headers["mcp-session-id"];
+    const session = typeof sessionId === "string" ? sessions.get(sessionId) : await createSession();
+    if (!session) {
+      response.writeHead(404, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32001, message: "Session not found" }, id: null }));
+      return;
+    }
+    await session.transport.handleRequest(request, response);
+    if (typeof sessionId !== "string") {
+      response.once("close", () => {
+        if (!session.transport.sessionId) void session.transport.close();
+      });
+    }
   } catch (error) {
     if (!response.headersSent) {
       response.writeHead(500, { "Content-Type": "application/json" });
@@ -103,5 +196,11 @@ const service = http.createServer(async (request, response) => {
 });
 
 service.listen(port, "127.0.0.1", () => console.log(`[Knowledge Gateway MCP] listening on http://127.0.0.1:${port}/mcp`));
-process.on("SIGTERM", () => service.close(() => process.exit(0)));
-process.on("SIGINT", () => service.close(() => process.exit(0)));
+function shutdown() {
+  service.close(() => {
+    for (const { transport } of sessions.values()) void transport.close();
+    process.exit(0);
+  });
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
