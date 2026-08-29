@@ -9,6 +9,6 @@ export async function GET(request: Request) {
   try {
     return NextResponse.json({ runtime: await invokeRuntimeControl("status") }, { headers: { "Cache-Control": "no-store" } });
   } catch {
-    return NextResponse.json({ runtime: { status: "unavailable", phase: null, reasonCode: "runtime_control_unavailable", operationId: null, startedAt: null, generation: 0, credentialStatus: "unknown", shell: "ready", operation: null } }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ runtime: { status: "unavailable", phase: null, reasonCode: "runtime_control_unavailable", operationId: null, startedAt: null, generation: 0, credentialStatus: "unknown", retryable: false, shell: "ready", operation: null } }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 }

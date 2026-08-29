@@ -6,6 +6,14 @@ function safeError(error) {
   return error instanceof Error ? error.message : "Runtime operation failed.";
 }
 
+function lifecycleFailure(error, { recovering }) {
+  const details = error && typeof error === "object" ? error : null;
+  const reasonCode = details?.reasonCode;
+  const retryable = details?.retryable === true;
+  if (reasonCode && !retryable) return { reasonCode, retryable: false };
+  return { reasonCode: recovering ? "recovery_failed" : reasonCode || "runtime_start_failed", retryable };
+}
+
 export class RuntimeLifecycleCore {
   constructor({ controller, inspectStatic, inspectRuntime, prepareRuntime, startComponent, stopComponents, onStateChange = () => {} }) {
     this.controller = controller;
@@ -15,7 +23,7 @@ export class RuntimeLifecycleCore {
     this.startComponent = startComponent;
     this.stopComponents = stopComponents;
     this.onStateChange = onStateChange;
-    this.state = { status: "unavailable", phase: null, reasonCode: null, operationId: null, startedAt: null, generation: 0, credentialStatus: "unknown", shell: "ready" };
+    this.state = { status: "unavailable", phase: null, reasonCode: null, operationId: null, startedAt: null, generation: 0, credentialStatus: "unknown", retryable: false, shell: "ready" };
     this.operation = null;
     this.shuttingDown = false;
   }
@@ -24,43 +32,102 @@ export class RuntimeLifecycleCore {
     return { ...this.state, operation: this.operation ? { operationId: this.operation.operationId, startedAt: this.operation.startedAt, phase: this.state.phase, generation: this.operation.generation } : null };
   }
 
-  transition(status, { phase = null, reasonCode = null, credentialStatus = this.state.credentialStatus } = {}) {
-    this.state = { ...this.state, status, phase, reasonCode, credentialStatus };
+  transition(status, { phase = null, reasonCode = null, credentialStatus = this.state.credentialStatus, retryable = false } = {}) {
+    this.state = { ...this.state, status, phase, reasonCode, credentialStatus, retryable: (status === "error" || status === "unavailable") && retryable === true };
     this.onStateChange(this.snapshot());
     return this.snapshot();
+  }
+
+  async observeRuntime() {
+    const staticResult = await this.inspectStatic();
+    if (!staticResult.ok) return { state: { status: "configuration_required", reasonCode: staticResult.reasonCode, credentialStatus: "unknown", retryable: false }, runtime: null };
+    const runtime = await this.inspectRuntime();
+    if (!runtime.dsh) return { state: { status: "unavailable", reasonCode: "dsh_unavailable", credentialStatus: "unknown", retryable: false }, runtime };
+    if (!runtime.gateway || !runtime.proxy || !runtime.mcp) return { state: { status: "error", reasonCode: runtime.reasonCode || "runtime_health_failed", credentialStatus: "unknown", retryable: true }, runtime };
+    if (runtime.credentialStatus === "missing") return { state: { status: "configuration_required", reasonCode: "credential_missing", credentialStatus: "missing", retryable: false }, runtime };
+    if (runtime.credentialStatus !== "configured") return { state: { status: "error", reasonCode: "credential_status_unknown", credentialStatus: "unknown", retryable: false }, runtime };
+    return { state: { status: "ready", reasonCode: null, credentialStatus: "configured", retryable: false }, runtime };
+  }
+
+  effectiveObservedState(observed) {
+    if (observed.status === "ready" || observed.status === "configuration_required") return observed;
+    if (this.state.status === "error") return { status: "error", reasonCode: this.state.reasonCode, credentialStatus: observed.credentialStatus, retryable: this.state.retryable };
+    if (this.state.status === "ready") return { status: "error", reasonCode: "runtime_degraded", credentialStatus: observed.credentialStatus, retryable: true };
+    if (this.state.status === "configuration_required" && observed.status === "unavailable") return { ...observed, retryable: true };
+    return observed;
   }
 
   async inspect({ readOnly = false } = {}) {
     if (readOnly && this.operation) return this.snapshot();
     const report = (status, options = {}) => readOnly
-      ? { ...this.state, status, phase: options.phase ?? null, reasonCode: options.reasonCode ?? null, credentialStatus: options.credentialStatus ?? this.state.credentialStatus, operation: this.operation ? { operationId: this.operation.operationId, startedAt: this.operation.startedAt, phase: this.state.phase, generation: this.operation.generation } : null }
+      ? { ...this.state, status, phase: options.phase ?? null, reasonCode: options.reasonCode ?? null, credentialStatus: options.credentialStatus ?? this.state.credentialStatus, retryable: options.retryable === true, operation: this.operation ? { operationId: this.operation.operationId, startedAt: this.operation.startedAt, phase: this.state.phase, generation: this.operation.generation } : null }
       : this.transition(status, options);
-    const staticResult = await this.inspectStatic();
-    if (!staticResult.ok) return report("configuration_required", { reasonCode: staticResult.reasonCode, credentialStatus: "unknown" });
-    const runtime = await this.inspectRuntime();
-    if (!runtime.dsh) return report("unavailable", { credentialStatus: "unknown" });
-    if (!runtime.gateway || !runtime.proxy || !runtime.mcp) return report("error", { reasonCode: runtime.reasonCode || "runtime_health_failed", credentialStatus: "unknown" });
-    if (runtime.credentialStatus === "missing") return report("configuration_required", { reasonCode: "credential_missing", credentialStatus: "missing" });
-    if (runtime.credentialStatus !== "configured") return report("error", { reasonCode: "credential_status_unknown", credentialStatus: "unknown" });
-    return report("ready", { credentialStatus: "configured" });
+    const observation = await this.observeRuntime();
+    const state = this.effectiveObservedState(observation.state);
+    return report(state.status, state);
   }
 
   async ensureReady({ recovering = false } = {}) {
     if (this.shuttingDown) return this.snapshot();
-    if (this.state.status === "ready") return this.snapshot();
     if (this.operation) return this.operation.promise;
+    const previous = { status: this.state.status, reasonCode: this.state.reasonCode, retryable: this.state.retryable };
     const operation = { operationId: randomUUID(), startedAt: new Date().toISOString(), generation: this.state.generation + 1, promise: null };
     this.operation = operation;
     this.state = { ...this.state, operationId: operation.operationId, startedAt: operation.startedAt, generation: operation.generation };
-    operation.promise = this.runStart(operation, { recovering }).finally(() => {
+    operation.promise = this.runEnsure(operation, { recovering, previous }).finally(() => {
       if (this.operation === operation) this.operation = null;
     });
     return operation.promise;
   }
 
-  async runStart(operation, { recovering }) {
+  async runEnsure(operation, { recovering, previous }) {
     try {
       if (this.shuttingDown) return this.snapshot();
+      const requiresHealthConfirmation = previous.status === "ready" || (previous.status === "error" && previous.retryable);
+      const recoveryAttempt = recovering || previous.status === "ready" || previous.reasonCode === "recovery_failed";
+      if (requiresHealthConfirmation) {
+        this.transition("starting", { phase: "health-check", credentialStatus: "unknown" });
+        const observation = await this.observeRuntime();
+        if (this.shuttingDown) return this.snapshot();
+        if (observation.state.status === "ready") return this.transition("ready", observation.state);
+        if (observation.state.status === "configuration_required") return this.transition("configuration_required", observation.state);
+        if (observation.state.reasonCode === "credential_status_unknown") return this.transition("error", observation.state);
+        await this.recoverUnhealthyRuntime(observation.runtime);
+        if (this.shuttingDown) return this.snapshot();
+      }
+      return await this.runStart(operation, { recovering: recoveryAttempt });
+    } catch (error) {
+      const failure = lifecycleFailure(error, { recovering: recovering || previous.status === "ready" || previous.reasonCode === "recovery_failed" });
+      return this.transition("error", { ...failure, credentialStatus: "unknown" });
+    }
+  }
+
+  async recoverUnhealthyRuntime(runtime) {
+    if (!runtime) return;
+    if (!runtime.gateway || !runtime.mcp) {
+      await this.stopComponents(["proxy", "dsh", "gateway"]);
+      return;
+    }
+    if (!runtime.dsh) {
+      await this.stopComponents(["proxy", "dsh"]);
+      return;
+    }
+    if (!runtime.proxy) await this.stopComponents(["proxy"]);
+  }
+
+  async start(component) {
+    try {
+      await this.startComponent(component);
+    } catch (error) {
+      if (error && typeof error === "object" && "reasonCode" in error) throw error;
+      const wrapped = error instanceof Error ? error : new Error(safeError(error));
+      wrapped.retryable = true;
+      throw wrapped;
+    }
+  }
+
+  async runStart(operation, { recovering }) {
+    if (this.shuttingDown) return this.snapshot();
       this.transition("starting", { phase: recovering ? "recovering" : "preflight", credentialStatus: "unknown" });
       const staticResult = await this.inspectStatic();
       if (this.shuttingDown) return this.snapshot();
@@ -69,25 +136,22 @@ export class RuntimeLifecycleCore {
       await this.prepareRuntime();
       if (this.shuttingDown) return this.snapshot();
       this.transition("starting", { phase: "starting-gateway", credentialStatus: "unknown" });
-      await this.startComponent("gateway");
+      await this.start("gateway");
       if (this.shuttingDown) return this.snapshot();
       this.transition("starting", { phase: "starting-dsh", credentialStatus: "unknown" });
-      await this.startComponent("dsh");
+      await this.start("dsh");
       if (this.shuttingDown) return this.snapshot();
       this.transition("starting", { phase: "starting-proxy", credentialStatus: "unknown" });
-      await this.startComponent("proxy");
+      await this.start("proxy");
       if (this.shuttingDown) return this.snapshot();
       this.transition("starting", { phase: "health-check", credentialStatus: "unknown" });
       const runtime = await this.inspectRuntime();
       if (!runtime.dsh || !runtime.gateway || !runtime.proxy || !runtime.mcp) {
-        return this.transition("error", { reasonCode: runtime.reasonCode || "runtime_health_failed", credentialStatus: "unknown" });
+        return this.transition("error", { reasonCode: recovering ? "recovery_failed" : runtime.reasonCode || "runtime_health_failed", credentialStatus: "unknown", retryable: true });
       }
       if (runtime.credentialStatus === "missing") return this.transition("configuration_required", { reasonCode: "credential_missing", credentialStatus: "missing" });
       if (runtime.credentialStatus !== "configured") return this.transition("error", { reasonCode: "credential_status_unknown", credentialStatus: "unknown" });
       return this.transition("ready", { credentialStatus: "configured" });
-    } catch (error) {
-      return this.transition("error", { reasonCode: "runtime_start_failed", credentialStatus: "unknown", message: safeError(error) });
-    }
   }
 
   async stopAgentRuntime() {

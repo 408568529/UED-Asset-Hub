@@ -13,19 +13,50 @@ function runtime({ credentialStatus = "configured" } = {}) {
   return { dsh: true, gateway: true, proxy: true, mcp: true, credentialStatus };
 }
 
-function createCore({ staticResult = { ok: true }, runtimeResult = runtime(), failComponent = null } = {}) {
+function createCore({ staticResult = { ok: true }, runtimeResult = runtime(), failComponent = null, componentError = null, prepareError = null, managed = false } = {}) {
   const starts = [];
   const stops = [];
+  const running = new Set();
+  let currentStatic = staticResult;
+  let currentRuntime = runtimeResult;
+  let currentFailComponent = failComponent;
+  let currentComponentError = componentError;
+  let currentPrepareError = prepareError;
   const controller = { get: () => ({ generation: 1 }) };
   const core = new RuntimeLifecycleCore({
     controller,
-    inspectStatic: async () => staticResult,
-    inspectRuntime: async () => runtimeResult,
-    prepareRuntime: async () => { starts.push("prepare"); },
-    startComponent: async (component) => { starts.push(component); if (component === failComponent) throw new Error("fake child failed"); },
-    stopComponents: async (components) => { stops.push(components ?? ["proxy", "dsh", "gateway"]); }
+    inspectStatic: async () => typeof currentStatic === "function" ? currentStatic() : currentStatic,
+    inspectRuntime: async () => {
+      if (Array.isArray(currentRuntime)) return currentRuntime.length > 1 ? currentRuntime.shift() : currentRuntime[0];
+      return typeof currentRuntime === "function" ? currentRuntime() : currentRuntime;
+    },
+    prepareRuntime: async () => { starts.push("prepare"); if (currentPrepareError) throw currentPrepareError; },
+    startComponent: async (component) => {
+      if (managed && running.has(component)) return;
+      starts.push(component);
+      if (component === currentFailComponent) throw currentComponentError ?? new Error("fake child failed");
+      running.add(component);
+    },
+    stopComponents: async (components) => {
+      const target = components ?? ["proxy", "dsh", "gateway"];
+      stops.push(target);
+      for (const component of target) running.delete(component);
+    }
   });
-  return { core, starts, stops, controller };
+  return {
+    core, starts, stops, controller, running,
+    setStatic: (value) => { currentStatic = value; },
+    setRuntime: (value) => { currentRuntime = value; },
+    setFailure: (component, error = null) => { currentFailComponent = component; currentComponentError = error; },
+    setPrepareError: (error) => { currentPrepareError = error; }
+  };
+}
+
+function failure(reasonCode, retryable = false) {
+  const error = new Error(reasonCode);
+  error.reasonCode = reasonCode;
+  error.retryable = retryable;
+  return error;
 }
 
 async function testLifecycleStates() {
@@ -51,7 +82,84 @@ async function testLifecycleStates() {
   assert.equal((await badConfig.core.ensureReady()).status, "ready", "configuration_required can start only after a new preflight passes");
 
   const failed = createCore({ failComponent: "dsh" });
-  assert.equal((await failed.core.ensureReady()).status, "error");
+  const failedState = await failed.core.ensureReady();
+  assert.equal(failedState.status, "error");
+  assert.equal(failedState.reasonCode, "runtime_start_failed");
+  assert.equal(failedState.retryable, true);
+}
+
+async function testRetryabilityAndDegradedRecovery() {
+  const ready = runtime();
+  const dshUnavailable = { dsh: false, gateway: true, proxy: true, mcp: true, credentialStatus: "unknown", reasonCode: "dsh_unavailable" };
+  const proxyUnhealthy = { dsh: true, gateway: true, proxy: false, mcp: true, credentialStatus: "configured", reasonCode: "runtime_health_failed" };
+  const gatewayUnhealthy = { dsh: true, gateway: false, proxy: true, mcp: false, credentialStatus: "configured", reasonCode: "runtime_health_failed" };
+  const value = createCore({ managed: true });
+  await value.core.ensureReady();
+  value.starts.length = 0;
+
+  value.setRuntime(dshUnavailable);
+  const beforeReadOnlyDegradedInspect = value.core.snapshot();
+  const observedDsh = await value.core.inspect({ readOnly: true });
+  assert.deepEqual({ status: observedDsh.status, reasonCode: observedDsh.reasonCode, retryable: observedDsh.retryable }, { status: "error", reasonCode: "runtime_degraded", retryable: true });
+  assert.deepEqual(value.core.snapshot(), beforeReadOnlyDegradedInspect, "read-only degraded inspection does not alter Core state");
+  assert.deepEqual(value.starts, [], "read-only degraded inspection does not restart Runtime");
+  assert.deepEqual(value.stops, [], "read-only degraded inspection does not stop Runtime");
+  value.setRuntime([dshUnavailable, ready]);
+  await value.core.ensureReady();
+  assert.deepEqual(value.stops.at(-1), ["proxy", "dsh"], "DSH degradation stops only dependent Agent services");
+  assert.deepEqual(value.starts, ["prepare", "dsh", "proxy"], "DSH degradation restarts only stopped components");
+
+  value.starts.length = 0;
+  value.setRuntime([proxyUnhealthy, ready]);
+  await value.core.ensureReady();
+  assert.deepEqual(value.stops.at(-1), ["proxy"], "Proxy degradation stops only Proxy");
+  assert.deepEqual(value.starts, ["prepare", "proxy"], "Proxy degradation restarts only Proxy");
+
+  value.starts.length = 0;
+  value.setRuntime([gatewayUnhealthy, ready]);
+  await value.core.ensureReady();
+  assert.deepEqual(value.stops.at(-1), ["proxy", "dsh", "gateway"], "Gateway degradation stops its dependents and Gateway");
+  assert.deepEqual(value.starts, ["prepare", "gateway", "dsh", "proxy"], "Gateway degradation restores dependency order");
+
+  value.starts.length = 0;
+  value.setRuntime([dshUnavailable, ready]);
+  const concurrent = await Promise.all([value.core.ensureReady(), value.core.ensureReady(), value.core.ensureReady()]);
+  assert.equal(concurrent.every((state) => state.status === "ready"), true);
+  assert.deepEqual(value.starts, ["prepare", "dsh", "proxy"], "concurrent degraded starts share one Lifecycle operation");
+}
+
+async function testFailurePreservationAndClassification() {
+  const recoveryFailure = createCore({ failComponent: "dsh" });
+  const recoveryState = await recoveryFailure.core.ensureReady({ recovering: true });
+  assert.deepEqual({ status: recoveryState.status, reasonCode: recoveryState.reasonCode, retryable: recoveryState.retryable }, { status: "error", reasonCode: "recovery_failed", retryable: true });
+  recoveryFailure.setRuntime({ dsh: false, gateway: true, proxy: false, mcp: true, credentialStatus: "unknown", reasonCode: "dsh_unavailable" });
+  const observedRecoveryFailure = await recoveryFailure.core.inspect({ readOnly: true });
+  assert.deepEqual({ status: observedRecoveryFailure.status, reasonCode: observedRecoveryFailure.reasonCode, retryable: observedRecoveryFailure.retryable }, { status: "error", reasonCode: "recovery_failed", retryable: true }, "read-only status preserves recovery failure when DSH is offline");
+
+  const retry = createCore({ failComponent: "dsh", managed: true });
+  await retry.core.ensureReady();
+  retry.starts.length = 0;
+  retry.setFailure(null);
+  retry.setRuntime([{ dsh: false, gateway: true, proxy: false, mcp: true, credentialStatus: "unknown", reasonCode: "dsh_unavailable" }, runtime()]);
+  const retried = await retry.core.ensureReady();
+  assert.equal(retried.status, "ready");
+  assert.deepEqual(retry.starts, ["prepare", "dsh", "proxy"], "retryable failure executes a new managed Lifecycle operation");
+
+  const portConflict = createCore({ failComponent: "gateway", componentError: failure("port_conflict") });
+  const portState = await portConflict.core.ensureReady();
+  assert.deepEqual({ status: portState.status, reasonCode: portState.reasonCode, retryable: portState.retryable }, { status: "error", reasonCode: "port_conflict", retryable: false });
+
+  const ownership = createCore({ prepareError: failure("runtime_ownership_conflict") });
+  const ownershipState = await ownership.core.ensureReady();
+  assert.deepEqual({ status: ownershipState.status, reasonCode: ownershipState.reasonCode, retryable: ownershipState.retryable }, { status: "error", reasonCode: "runtime_ownership_conflict", retryable: false });
+
+  const config = createCore({ staticResult: { ok: false, reasonCode: "build_missing" } });
+  const configState = await config.core.ensureReady();
+  assert.deepEqual({ status: configState.status, retryable: configState.retryable }, { status: "configuration_required", retryable: false });
+
+  const missingCredential = createCore({ runtimeResult: runtime({ credentialStatus: "missing" }) });
+  const credentialState = await missingCredential.core.ensureReady();
+  assert.deepEqual({ status: credentialState.status, reasonCode: credentialState.reasonCode, retryable: credentialState.retryable }, { status: "configuration_required", reasonCode: "credential_missing", retryable: false });
 }
 
 async function testRecoveryAndGeneration() {
@@ -87,6 +195,7 @@ async function testShutdownDuringStart() {
   });
   const starting = core.ensureReady();
   await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(core.snapshot().retryable, false, "starting is never retryable");
   const stopping = core.stopForShutdown();
   releasePrepare();
   await Promise.all([starting, stopping]);
@@ -215,6 +324,8 @@ async function testRuntimePathSafety() {
 }
 
 await testLifecycleStates();
+await testRetryabilityAndDegradedRecovery();
+await testFailurePreservationAndClassification();
 await testRecoveryAndGeneration();
 await testShutdownDuringStart();
 await testControllerShutdown();

@@ -10,6 +10,7 @@ export type RuntimeState = {
   startedAt: string | null;
   generation: number;
   credentialStatus: "configured" | "missing" | "unknown";
+  retryable: boolean;
   shell: "ready" | "unavailable";
   operation: { operationId: string | null; startedAt: string | null; phase: string | null; generation: number } | null;
 };
@@ -26,6 +27,7 @@ function isRuntimeState(value: unknown): value is RuntimeState {
   const state = value as Partial<RuntimeState>;
   return ["unavailable", "starting", "ready", "configuration_required", "error"].includes(String(state.status))
     && ["configured", "missing", "unknown"].includes(String(state.credentialStatus))
+    && typeof state.retryable === "boolean"
     && ["ready", "unavailable"].includes(String(state.shell));
 }
 

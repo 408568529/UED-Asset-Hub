@@ -20,6 +20,12 @@ const projectDir = process.cwd();
 const loopbackHosts = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
 function fail(message) { throw new Error(`[Host Supervisor] ${message}`); }
+function lifecycleError(message, reasonCode, retryable = false) {
+  const error = new Error(message);
+  error.reasonCode = reasonCode;
+  error.retryable = retryable;
+  return error;
+}
 export function createSharedShutdown(run) {
   let shutdownPromise = null;
   return (...args) => {
@@ -66,10 +72,10 @@ async function request(url, init) {
   } finally { clearTimeout(timeout); }
 }
 
-async function assertPortAvailable(portNumber, label) {
+async function assertPortAvailable(portNumber, label, { reasonCode = null } = {}) {
   await new Promise((resolve, reject) => {
     const probe = createServer();
-    probe.once("error", () => reject(new Error(`${label} 端口 ${portNumber} 已被占用。`)));
+    probe.once("error", () => reject(reasonCode ? lifecycleError(`${label} 端口 ${portNumber} 已被占用。`, reasonCode) : new Error(`${label} 端口 ${portNumber} 已被占用。`)));
     probe.listen(portNumber, "0.0.0.0", () => probe.close(resolve));
   });
 }
@@ -222,30 +228,40 @@ export async function main() {
   };
   const inspectRuntime = async () => {
     let credentialStatus = "unknown";
+    let dsh = false;
     try {
       await rpc("session.list", {});
       const described = await rpc("credentials.describe", { refs: ["DEEPSEEK_API_KEY"] });
       credentialStatus = described?.credentials?.DEEPSEEK_API_KEY?.configured === true ? "configured" : "missing";
-    } catch { return { dsh: false, gateway: false, proxy: false, mcp: false, credentialStatus, reasonCode: "dsh_unavailable" }; }
-    const gateway = await request(`http://127.0.0.1:${gatewayPort}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "health", method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "host-supervisor", version: "2.1.0.9" } } }) }).then(() => true).catch(() => false);
-    const proxy = await request(`http://127.0.0.1:${proxyPort}/healthz`).then(() => true).catch(() => false);
-    return { dsh: true, gateway, proxy, mcp: gateway, credentialStatus, reasonCode: gateway && proxy ? undefined : "runtime_health_failed" };
+      dsh = true;
+    } catch {}
+    const [gateway, proxy] = await Promise.all([
+      request(`http://127.0.0.1:${gatewayPort}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "health", method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "host-supervisor", version: "2.1.0.9" } } }) }).then(() => true).catch(() => false),
+      request(`http://127.0.0.1:${proxyPort}/healthz`).then(() => true).catch(() => false)
+    ]);
+    return { dsh, gateway, proxy, mcp: gateway, credentialStatus, reasonCode: !dsh ? "dsh_unavailable" : gateway && proxy ? undefined : "runtime_health_failed" };
   };
   const componentPort = { gateway: gatewayPort, dsh: dshPort, proxy: proxyPort };
   core = new RuntimeLifecycleCore({
     controller, inspectStatic, inspectRuntime,
     prepareRuntime: async () => {
-      runtimePaths = await ensureRuntimePaths({ dataDir, agentRuntimeDir });
-      if (!controller.metadataPath) {
-        await controller.setMetadataPath(managedMetadataPath(runtimePaths.directories));
-        releaseLock = await acquireSupervisorLock({ lockPath: supervisorLockPath(runtimePaths.directories), instanceId });
+      try {
+        runtimePaths = await ensureRuntimePaths({ dataDir, agentRuntimeDir });
+        if (!controller.metadataPath) {
+          await controller.setMetadataPath(managedMetadataPath(runtimePaths.directories));
+          releaseLock = await acquireSupervisorLock({ lockPath: supervisorLockPath(runtimePaths.directories), instanceId });
+        }
+        configureAgentSpecifications();
+        await installRestrictedPreset(runtimePaths);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Agent Runtime 配置失败。";
+        const reasonCode = /ownership|lock|遗留|orphan/i.test(message) ? "runtime_ownership_conflict" : "runtime_configuration_invalid";
+        throw lifecycleError(message, reasonCode);
       }
-      configureAgentSpecifications();
-      await installRestrictedPreset(runtimePaths);
     },
     startComponent: async (component) => {
       if (controller.isRunning(component)) return;
-      await assertPortAvailable(componentPort[component], component);
+      await assertPortAvailable(componentPort[component], component, { reasonCode: "port_conflict" });
       await controller.start(component, specifications[component]);
       if (component === "gateway") await waitFor("Knowledge Gateway MCP", () => request(`http://127.0.0.1:${gatewayPort}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "health", method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "host-supervisor", version: "2.1.0.9" } } }) }));
       if (component === "dsh") await waitFor("DSH Runtime", () => rpc("session.list", {}));

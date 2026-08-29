@@ -5,7 +5,7 @@ import path from "node:path";
 import { acceptsSameOriginJsonMutation } from "../src/lib/runtimeControl.ts";
 import { createRuntimeControlBridge, requestRuntimeControl, runtimeControlEndpoint } from "./runtime-control-bridge.mjs";
 
-const ready = { status: "ready", phase: null, reasonCode: null, operationId: null, startedAt: null, generation: 7, credentialStatus: "configured", shell: "ready", operation: null };
+const ready = { status: "ready", phase: null, reasonCode: null, operationId: null, startedAt: null, generation: 7, credentialStatus: "configured", retryable: false, shell: "ready", operation: null };
 
 function mutation(headers = {}) {
   return new Request("http://asset-hub.test/api/runtime/start", { method: "POST", headers: { Host: "asset-hub.test", Origin: "http://asset-hub.test", "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin", ...headers }, body: "{}" });
@@ -109,6 +109,7 @@ async function testReasonAndShellContract() {
   const state = await requestRuntimeControl({ endpoint: fixture.endpoint, token: "control-token", operation: "status" });
   assert.equal(state.status, "configuration_required");
   assert.equal(state.reasonCode, "build_missing");
+  assert.equal(state.retryable, false, "configuration is never retryable");
   assert.equal(state.shell, "ready", "Agent Runtime failure never changes Shell status");
   assert.equal(JSON.stringify(state).includes("private"), false, "stack/env never enter response");
   await fixture.bridge.stop();
@@ -127,6 +128,32 @@ async function testReasonMappingIsPreserved() {
   }
 }
 
+async function testRetryabilityContract() {
+  const retryable = await createFixture({ inspect: async () => ({ ...ready, status: "error", reasonCode: "runtime_degraded", retryable: true }) });
+  const retryableState = await requestRuntimeControl({ endpoint: retryable.endpoint, token: "control-token", operation: "status" });
+  assert.equal(retryableState.retryable, true, "explicit retryable recovery state is preserved");
+  await retryable.bridge.stop();
+  await rm(retryable.root, { recursive: true, force: true });
+
+  const failClosed = await createFixture({ inspect: async () => ({ ...ready, status: "error", reasonCode: "port_conflict", retryable: true }) });
+  const failClosedState = await requestRuntimeControl({ endpoint: failClosed.endpoint, token: "control-token", operation: "status" });
+  assert.equal(failClosedState.retryable, false, "port conflict remains non-retryable");
+  await failClosed.bridge.stop();
+  await rm(failClosed.root, { recursive: true, force: true });
+
+  const orphan = await createFixture({ inspect: async () => ({ ...ready, status: "error", reasonCode: "orphan_processes_detected", retryable: true }) });
+  const orphanState = await requestRuntimeControl({ endpoint: orphan.endpoint, token: "control-token", operation: "status" });
+  assert.equal(orphanState.retryable, false, "orphan ownership error remains non-retryable");
+  await orphan.bridge.stop();
+  await rm(orphan.root, { recursive: true, force: true });
+
+  const starting = await createFixture({ inspect: async () => ({ ...ready, status: "starting", phase: "health-check", retryable: true }) });
+  const startingState = await requestRuntimeControl({ endpoint: starting.endpoint, token: "control-token", operation: "status" });
+  assert.equal(startingState.retryable, false, "starting is never retryable");
+  await starting.bridge.stop();
+  await rm(starting.root, { recursive: true, force: true });
+}
+
 async function main() {
   await testStatusReadOnly();
   await testStartConcurrencyAndFailures();
@@ -135,6 +162,7 @@ async function main() {
   testRequestSecurity();
   await testReasonAndShellContract();
   await testReasonMappingIsPreserved();
+  await testRetryabilityContract();
   console.log("[UED Agent] Runtime control foundation checks passed.");
 }
 

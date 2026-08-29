@@ -6,6 +6,7 @@ import path from "node:path";
 
 const maximumRequestBytes = 16 * 1024;
 const allowedOperations = new Set(["status", "start"]);
+const nonRetryableReasonCodes = new Set(["port_conflict", "orphan_processes_detected", "runtime_ownership_conflict", "runtime_lock_conflict", "runtime_configuration_invalid", "source_invalid", "build_missing", "build_invalid", "credential_missing", "credential_status_unknown", "runtime_control_unavailable"]);
 
 function safeTokenEquals(received, expected) {
   if (typeof received !== "string" || typeof expected !== "string") return false;
@@ -21,14 +22,17 @@ export function runtimeControlEndpoint({ supervisorDirectory, instanceId, platfo
 }
 
 export function publicRuntimeState(state) {
+  const status = ["unavailable", "starting", "ready", "configuration_required", "error"].includes(state?.status) ? state.status : "unavailable";
+  const reasonCode = state?.reasonCode ?? null;
   return {
-    status: state?.status ?? "unavailable",
+    status,
     phase: state?.phase ?? null,
-    reasonCode: state?.reasonCode ?? null,
+    reasonCode,
     operationId: state?.operationId ?? null,
     startedAt: state?.startedAt ?? null,
     generation: Number.isInteger(state?.generation) ? state.generation : 0,
     credentialStatus: ["configured", "missing", "unknown"].includes(state?.credentialStatus) ? state.credentialStatus : "unknown",
+    retryable: (status === "error" || status === "unavailable") && state?.retryable === true && !nonRetryableReasonCodes.has(reasonCode),
     shell: state?.shell === "ready" ? "ready" : "unavailable",
     operation: state?.operation && typeof state.operation === "object"
       ? { operationId: state.operation.operationId ?? null, startedAt: state.operation.startedAt ?? null, phase: state.operation.phase ?? null, generation: Number.isInteger(state.operation.generation) ? state.operation.generation : 0 }
