@@ -4,6 +4,8 @@ import type { MarkdownKnowledgeRelatedScope, MarkdownKnowledgeSpecTopic } from "
 export const knowledgeGatewayAssetTypes = ["knowledge", "sop", "component-spec", "micro-spec", "project", "prompt", "skill", "training", "vibe-product", "font"] as const satisfies readonly KnowledgeAssetType[];
 
 export type KnowledgeGatewayAssetType = (typeof knowledgeGatewayAssetTypes)[number];
+export type KnowledgeGatewayContentStatus = "full" | "metadata_only";
+export type KnowledgeGatewayMatchSource = "metadata" | "content" | "both";
 
 export interface KnowledgeGatewaySourceDiagnostic {
   source: KnowledgeAssetSource;
@@ -25,6 +27,7 @@ export interface KnowledgeGatewayCitation {
 export interface KnowledgeGatewayAsset {
   key: string;
   assetType: KnowledgeGatewayAssetType;
+  contentStatus: KnowledgeGatewayContentStatus;
   id: string;
   title: string;
   description: string;
@@ -57,13 +60,15 @@ export interface KnowledgeGatewayMicroSpecSearchInput {
 
 export interface KnowledgeGatewaySearchResult {
   status: "ok" | "partial";
-  items: Array<KnowledgeGatewayAsset & { relevance: { score: number; matchedFields: string[] } }>;
+  items: Array<KnowledgeGatewayAsset & { relevance: { score: number; matchedFields: string[]; matchSource?: KnowledgeGatewayMatchSource } }>;
   diagnostics: KnowledgeGatewaySourceDiagnostic[];
   partial: boolean;
 }
 
 export interface KnowledgeGatewayDetailResult {
   asset: KnowledgeGatewayAsset;
+  hasContent: boolean;
+  truncated: boolean;
   content?: string;
   prompt?: {
     models: string[];

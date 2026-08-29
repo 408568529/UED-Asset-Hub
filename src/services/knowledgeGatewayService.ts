@@ -4,9 +4,13 @@ import { promptService } from "@/services/promptService";
 import { skillService } from "@/services/skillService";
 import type { KnowledgeAssetView } from "@/types/knowledge";
 import { markdownKnowledgeRelatedScopes, markdownKnowledgeSpecTopics, type MarkdownKnowledgeRelatedScope, type MarkdownKnowledgeSpecTopic } from "@/types/markdownKnowledge";
-import { KnowledgeGatewayError, type KnowledgeGatewayAsset, type KnowledgeGatewayAssetType, type KnowledgeGatewayDetailResult, type KnowledgeGatewayMicroSpecSearchInput, type KnowledgeGatewaySearchInput, type KnowledgeGatewaySearchResult, type KnowledgeGatewaySourceDiagnostic } from "@/types/knowledgeGateway";
+import { KnowledgeGatewayError, type KnowledgeGatewayAsset, type KnowledgeGatewayAssetType, type KnowledgeGatewayDetailResult, type KnowledgeGatewayMatchSource, type KnowledgeGatewayMicroSpecSearchInput, type KnowledgeGatewaySearchInput, type KnowledgeGatewaySearchResult, type KnowledgeGatewaySourceDiagnostic } from "@/types/knowledgeGateway";
 
 const maximumLimit = 20;
+// Gateway tool results are inserted into a single DSH turn. Keep one asset's
+// answer evidence bounded independently from the runtime-selected model.
+const maximumAnswerContentCharacters = 32_768;
+const fullContentAssetTypes = new Set<KnowledgeGatewayAssetType>(["knowledge", "project", "micro-spec", "prompt", "skill"]);
 
 function normalize(value: string | undefined) {
   return value?.trim().toLocaleLowerCase() ?? "";
@@ -28,10 +32,15 @@ function citationFor(item: KnowledgeAssetView): KnowledgeGatewayAsset["citation"
   };
 }
 
+function contentStatusFor(assetType: KnowledgeGatewayAssetType): KnowledgeGatewayAsset["contentStatus"] {
+  return fullContentAssetTypes.has(assetType) ? "full" : "metadata_only";
+}
+
 function toGatewayAsset(item: KnowledgeAssetView): KnowledgeGatewayAsset {
   return {
     key: item.key,
     assetType: item.assetType,
+    contentStatus: contentStatusFor(item.assetType),
     id: item.id,
     title: item.title,
     description: item.description,
@@ -63,20 +72,23 @@ function matchAll(values: string[], expected: string[] | undefined) {
 function rank(item: KnowledgeGatewayAsset, query: string | undefined, content = "") {
   const tokens = words(query);
   const matchedFields = new Set<string>();
+  let metadataMatched = false;
+  let contentMatched = false;
   let score = 0;
   for (const token of tokens) {
     const title = normalize(item.title);
     const tags = item.tags.map(normalize);
     const description = normalize(item.description);
     const body = normalize(content);
-    if (title === token) { score += 700; matchedFields.add("title-exact"); }
-    else if (title.startsWith(token)) { score += 650; matchedFields.add("title-prefix"); }
-    else if (title.includes(token)) { score += 600; matchedFields.add("title"); }
-    if (tags.some((tag) => tag === token)) { score += 500; matchedFields.add("tags"); }
-    if (description.includes(token)) { score += 300; matchedFields.add("description"); }
-    if (body.includes(token)) { score += 200; matchedFields.add("content"); }
+    if (title === token) { score += 700; matchedFields.add("title-exact"); metadataMatched = true; }
+    else if (title.startsWith(token)) { score += 650; matchedFields.add("title-prefix"); metadataMatched = true; }
+    else if (title.includes(token)) { score += 600; matchedFields.add("title"); metadataMatched = true; }
+    if (tags.some((tag) => tag === token)) { score += 500; matchedFields.add("tags"); metadataMatched = true; }
+    if (description.includes(token)) { score += 300; matchedFields.add("description"); metadataMatched = true; }
+    if (body.includes(token)) { score += 200; matchedFields.add("content"); contentMatched = true; }
   }
-  return { score, matchedFields: [...matchedFields] };
+  const matchSource: KnowledgeGatewayMatchSource | undefined = metadataMatched && contentMatched ? "both" : metadataMatched ? "metadata" : contentMatched ? "content" : undefined;
+  return { score, matchedFields: [...matchedFields], matchSource };
 }
 
 async function loadLibrary() {
@@ -109,9 +121,34 @@ function ensureAssetType(value: string): KnowledgeGatewayAssetType {
   return value as KnowledgeGatewayAssetType;
 }
 
+function truncateText(value: string, limit = maximumAnswerContentCharacters) {
+  const characters = Array.from(value);
+  return { value: characters.slice(0, limit).join(""), truncated: characters.length > limit };
+}
+
+function truncateTextFields(values: string[]) {
+  let remaining = maximumAnswerContentCharacters;
+  let truncated = false;
+  const fields = values.map((value) => {
+    const characters = Array.from(value);
+    const field = characters.slice(0, remaining).join("");
+    if (characters.length > remaining) truncated = true;
+    remaining = Math.max(0, remaining - characters.length);
+    return field;
+  });
+  return { fields, truncated };
+}
+
 async function contentFor(item: KnowledgeGatewayAsset) {
   if (["knowledge", "project", "micro-spec"].includes(item.assetType)) return (await markdownKnowledgeService.readContent(item.id)) ?? "";
-  if (item.assetType === "prompt") return (await promptService.getPromptForKnowledgeById(item.id))?.content ?? "";
+  if (item.assetType === "prompt") {
+    const prompt = await promptService.getPromptForKnowledgeById(item.id);
+    return prompt ? [prompt.content, prompt.usageGuide, prompt.exampleInput, prompt.exampleOutput].join("\n") : "";
+  }
+  if (item.assetType === "skill") {
+    const skill = await skillService.getSkillForKnowledgeById(item.id);
+    return skill ? [skill.readme, skill.changeLog].join("\n") : "";
+  }
   return "";
 }
 
@@ -122,7 +159,8 @@ export const knowledgeGatewayService = {
     for (const assetType of input.assetTypes ?? []) ensureAssetType(assetType);
     const filtered = items.filter((item) => (!input.assetTypes?.length || input.assetTypes.includes(item.assetType)) && (!input.sections?.length || input.sections.includes(item.section)) && (!input.categories?.length || input.categories.some((category) => normalize(category) === normalize(item.category))) && matchAll(item.tags, input.tags));
     const scored = await Promise.all(filtered.map(async (item) => {
-      const ranked = rank(item, input.q);
+      const content = item.contentStatus === "full" ? truncateText(await contentFor(item)).value : "";
+      const ranked = rank(item, input.q, content);
       return { ...item, relevance: ranked, score: ranked.score };
     }));
     const matched = words(input.q).length ? scored.filter((item) => item.score > 0) : scored;
@@ -139,11 +177,11 @@ export const knowledgeGatewayService = {
     const { items, diagnostics } = await loadLibrary();
     const filtered = items.filter((item) => item.assetType === "micro-spec" && matchAll(item.microSpec?.relatedScopes ?? [], input.relatedScopes) && (!input.specTopics?.length || input.specTopics.includes(item.microSpec?.specTopic!)) && matchAll(item.tags, input.tags));
     const scored = await Promise.all(filtered.map(async (item) => {
-      const content = await contentFor(item);
+      const content = truncateText(await contentFor(item)).value;
       const ranked = rank(item, input.q, content);
       const scopeScore = input.relatedScopes?.length ? 1000 : 0;
       const topicScore = input.specTopics?.length ? 800 : 0;
-      return { ...item, relevance: { score: ranked.score + scopeScore + topicScore, matchedFields: [...(scopeScore ? ["relatedScopes"] : []), ...(topicScore ? ["specTopic"] : []), ...ranked.matchedFields] }, score: ranked.score + scopeScore + topicScore };
+      return { ...item, relevance: { score: ranked.score + scopeScore + topicScore, matchedFields: [...(scopeScore ? ["relatedScopes"] : []), ...(topicScore ? ["specTopic"] : []), ...ranked.matchedFields], matchSource: ranked.matchSource }, score: ranked.score + scopeScore + topicScore };
     }));
     const matched = words(input.q).length ? scored.filter((item) => item.relevance.matchedFields.some((field) => field !== "relatedScopes" && field !== "specTopic")) : scored;
     return { status: diagnostics.length ? "partial" : "ok", items: sortScored(matched).slice(0, limit).map(({ score: _score, ...item }) => item), diagnostics, partial: diagnostics.length > 0 };
@@ -156,18 +194,21 @@ export const knowledgeGatewayService = {
     const asset = items.find((item) => item.assetType === assetType && item.id === id);
     if (!asset) throw new KnowledgeGatewayError("not-found", 404, "未找到该 Knowledge Gateway 资产。");
     if (["knowledge", "project", "micro-spec"].includes(assetType)) {
-      return { asset, content: await contentFor(asset), diagnostics, partial: diagnostics.length > 0 };
+      const content = truncateText(await contentFor(asset));
+      return { asset, hasContent: content.value.length > 0, content: content.value, truncated: content.truncated, diagnostics, partial: diagnostics.length > 0 };
     }
     if (assetType === "prompt") {
       const prompt = await promptService.getPromptForKnowledgeById(id);
       if (!prompt) throw new KnowledgeGatewayError("not-found", 404, "未找到该 Prompt。");
-      return { asset, prompt: { models: prompt.models, scenarios: prompt.scenarios, outputTypes: prompt.outputTypes, difficulty: prompt.difficulty, content: prompt.content, usageGuide: prompt.usageGuide, exampleInput: prompt.exampleInput, exampleOutput: prompt.exampleOutput }, diagnostics, partial: diagnostics.length > 0 };
+      const text = truncateTextFields([prompt.content, prompt.usageGuide, prompt.exampleInput, prompt.exampleOutput]);
+      return { asset, hasContent: text.fields.some(Boolean), prompt: { models: prompt.models, scenarios: prompt.scenarios, outputTypes: prompt.outputTypes, difficulty: prompt.difficulty, content: text.fields[0], usageGuide: text.fields[1], exampleInput: text.fields[2], exampleOutput: text.fields[3] }, truncated: text.truncated, diagnostics, partial: diagnostics.length > 0 };
     }
     if (assetType === "skill") {
       const skill = await skillService.getSkillForKnowledgeById(id);
       if (!skill) throw new KnowledgeGatewayError("not-found", 404, "未找到该 Skill。");
-      return { asset, skill: { version: skill.version, usageScenarios: skill.usageScenarios, readme: skill.readme, changeLog: skill.changeLog }, diagnostics, partial: diagnostics.length > 0 };
+      const text = truncateTextFields([skill.readme, skill.changeLog]);
+      return { asset, hasContent: text.fields.some(Boolean), skill: { version: skill.version, usageScenarios: skill.usageScenarios, readme: text.fields[0], changeLog: text.fields[1] }, truncated: text.truncated, diagnostics, partial: diagnostics.length > 0 };
     }
-    return { asset, diagnostics, partial: diagnostics.length > 0 };
+    return { asset, hasContent: false, truncated: false, diagnostics, partial: diagnostics.length > 0 };
   }
 };
