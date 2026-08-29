@@ -26,12 +26,20 @@ function textResult(value) {
 
 const assetTypes = ["knowledge", "sop", "component-spec", "micro-spec", "project", "prompt", "skill", "training", "vibe-product", "font"];
 const assetTypeSchema = z.enum(assetTypes);
+const citationKeySchema = z.string().regex(
+  /^asset-hub:\/\/knowledge\/(?:knowledge|sop|component-spec|micro-spec|project|prompt|skill|training|vibe-product|font)\/[^\s/?#]+$/,
+  "citation.key must be an Asset Hub knowledge identifier."
+);
+const citationHrefSchema = z.string().regex(
+  /^\/knowledge\?asset=[^\s#]+$/,
+  "citation.href must be an internal Asset Hub knowledge navigation path."
+);
 const citationSchema = z.object({
-  key: z.string(),
+  key: citationKeySchema,
   assetType: assetTypeSchema,
   id: z.string(),
   title: z.string(),
-  href: z.string().startsWith("asset-hub://knowledge/"),
+  href: citationHrefSchema,
   source: z.string(),
   updatedAt: z.string()
 }).strict();
@@ -103,7 +111,7 @@ const detailOutputSchema = z.object({
 function buildServer() {
   const server = new McpServer({ name: "ued-asset-hub-knowledge-gateway", version: "2.1.0.1" });
   server.registerTool("search_knowledge", {
-    description: "Read-only discovery search over UED Asset Hub knowledge. Search results are discovery evidence, not complete document content. For a question that requires body evidence: search, identify an asset, call get_knowledge_asset, then answer and cite the citation returned by that tool. Do not describe a discovery summary as having read a document. matchSource identifies whether a query matched metadata, safe content, or both. metadata_only means no formal body was read. Return citations only from this tool; never invent asset-hub URIs.",
+    description: "Read-only discovery search over UED Asset Hub knowledge. Search results are discovery evidence, not complete document content. For a question that requires body evidence: search, identify an asset, call get_knowledge_asset, then answer and cite citation.key returned by that tool. citation.href is only internal Asset Hub UI navigation metadata. Do not describe a discovery summary as having read a document. matchSource identifies whether a query matched metadata, safe content, or both. metadata_only means no formal body was read. Never invent Asset Hub citations.",
     inputSchema: {
       q: z.string().max(200).optional(),
       assetTypes: z.array(assetTypeSchema).max(10).optional(),
@@ -120,7 +128,7 @@ function buildServer() {
     return textResult(await gatewayRequest("/api/knowledge-gateway/search", query));
   });
   server.registerTool("search_micro_specs", {
-    description: "Read-only discovery search for formal Micro Specs. Filters scopes, topic, and tags before safe Markdown content matching. Results are discovery evidence, not complete document content. For a question requiring body evidence: search, identify an asset, call get_knowledge_asset, then answer and cite its returned citation. Do not describe a result summary as having read the complete document. matchSource identifies metadata, content, or both; never invent asset-hub URIs.",
+    description: "Read-only discovery search for formal Micro Specs. Filters scopes, topic, and tags before safe Markdown content matching. Results are discovery evidence, not complete document content. For a question requiring body evidence: search, identify an asset, call get_knowledge_asset, then answer and cite its returned citation.key. citation.href is only internal Asset Hub UI navigation metadata. Do not describe a result summary as having read the complete document. matchSource identifies metadata, content, or both; never invent Asset Hub citations.",
     inputSchema: {
       q: z.string().max(200).optional(),
       relatedScopes: z.array(z.enum(["web-component-library", "app-component-library", "global", "portal", "retail-app"])).max(5).optional(),
@@ -139,7 +147,7 @@ function buildServer() {
     return textResult(await gatewayRequest("/api/knowledge-gateway/micro-specs/search", query));
   });
   server.registerTool("get_knowledge_asset", {
-    description: "Read one allowlisted Knowledge Gateway asset by type and id after discovery. Inspect contentStatus, hasContent, and truncated before answering. metadata_only means only safe metadata was returned: it may establish that an asset exists, but it is not document content; do not infer docLink, Figma, video, file, or other external content. full with hasContent true and truncated false is complete returned body evidence. full with truncated true is only a returned excerpt, never complete-document evidence. full with hasContent false has no body to invent. Knowledge answers must cite the citation returned by this tool; never construct an asset-hub URI. Responses exclude package paths, download links, filesystem paths, credentials, sessions, and gateway tokens.",
+    description: "Read one allowlisted Knowledge Gateway asset by type and id after discovery. Inspect contentStatus, hasContent, and truncated before answering. metadata_only means only safe metadata was returned: it may establish that an asset exists, but it is not document content; do not infer docLink, Figma, video, file, or other external content. full with hasContent true and truncated false is complete returned body evidence. full with truncated true is only a returned excerpt, never complete-document evidence. full with hasContent false has no body to invent. Knowledge answers must cite citation.key returned by this tool; citation.href is only internal Asset Hub UI navigation metadata. Never construct an Asset Hub citation. Responses exclude package paths, download links, filesystem paths, credentials, sessions, and gateway tokens.",
     inputSchema: {
       assetType: assetTypeSchema,
       id: z.string().min(1).max(128)

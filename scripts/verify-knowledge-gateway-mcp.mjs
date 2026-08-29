@@ -7,7 +7,20 @@ import { readFile } from "node:fs/promises";
 const assetTypes = ["knowledge", "sop", "component-spec", "micro-spec", "project", "prompt", "skill", "training", "vibe-product", "font"];
 let gatewayRequests = 0;
 
-function asset(assetType, id, contentStatus) {
+function gatewayCitation(assetType, id, overrides = {}) {
+  return {
+    key: `asset-hub://knowledge/${assetType}/${id}`,
+    assetType,
+    id,
+    title: "Gateway fixture",
+    href: `/knowledge?asset=${encodeURIComponent(`${assetType}:${id}`)}`,
+    source: "markdownKnowledgeService",
+    updatedAt: "2026-08-29T00:00:00.000Z",
+    ...overrides
+  };
+}
+
+function asset(assetType, id, contentStatus, citationOverrides) {
   return {
     key: `${assetType}:${id}`,
     assetType,
@@ -19,7 +32,7 @@ function asset(assetType, id, contentStatus) {
     updatedAt: "2026-08-29T00:00:00.000Z",
     source: "markdownKnowledgeService",
     section: "document",
-    citation: { key: `${assetType}:${id}`, assetType, id, title: "Gateway fixture", href: `asset-hub://knowledge/${assetType}/${id}`, source: "markdownKnowledgeService", updatedAt: "2026-08-29T00:00:00.000Z" }
+    citation: gatewayCitation(assetType, id, citationOverrides)
   };
 }
 
@@ -52,9 +65,11 @@ async function waitFor(url) {
 
 const gateway = await startServer((request, response) => {
   gatewayRequests += 1;
+  const invalidCitationKey = request.url?.includes("invalid-citation-key");
+  const externalCitationHref = request.url?.includes("external-citation-href");
   const metadataOnly = request.url?.includes("/assets/sop/");
   const payload = request.url?.includes("/assets/")
-    ? { asset: asset(metadataOnly ? "sop" : "knowledge", metadataOnly ? "sop-fixture" : "knowledge-fixture", metadataOnly ? "metadata_only" : "full"), hasContent: !metadataOnly, truncated: !metadataOnly, ...(metadataOnly ? {} : { content: "Returned excerpt only" }), diagnostics: [], partial: false }
+    ? { asset: asset(metadataOnly ? "sop" : "knowledge", metadataOnly ? "sop-fixture" : "knowledge-fixture", metadataOnly ? "metadata_only" : "full", invalidCitationKey ? { key: "knowledge:invalid" } : externalCitationHref ? { href: "https://example.test/knowledge" } : undefined), hasContent: !metadataOnly, truncated: !metadataOnly, ...(metadataOnly ? {} : { content: "Returned excerpt only" }), diagnostics: [], partial: false }
     : { status: "ok", items: [{ ...asset("knowledge", "knowledge-fixture", "full"), relevance: { score: 200, matchedFields: ["content"], matchSource: "content" } }], diagnostics: [], partial: false };
   response.writeHead(200, { "Content-Type": "application/json" });
   response.end(JSON.stringify(payload));
@@ -92,13 +107,19 @@ try {
   assert.equal(search.json.result.structuredContent.items[0].contentStatus, "full");
   assert.equal(search.json.result.structuredContent.items[0].relevance.matchSource, "content");
   assert.equal("content" in search.json.result.structuredContent.items[0], false);
-  assert.match(search.json.result.structuredContent.items[0].citation.href, /^asset-hub:\/\/knowledge\//);
+  assert.match(search.json.result.structuredContent.items[0].citation.key, /^asset-hub:\/\/knowledge\/knowledge\/knowledge-fixture$/);
+  assert.match(search.json.result.structuredContent.items[0].citation.href, /^\/knowledge\?asset=/);
   const truncated = await post(mcpUrl, { jsonrpc: "2.0", id: "truncated", method: "tools/call", params: { name: "get_knowledge_asset", arguments: { assetType: "knowledge", id: "knowledge-fixture" } } }, list.sessionId);
   assert.equal(truncated.json.result.structuredContent.asset.contentStatus, "full");
   assert.equal(truncated.json.result.structuredContent.hasContent, true);
   assert.equal(truncated.json.result.structuredContent.truncated, true);
   assert.equal(truncated.json.result.structuredContent.content, "Returned excerpt only");
-  assert.match(truncated.json.result.structuredContent.asset.citation.href, /^asset-hub:\/\/knowledge\//);
+  assert.match(truncated.json.result.structuredContent.asset.citation.key, /^asset-hub:\/\/knowledge\/knowledge\/knowledge-fixture$/);
+  assert.match(truncated.json.result.structuredContent.asset.citation.href, /^\/knowledge\?asset=/);
+  const invalidCitationKey = await post(mcpUrl, { jsonrpc: "2.0", id: "invalid-citation-key", method: "tools/call", params: { name: "get_knowledge_asset", arguments: { assetType: "knowledge", id: "invalid-citation-key" } } }, list.sessionId);
+  assert.equal(invalidCitationKey.json.result.isError, true);
+  const externalCitationHref = await post(mcpUrl, { jsonrpc: "2.0", id: "external-citation-href", method: "tools/call", params: { name: "get_knowledge_asset", arguments: { assetType: "knowledge", id: "external-citation-href" } } }, list.sessionId);
+  assert.equal(externalCitationHref.json.result.isError, true);
   const metadataOnly = await post(mcpUrl, { jsonrpc: "2.0", id: "detail", method: "tools/call", params: { name: "get_knowledge_asset", arguments: { assetType: "sop", id: "sop-fixture" } } }, list.sessionId);
   assert.equal(metadataOnly.json.result.structuredContent.asset.contentStatus, "metadata_only");
   assert.equal(metadataOnly.json.result.structuredContent.hasContent, false);
