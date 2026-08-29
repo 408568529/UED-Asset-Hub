@@ -30,15 +30,19 @@ export class RuntimeLifecycleCore {
     return this.snapshot();
   }
 
-  async inspect() {
+  async inspect({ readOnly = false } = {}) {
+    if (readOnly && this.operation) return this.snapshot();
+    const report = (status, options = {}) => readOnly
+      ? { ...this.state, status, phase: options.phase ?? null, reasonCode: options.reasonCode ?? null, credentialStatus: options.credentialStatus ?? this.state.credentialStatus, operation: this.operation ? { operationId: this.operation.operationId, startedAt: this.operation.startedAt, phase: this.state.phase, generation: this.operation.generation } : null }
+      : this.transition(status, options);
     const staticResult = await this.inspectStatic();
-    if (!staticResult.ok) return this.transition("configuration_required", { reasonCode: staticResult.reasonCode, credentialStatus: "unknown" });
+    if (!staticResult.ok) return report("configuration_required", { reasonCode: staticResult.reasonCode, credentialStatus: "unknown" });
     const runtime = await this.inspectRuntime();
-    if (!runtime.dsh) return this.transition("unavailable", { credentialStatus: "unknown" });
-    if (!runtime.gateway || !runtime.proxy || !runtime.mcp) return this.transition("error", { reasonCode: runtime.reasonCode || "runtime_health_failed", credentialStatus: "unknown" });
-    if (runtime.credentialStatus === "missing") return this.transition("configuration_required", { reasonCode: "credential_missing", credentialStatus: "missing" });
-    if (runtime.credentialStatus !== "configured") return this.transition("error", { reasonCode: "credential_status_unknown", credentialStatus: "unknown" });
-    return this.transition("ready", { credentialStatus: "configured" });
+    if (!runtime.dsh) return report("unavailable", { credentialStatus: "unknown" });
+    if (!runtime.gateway || !runtime.proxy || !runtime.mcp) return report("error", { reasonCode: runtime.reasonCode || "runtime_health_failed", credentialStatus: "unknown" });
+    if (runtime.credentialStatus === "missing") return report("configuration_required", { reasonCode: "credential_missing", credentialStatus: "missing" });
+    if (runtime.credentialStatus !== "configured") return report("error", { reasonCode: "credential_status_unknown", credentialStatus: "unknown" });
+    return report("ready", { credentialStatus: "configured" });
   }
 
   async ensureReady({ recovering = false } = {}) {

@@ -35,6 +35,9 @@ async function testLifecycleStates() {
   assert.equal(concurrent.every((item) => item.status === "ready"), true);
   assert.deepEqual(ready.starts, ["prepare", "gateway", "dsh", "proxy"], "concurrent start shares one operation");
   assert.equal((await ready.core.ensureReady()).status, "ready", "ready start is idempotent");
+  const beforeReadOnlyInspect = ready.core.snapshot();
+  await ready.core.inspect({ readOnly: true });
+  assert.deepEqual(ready.core.snapshot(), beforeReadOnlyInspect, "read-only inspect does not change Lifecycle state");
 
   const missingCredential = createCore({ runtimeResult: runtime({ credentialStatus: "missing" }) });
   assert.equal((await missingCredential.core.ensureReady()).status, "configuration_required");

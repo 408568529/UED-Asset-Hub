@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import http from "node:http";
 import { createServer } from "node:net";
 import { access, appendFile, copyFile, readFile } from "node:fs/promises";
@@ -11,6 +11,7 @@ import { ensureRuntimePaths, ensureRuntimeSubdirectory, inspectRuntimePaths } fr
 import { ManagedProcessController, assertNoLiveManagedOrphans, managedMetadataPath } from "./managed-process-controller.mjs";
 import { RuntimeLifecycleCore } from "./runtime-lifecycle-core.mjs";
 import { acquireSupervisorLock, supervisorLockPath } from "./supervisor-lock.mjs";
+import { createRuntimeControlBridge, runtimeControlEndpoint } from "./runtime-control-bridge.mjs";
 
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require("@next/env");
@@ -159,6 +160,7 @@ export async function main() {
   let stopping = false;
   let runtimePaths = null;
   let releaseLock = async () => {};
+  let runtimeControl = null;
   const logLifecycle = (event) => {
     void appendLifecycleLog(runtimePaths, event).catch((error) => console.error(`[Host Supervisor] Lifecycle log write failed: ${error instanceof Error ? error.message : error}`));
   };
@@ -255,6 +257,19 @@ export async function main() {
       console.log(`[Host Supervisor] Agent Runtime ${state.status}${state.phase ? ` (${state.phase})` : ""}${state.reasonCode ? `: ${state.reasonCode}` : ""}.`);
     }
   });
+  if (agentRuntimeDir) {
+    const token = randomBytes(32).toString("base64url");
+    const endpoint = runtimeControlEndpoint({ supervisorDirectory: runtimePaths?.directories?.supervisor || path.join(agentRuntimeDir, "supervisor"), instanceId });
+    runtimeControl = createRuntimeControlBridge({
+      endpoint,
+      token,
+      inspect: () => core.inspect({ readOnly: true }),
+      ensureReady: () => core.ensureReady(),
+      onEvent: (event) => { logLifecycle({ ...event, phase: `runtime-control:${event.operation}` }); }
+    });
+    await runtimeControl.start();
+    specifications.assetHub.env = runtimeEnvironmentProfiles.assetHub(process.env, { RUNTIME_CONTROL_ENDPOINT: endpoint, RUNTIME_CONTROL_TOKEN: token });
+  }
   await assertPortAvailable(publicPort, "公开 Asset Hub");
   await assertPortAvailable(internalPort, "内部 Asset Hub");
   await controller.start("assetHub", specifications.assetHub);
@@ -271,6 +286,7 @@ export async function main() {
     let releaseAllowed = false;
     try {
       console.log(`\n[Host Supervisor] Received ${signal}. Stopping managed services...`);
+      await runtimeControl?.stop();
       await core.stopForShutdown();
       await edge.stop();
       await controller.stopAll(["assetHub"]);
