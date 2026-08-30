@@ -18,6 +18,7 @@
     "verify:dsh-source-policy": "node scripts/verify-dsh-source-policy.mjs",
     "verify:runtime-supervisor": "node scripts/verify-runtime-supervisor.mjs",
     "verify:windows-managed-process-native": "node scripts/verify-windows-managed-process-native.mjs",
+    "build:windows-job-helper": "node scripts/build-windows-job-helper.mjs",
     "verify:runtime-diagnostics-instrumentation": "node scripts/verify-runtime-diagnostics-instrumentation.mjs",
     "verify:runtime-control": "tsx scripts/verify-runtime-control.mjs",
     "verify:runtime-diagnostics-contract": "node scripts/verify-runtime-diagnostics-contract.mjs",

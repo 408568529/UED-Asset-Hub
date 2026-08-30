@@ -123,8 +123,21 @@ function createEdgeServer({ host, port: publicPort, internalPort, proxyPort }) {
   });
   return {
     start: () => new Promise((resolve, reject) => server.once("error", reject).listen(publicPort, host, () => { server.off("error", reject); console.log(`[Host Supervisor] Public Asset Hub edge listening on http://${host}:${publicPort}.`); resolve(); })),
-    stop: () => new Promise((resolve) => { for (const socket of sockets) socket.destroy(); sockets.clear(); server.close(resolve); })
+    stop: () => new Promise((resolve) => {
+      server.close(() => resolve());
+      setTimeout(() => { for (const socket of sockets) socket.destroy(); sockets.clear(); }, 5_000).unref();
+    })
   };
+}
+
+async function windowsJobHelperSpecification() {
+  if (process.platform !== "win32") return undefined;
+  const directory = path.join(projectDir, "native", "windows-job-helper", "bin");
+  const helperPath = path.join(directory, "ued-windows-job-helper.exe");
+  const manifestPath = path.join(directory, "ued-windows-job-helper.manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (manifest?.architecture !== "x64" || typeof manifest?.sha256 !== "string") throw new Error("Windows Job Helper manifest is invalid.");
+  return { path: helperPath, manifestPath, sha256: manifest.sha256 };
 }
 
 async function installRestrictedPreset(runtimePaths) {
@@ -186,6 +199,7 @@ export async function main() {
 
   const instanceId = randomUUID();
   const runtimeInstanceId = randomUUID();
+  const windowsJobHelper = await windowsJobHelperSpecification();
   let stopping = false;
   let runtimePaths = null;
   let releaseLock = async () => {};
@@ -234,7 +248,7 @@ export async function main() {
     }
   });
   const specifications = {
-    assetHub: { command: process.execPath, args: ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(internalPort)], cwd: projectDir, env: runtimeEnvironmentProfiles.assetHub(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret }), convergence: { verify: () => assertPortAvailable(internalPort, "内部 Asset Hub") } }
+    assetHub: { command: process.execPath, args: ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(internalPort)], cwd: projectDir, env: runtimeEnvironmentProfiles.assetHub(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(internalPort, "内部 Asset Hub") } }
   };
   const rpc = async (method, payload) => {
     const response = await request(new URL(`/api/${method}`, runtimeUrl), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "client-request", rpcId: `host-supervisor-${method}`, method, payload }) });
@@ -275,9 +289,9 @@ export async function main() {
   const configureAgentSpecifications = () => {
     if (!runtimePaths?.agentRoot || !lastCanonicalSource) throw new Error("Agent Runtime 尚未完成受控预检。");
     const values = { DSH_HOME: path.join(runtimePaths.agentRoot, "dsh-home"), AGENT_WORKSPACE_ROOT: path.join(runtimePaths.agentRoot, "workspaces") };
-    specifications.gateway = { command: process.execPath, args: ["agent-integration/scripts/start-knowledge-gateway-mcp.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.gatewayBridge(process.env, { KNOWLEDGE_GATEWAY_MCP_PORT: String(gatewayPort), KNOWLEDGE_GATEWAY_INTERNAL_URL: `http://127.0.0.1:${internalPort}` }), convergence: { verify: () => assertPortAvailable(gatewayPort, "Knowledge Gateway") } };
-    specifications.dsh = { command: process.execPath, args: ["--import", "tsx/esm", "apps/cli/src/bin.ts", "web", "--patch", path.join(projectDir, "agent-integration", "dsh", "asset-hub-agent.overlay.yml"), "--host", "127.0.0.1", "--port", String(dshPort)], cwd: lastCanonicalSource, env: runtimeEnvironmentProfiles.dsh(process.env, { DSH_HOME: values.DSH_HOME, DSH_TELEMETRY_DISABLED: "1", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT, ASSET_HUB_MCP_URL: `http://127.0.0.1:${gatewayPort}/mcp` }), convergence: { verify: () => assertPortAvailable(dshPort, "DSH") } };
-    specifications.proxy = { command: process.execPath, args: ["agent-integration/scripts/start-agent-proxy.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.agentProxy(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, DSH_BASE_URL: runtimeUrl.origin, AGENT_PROXY_HOST: "127.0.0.1", AGENT_PROXY_BASE_PATH: "/agent-runtime", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT }), convergence: { verify: () => assertPortAvailable(proxyPort, "Agent Proxy") } };
+    specifications.gateway = { command: process.execPath, args: ["agent-integration/scripts/start-knowledge-gateway-mcp.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.gatewayBridge(process.env, { KNOWLEDGE_GATEWAY_MCP_PORT: String(gatewayPort), KNOWLEDGE_GATEWAY_INTERNAL_URL: `http://127.0.0.1:${internalPort}` }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(gatewayPort, "Knowledge Gateway") } };
+    specifications.dsh = { command: process.execPath, args: ["--import", "tsx/esm", "apps/cli/src/bin.ts", "web", "--patch", path.join(projectDir, "agent-integration", "dsh", "asset-hub-agent.overlay.yml"), "--host", "127.0.0.1", "--port", String(dshPort)], cwd: lastCanonicalSource, env: runtimeEnvironmentProfiles.dsh(process.env, { DSH_HOME: values.DSH_HOME, DSH_TELEMETRY_DISABLED: "1", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT, ASSET_HUB_MCP_URL: `http://127.0.0.1:${gatewayPort}/mcp` }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(dshPort, "DSH") } };
+    specifications.proxy = { command: process.execPath, args: ["agent-integration/scripts/start-agent-proxy.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.agentProxy(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, DSH_BASE_URL: runtimeUrl.origin, AGENT_PROXY_HOST: "127.0.0.1", AGENT_PROXY_BASE_PATH: "/agent-runtime", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(proxyPort, "Agent Proxy") } };
   };
   const inspectRuntime = async () => {
     let credentialStatus = "unknown";
@@ -370,17 +384,17 @@ export async function main() {
     let releaseAllowed = false;
     try {
       console.log(`\n[Host Supervisor] Received ${signal}. Stopping managed services...`);
-      diagnostics.recordInProcessLifecycle("runtimeControl", { status: "stopping" });
-      await runtimeControl?.stop();
-      diagnostics.recordInProcessLifecycle("runtimeControl", { status: "stopped" });
-      await core.stopForShutdown();
       diagnostics.recordInProcessLifecycle("publicEdge", { status: "stopping" });
       await edge.stop();
       diagnostics.recordInProcessLifecycle("publicEdge", { status: "stopped" });
+      await core.stopForShutdown();
       await controller.stopAll(["assetHub"]);
       await controller.flushMetadata();
       controller.assertAllExited();
       await lifecycleWriter?.flush();
+      diagnostics.recordInProcessLifecycle("runtimeControl", { status: "stopping" });
+      await runtimeControl?.stop();
+      diagnostics.recordInProcessLifecycle("runtimeControl", { status: "stopped" });
       diagnostics.recordInProcessLifecycle("supervisor", { status: "stopped" });
       releaseAllowed = true;
     } finally {

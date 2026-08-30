@@ -1,13 +1,24 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { once } from "node:events";
 import { createServer } from "node:net";
-import { spawn } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
+import { ManagedProcessController } from "./managed-process-controller.mjs";
 import { WindowsProcessAdapter } from "./managed-process-platform-adapter.mjs";
 
 if (process.platform !== "win32") {
-  console.log("[UED Agent] Windows native managed-process verification: SKIPPED (requires Windows Server 2025 native execution).");
+  console.log("[UED Agent] Windows native managed-process verification: SKIPPED (requires Windows Server 2025 x64, Node 22.23.2, and MSVC-built helper).");
   process.exit(0);
 }
+
+const root = path.resolve(import.meta.dirname, "..");
+const helperPath = path.join(root, "native", "windows-job-helper", "bin", "ued-windows-job-helper.exe");
+const manifestPath = path.join(root, "native", "windows-job-helper", "bin", "ued-windows-job-helper.manifest.json");
+const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+assert.equal(manifest.architecture, "x64");
+assert.equal(manifest.sha256, createHash("sha256").update(await readFile(helperPath)).digest("hex"), "helper integrity manifest must match binary");
 
 async function freePort() {
   const server = createServer();
@@ -19,11 +30,6 @@ async function freePort() {
   return address.port;
 }
 
-async function waitForMessage(child) {
-  const [message] = await Promise.race([once(child, "message"), new Promise((_, reject) => setTimeout(() => reject(new Error("Fixture did not become ready.")), 10_000))]);
-  return message;
-}
-
 async function portReleased(port) {
   const server = createServer();
   await new Promise((resolve, reject) => server.once("error", reject).listen(port, "127.0.0.1", resolve));
@@ -32,33 +38,29 @@ async function portReleased(port) {
 
 async function runFixture({ ignoreShutdown }) {
   const port = await freePort();
-  const token = "native-fixture-token";
-  const child = spawn(process.execPath, ["scripts/fixtures/managed-process-fixture.mjs", "--port", String(port), "--shutdown-token", token, "--ignore-shutdown", String(ignoreShutdown), "--with-descendant", "true"], { cwd: process.cwd(), stdio: ["ignore", "ignore", "ignore", "ipc"] });
-  const ready = await waitForMessage(child);
+  const sandbox = await mkdtemp(path.join(os.tmpdir(), "ued-windows-job-native-"));
   const adapter = new WindowsProcessAdapter();
+  const controller = new ManagedProcessController({ supervisorInstanceId: "native-supervisor", runtimeInstanceId: "native-runtime", platform: "win32", adapter });
   const specification = {
     command: process.execPath,
-    args: [],
-    cwd: process.cwd(),
-    gracefulShutdown: async () => { child.send({ type: "managed-graceful-shutdown", token }); return { acknowledged: true }; },
+    args: [path.join(root, "scripts", "fixtures", "managed-process-fixture.mjs"), "--port", String(port), "--ignore-shutdown", String(ignoreShutdown), "--with-descendant", "true"],
+    cwd: root,
+    env: process.env,
+    windowsJobHelper: { path: helperPath, manifestPath, sha256: manifest.sha256 },
     convergence: { verify: () => portReleased(port) }
   };
-  const identity = await adapter.captureIdentity({ child, specification, supervisorInstanceId: "native-supervisor", runtimeInstanceId: "native-runtime", generation: 1 });
-  const record = { component: "fixture", ...identity, child, managedState: "running" };
-  return { adapter, child, ready, record, specification };
+  const record = await controller.start("dsh", specification);
+  return { controller, record, port, sandbox };
 }
 
 const graceful = await runFixture({ ignoreShutdown: false });
-assert.equal((await graceful.adapter.inspect(graceful.record)).ownership, "strong");
-assert.equal((await graceful.adapter.requestGracefulShutdown(graceful.record, graceful.specification)).acknowledged, true);
-assert.equal(await graceful.adapter.waitForExit(graceful.record, 10_000), true);
-await graceful.adapter.verifyConvergence(graceful.record, graceful.specification);
+assert.equal(graceful.record.jobOwnership.rootAssigned, true, "root was assigned before resume");
+await graceful.controller.stop("dsh", { timeoutMs: 10_000 });
+await portReleased(graceful.port);
+await rm(graceful.sandbox, { recursive: true, force: true });
 
 const forced = await runFixture({ ignoreShutdown: true });
-assert.equal((await forced.adapter.requestGracefulShutdown(forced.record, forced.specification)).acknowledged, true);
-assert.equal(await forced.adapter.waitForExit(forced.record, 50), false);
-await forced.adapter.forceTerminate(forced.record);
-assert.equal(await forced.adapter.waitForExit(forced.record, 10_000), true);
-await forced.adapter.verifyConvergence(forced.record, forced.specification);
-assert.equal(Number.isInteger(forced.ready.descendantPid), true);
+await forced.controller.stop("dsh", { timeoutMs: 100 });
+await portReleased(forced.port);
+await rm(forced.sandbox, { recursive: true, force: true });
 console.log("[UED Agent] Windows native managed-process verification passed.");

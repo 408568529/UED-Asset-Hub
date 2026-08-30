@@ -383,6 +383,9 @@ const server = http.createServer(async (request, response) => {
   proxy.web(request, response, { target: target.origin, headers: { origin: target.origin, referer: `${target.origin}/` } });
 });
 
+const sockets = new Set();
+server.on("connection", (socket) => { sockets.add(socket); socket.once("close", () => sockets.delete(socket)); });
+
 server.on("upgrade", (request, socket, head) => {
   if (!hasAdminSession(request)) {
     socket.write("HTTP/1.1 401 Unauthorized\\r\\nConnection: close\\r\\n\\r\\n");
@@ -395,3 +398,14 @@ server.on("upgrade", (request, socket, head) => {
 server.listen(port, host, () => {
   console.log(`[UED Agent] Official DSH proxy listening on http://${host}:${port} -> ${target.origin}`);
 });
+
+let shuttingDown = false;
+function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  proxy.close();
+  server.close(() => process.exit(0));
+  setTimeout(() => { for (const socket of sockets) socket.destroy(); }, 5_000).unref();
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

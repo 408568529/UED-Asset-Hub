@@ -23,3 +23,4 @@ async function shutdown() {
 process.on("message", (message) => {
   if (message?.type === "managed-graceful-shutdown" && message.token === shutdownToken) void shutdown();
 });
+process.on("SIGTERM", () => { void shutdown(); });

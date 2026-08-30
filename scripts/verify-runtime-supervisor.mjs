@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { ManagedProcessController, assertNoLiveManagedOrphans } from "./managed-process-controller.mjs";
 import { WindowsProcessAdapter } from "./managed-process-platform-adapter.mjs";
+import { createGracefulCapability, requestGracefulCapability } from "./windows-graceful-pipe.mjs";
 import { RuntimeLifecycleCore } from "./runtime-lifecycle-core.mjs";
 import { ensureRuntimePaths, inspectRuntimePaths } from "./runtime-path-safety.mjs";
 import { acquireSupervisorLock } from "./supervisor-lock.mjs";
@@ -251,6 +252,7 @@ async function testControllerShutdown() {
   assert.equal(events.filter((event) => event.type === "exit").length, 4, "each confirmed child exits exactly once during repeated shutdown");
   assert.equal(controller.restartTimers.size, 0, "shutdown cancels all restart timers");
   const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+  assert.equal(metadata.version, 3, "managed process metadata is v3");
   assert.equal(metadata.processes.every((record) => record.managedState === "exited" && record.running === false), true, "final metadata accurately records exited processes");
   await readFile(lockPath, "utf8");
   await releaseLock();
@@ -337,16 +339,16 @@ async function testWindowsAdapterOwnershipAndForcedStop() {
   const observation = () => child.exitCode === null
     ? { pid: 72001, processCreationTime: "2026-08-30T01:00:00.000Z", executablePath: "C:\\Program Files\\nodejs\\node.exe", commandLine: "node fixture.mjs", parentPid: 70000 }
     : null;
+  const jobHelper = {
+    spawn: async () => { child.jobOwnership = { provider: "test", helperVersion: 1, helperSha256: "test", helperPid: 72000, helperCreationTime: "now", jobInstanceId: "job-a", killOnJobClose: true, rootAssigned: true, assignedAt: "now" }; return child; },
+    activeProcessCount: async () => 0,
+    terminate: async () => { child.exitCode = 1; queueMicrotask(() => child.emit("exit", 1, null)); },
+    shutdown: () => {}
+  };
   const adapter = new WindowsProcessAdapter({
-    spawnImpl: () => child,
+    jobHelper,
     inspectProcess: async () => observation(),
-    runCommand: async (command, args) => {
-      assert.equal(command, "taskkill.exe");
-      assert.deepEqual(args, ["/PID", "72001", "/T", "/F"]);
-      child.exitCode = 1;
-      queueMicrotask(() => child.emit("exit", 1, null));
-      return { code: 0, signal: null };
-    }
+    requestGraceful: async () => ({ acknowledged: false, reasonCode: "graceful_pipe_unavailable" })
   });
   const events = [];
   const controller = new ManagedProcessController({ supervisorInstanceId: "supervisor-a", runtimeInstanceId: "runtime-a", metadataPath, platform: "win32", adapter, onProcessEvent: (event) => events.push(event) });
@@ -356,7 +358,7 @@ async function testWindowsAdapterOwnershipAndForcedStop() {
   assert.equal(record.processCreationTime, "2026-08-30T01:00:00.000Z");
   assert.equal(record.executablePath, "c:\\program files\\nodejs\\node.exe");
   await controller.stop("fixture", { timeoutMs: 1 });
-  assert.equal(events.some((event) => event.type === "graceful_shutdown_failed" && event.reasonCode === "graceful_shutdown_capability_missing"), true, "Windows does not pretend SIGTERM is graceful shutdown");
+  assert.equal(events.some((event) => event.type === "graceful_shutdown_failed" && event.reasonCode === "graceful_pipe_unavailable"), true, "Windows does not pretend SIGTERM is graceful shutdown");
   assert.equal(events.some((event) => event.type === "exit"), true, "forced stop waits for a real child exit");
   await rm(root, { recursive: true, force: true });
 }
@@ -368,7 +370,7 @@ async function testWindowsIdentityMismatchFailsClosed() {
   child.exitCode = null;
   const baseline = { pid: 73001, processCreationTime: "creation-a", executablePath: "C:\\node.exe", commandLine: "node fixture.mjs", parentPid: 1 };
   let observed = baseline;
-  const adapter = new WindowsProcessAdapter({ spawnImpl: () => child, inspectProcess: async () => observed, runCommand: async () => ({ code: 0 }) });
+  const adapter = new WindowsProcessAdapter({ jobHelper: { spawn: async () => { child.jobOwnership = { jobInstanceId: "job-b", rootAssigned: true }; return child; }, activeProcessCount: async () => 0, terminate: async () => {}, shutdown: () => {} }, inspectProcess: async () => observed, requestGraceful: async () => ({ acknowledged: false }) });
   const controller = new ManagedProcessController({ supervisorInstanceId: "supervisor-a", runtimeInstanceId: "runtime-a", platform: "win32", adapter });
   await controller.start("fixture", { command: "node", args: ["fixture.mjs"], cwd: root, env: {} });
   const record = controller.get("fixture");
@@ -393,6 +395,29 @@ async function testWindowsStoredPidReuseFailsClosed() {
   const adapter = new WindowsProcessAdapter({ inspectProcess: async () => ({ pid: 74001, processCreationTime: "new", executablePath: "C:\\node.exe", commandLine: "node fixture.mjs", parentPid: 1 }) });
   const inspection = await adapter.inspectStoredProcess({ component: "fixture", pid: 74001, processCreationTime: "old", executablePath: "C:\\node.exe", commandFingerprint: "not-the-new-command", supervisorInstanceId: "supervisor-a", runtimeInstanceId: "runtime-a", generation: 1 });
   assert.deepEqual({ alive: inspection.alive, ownership: inspection.ownership, reasonCode: inspection.reasonCode }, { alive: true, ownership: "unknown", reasonCode: "process_creation_time_mismatch" }, "PID reuse is never reclaimed automatically");
+}
+
+async function testWindowsJobOwnershipFailsClosed() {
+  const child = new EventEmitter(); child.pid = 76001; child.exitCode = null;
+  const adapter = new WindowsProcessAdapter({ jobHelper: { spawn: async () => child, activeProcessCount: async () => 0, terminate: async () => { throw new Error("must not terminate without Job ownership"); }, shutdown: () => {} }, inspectProcess: async () => ({ pid: 76001, processCreationTime: "a", executablePath: "C:\\node.exe", commandLine: "node fixture.mjs", parentPid: 1 }), requestGraceful: async () => ({ acknowledged: false }) });
+  const controller = new ManagedProcessController({ supervisorInstanceId: "supervisor-a", runtimeInstanceId: "runtime-a", platform: "win32", adapter });
+  await controller.start("fixture", { command: "node", args: ["fixture.mjs"], cwd: os.tmpdir(), env: {} });
+  await assert.rejects(() => controller.stop("fixture", { timeoutMs: 0 }), /Job ownership is unavailable/, "Windows never falls back to taskkill when Job ownership is unavailable");
+}
+
+async function testGracefulPipeCapability() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ued-graceful-pipe-"));
+  const endpoint = path.join(root, "graceful.sock");
+  let calls = 0;
+  const capability = createGracefulCapability({ endpoint, token: "t".repeat(32), runtimeInstanceId: "runtime-a", component: "dsh", generation: 4, onShutdown: () => { calls += 1; } });
+  await capability.start();
+  const accepted = await requestGracefulCapability({ endpoint, token: "t".repeat(32), runtimeInstanceId: "runtime-a", component: "dsh", generation: 4 });
+  assert.deepEqual(accepted, { acknowledged: true, reasonCode: null }, "graceful pipe accepts only its bound capability");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1, "graceful capability is one-shot");
+  const replay = await requestGracefulCapability({ endpoint, token: "t".repeat(32), runtimeInstanceId: "runtime-a", component: "dsh", generation: 4 });
+  assert.equal(replay.acknowledged, false, "closed capability rejects replay");
+  await rm(root, { recursive: true, force: true });
 }
 
 async function testWindowsSupervisorCrashFailsClosed() {
@@ -420,5 +445,7 @@ await testOrphanMetadataFailsClosed();
 await testWindowsAdapterOwnershipAndForcedStop();
 await testWindowsIdentityMismatchFailsClosed();
 await testWindowsStoredPidReuseFailsClosed();
+await testWindowsJobOwnershipFailsClosed();
+await testGracefulPipeCapability();
 await testWindowsSupervisorCrashFailsClosed();
 console.log("[UED Agent] Runtime Supervisor foundation checks passed.");

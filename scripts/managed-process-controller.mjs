@@ -41,7 +41,7 @@ export class ManagedProcessController {
 
   async persistMetadata() {
     if (!this.metadataPath) return;
-    const payload = JSON.stringify({ version: 2, supervisorInstanceId: this.supervisorInstanceId, runtimeInstanceId: this.runtimeInstanceId, processes: this.snapshot() }, null, 2);
+    const payload = JSON.stringify({ version: 3, supervisorInstanceId: this.supervisorInstanceId, runtimeInstanceId: this.runtimeInstanceId, processes: this.snapshot() }, null, 2);
     const temporaryPath = `${this.metadataPath}.${randomUUID()}.next`;
     const persist = async () => {
       await this.fileSystem.writeFile(temporaryPath, payload, { mode: 0o600 });
@@ -81,7 +81,7 @@ export class ManagedProcessController {
     const generation = (previous?.generation ?? 0) + 1;
     let child;
     try {
-      child = this.adapter.spawn(specification);
+      child = await this.adapter.spawn(specification, { component, supervisorInstanceId: this.supervisorInstanceId, runtimeInstanceId: this.runtimeInstanceId, generation });
     } catch (error) {
       this.onProcessEvent({ type: "start_failed", component, generation, intentional: false, operation, operationId, spawnFailed: true });
       throw error;
@@ -96,6 +96,9 @@ export class ManagedProcessController {
       platform: this.platform,
       pid: child.pid ?? null,
       ownershipCapability: "identity_capture_pending",
+      jobOwnership: child.jobOwnership ?? null,
+      graceful: { capability: this.platform === "win32" ? "named-pipe" : "signal", transport: this.platform === "win32" ? "local_named_pipe" : "process_group_signal", requestedAt: null, acknowledgedAt: null, completedAt: null, outcome: null, reasonCode: null },
+      convergence: { rootExited: false, activeProcessCount: null, portsReleased: false, pipeClosed: this.platform !== "win32", verifiedAt: null },
       managedState: "running",
       child,
       exitPromise: new Promise((resolve) => { resolveExit = resolve; })
@@ -158,16 +161,28 @@ export class ManagedProcessController {
     record.managedState = "stopping";
     await this.persistMetadata().catch(() => {});
     this.onProcessEvent({ type: "stopping", component, generation: record.generation, pid: record.pid, intentional: true, ownership: "owned", operation: "shutdown", record: this.publicRecord(record) });
+    record.graceful.requestedAt = new Date().toISOString();
     const graceful = await this.adapter.requestGracefulShutdown(record, specificationFor(record, this.specifications)).catch((error) => ({ acknowledged: false, reasonCode: error instanceof Error ? error.message : "graceful_shutdown_failed" }));
+    record.graceful.acknowledgedAt = graceful.acknowledged ? new Date().toISOString() : null;
+    record.graceful.outcome = graceful.acknowledged ? "accepted" : "unavailable";
+    record.graceful.reasonCode = graceful.reasonCode ?? null;
     if (!graceful.acknowledged) this.onProcessEvent({ type: "graceful_shutdown_failed", component, generation: record.generation, pid: record.pid, intentional: true, ownership: "owned", operation: "shutdown", record: this.publicRecord(record), reasonCode: graceful.reasonCode ?? "graceful_shutdown_failed" });
     const exited = await this.adapter.waitForExit(record, graceful.acknowledged ? timeoutMs : 0);
     if (!exited && this.records.get(component) === record) {
+      record.graceful.outcome = "timed_out_forced";
       await this.adapter.forceTerminate(record);
       const forcedExit = await this.adapter.waitForExit(record, 2_000);
       if (!forcedExit) throw new Error(`已确认归属的 ${component} 进程未在强制停止后退出。`);
     }
     await record.exitPersistence;
+    record.graceful.completedAt = new Date().toISOString();
+    record.convergence.rootExited = true;
     await this.adapter.verifyConvergence(record, specificationFor(record, this.specifications));
+    record.convergence.portsReleased = true;
+    record.convergence.pipeClosed = true;
+    record.convergence.verifiedAt = new Date().toISOString();
+    await this.persistMetadata();
+    await this.adapter.cleanup(record);
   }
 
   async stopAll(components, specifications = {}) {

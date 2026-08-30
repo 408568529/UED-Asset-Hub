@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
+import { WindowsJobHelperClient } from "./windows-job-helper-client.mjs";
+import { requestGracefulCapability } from "./windows-graceful-pipe.mjs";
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -26,20 +29,6 @@ function waitForChildExit(child, timeoutMs) {
     new Promise((resolve) => child.once("exit", () => resolve(true))),
     delay(timeoutMs).then(() => false)
   ]);
-}
-
-function runCommand(command, args, { spawnImpl = spawn } = {}) {
-  return new Promise((resolve, reject) => {
-    let child;
-    try {
-      child = spawnImpl(command, args, { stdio: "ignore", windowsHide: true, shell: false });
-    } catch (error) {
-      reject(error);
-      return;
-    }
-    child.once("error", reject);
-    child.once("exit", (code, signal) => resolve({ code, signal }));
-  });
 }
 
 async function inspectWindowsProcess(pid, { spawnImpl = spawn } = {}) {
@@ -150,7 +139,19 @@ export class WindowsProcessAdapter extends ManagedProcessPlatformAdapter {
   constructor(options = {}) {
     super({ ...options, platform: "win32" });
     this.inspectProcess = options.inspectProcess ?? ((pid) => inspectWindowsProcess(pid, { spawnImpl: this.spawnImpl }));
-    this.runCommand = options.runCommand ?? ((command, args) => runCommand(command, args, { spawnImpl: this.spawnImpl }));
+    this.jobHelper = options.jobHelper ?? new WindowsJobHelperClient({ spawnImpl: this.spawnImpl });
+    this.gracefulCapabilities = new WeakMap();
+    this.bootstrapPath = options.bootstrapPath ?? path.resolve(import.meta.dirname, "windows-graceful-bootstrap.mjs");
+    this.requestGraceful = options.requestGraceful ?? requestGracefulCapability;
+  }
+
+  async spawn(specification, ownership = {}) {
+    const endpoint = `\\\\.\\pipe\\ued-asset-hub-graceful-${randomBytes(18).toString("hex")}`;
+    const token = randomBytes(32).toString("base64url");
+    const nodeArguments = ["--import", this.bootstrapPath, ...(specification.args ?? [])];
+    const child = await this.jobHelper.spawn({ ...specification, args: nodeArguments, env: { ...specification.env, UED_GRACEFUL_ENDPOINT: endpoint, UED_GRACEFUL_TOKEN: token, UED_RUNTIME_INSTANCE_ID: ownership.runtimeInstanceId, UED_MANAGED_COMPONENT: ownership.component, UED_MANAGED_GENERATION: String(ownership.generation) } }, ownership);
+    this.gracefulCapabilities.set(child, { endpoint, token });
+    return child;
   }
 
   async captureIdentity(context) {
@@ -194,12 +195,10 @@ export class WindowsProcessAdapter extends ManagedProcessPlatformAdapter {
     return this.compareIdentity(record, await this.inspectProcess(record?.pid));
   }
 
-  async requestGracefulShutdown(record, specification) {
-    if (typeof specification?.gracefulShutdown !== "function") {
-      return { acknowledged: false, reasonCode: "graceful_shutdown_capability_missing" };
-    }
-    const result = await specification.gracefulShutdown({ component: record.component, record: this.publicIdentity(record) });
-    return result && result.acknowledged === false ? result : { acknowledged: true };
+  async requestGracefulShutdown(record) {
+    const capability = this.gracefulCapabilities.get(record.child);
+    if (!capability) return { acknowledged: false, reasonCode: "graceful_shutdown_capability_missing" };
+    return this.requestGraceful({ ...capability, runtimeInstanceId: record.runtimeInstanceId, component: record.component, generation: record.generation });
   }
 
   publicIdentity(record) {
@@ -210,14 +209,20 @@ export class WindowsProcessAdapter extends ManagedProcessPlatformAdapter {
   async forceTerminate(record) {
     const ownership = await this.inspect(record);
     if (ownership.ownership !== "strong") throw new Error(`Managed process ownership cannot be proven (${ownership.reasonCode}); forced stop is forbidden.`);
-    const result = await this.runCommand("taskkill.exe", ["/PID", String(record.pid), "/T", "/F"]);
-    if (result.code !== 0) throw new Error(`taskkill failed for ${record.component} with exit code ${result.code ?? "unknown"}.`);
+    if (!record.jobOwnership?.rootAssigned || !record.jobOwnership?.jobInstanceId) throw new Error("Windows Job ownership is unavailable; automatic taskkill fallback is forbidden.");
+    await this.jobHelper.terminate(record);
   }
 
   async verifyConvergence(record, specification) {
     await super.verifyConvergence(record, specification);
+    const count = await this.jobHelper.activeProcessCount(record);
+    if (count !== 0) throw new Error(`Windows Job for ${record.component} still has ${count} active processes.`);
     const observed = await this.inspectProcess(record.pid);
     if (observed) throw new Error(`已归属的 ${record.component} 进程仍存活，未收敛。`);
+  }
+
+  async cleanup(record) {
+    if (record?.jobOwnership?.jobInstanceId) this.jobHelper.shutdown(record);
   }
 }
 
