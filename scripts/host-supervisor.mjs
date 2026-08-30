@@ -185,6 +185,7 @@ export async function main() {
   await access(path.join(projectDir, ".next", "BUILD_ID"));
 
   const instanceId = randomUUID();
+  const runtimeInstanceId = randomUUID();
   let stopping = false;
   let runtimePaths = null;
   let releaseLock = async () => {};
@@ -216,6 +217,7 @@ export async function main() {
   let core;
   const controller = new ManagedProcessController({
     supervisorInstanceId: instanceId,
+    runtimeInstanceId,
     metadataPath: runtimePaths ? managedMetadataPath(runtimePaths.directories) : undefined,
     onPersistenceError: () => {
       diagnostics.recordSupervisorDegradation("metadata_persistence_failed");
@@ -232,7 +234,7 @@ export async function main() {
     }
   });
   const specifications = {
-    assetHub: { command: process.execPath, args: ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(internalPort)], cwd: projectDir, env: runtimeEnvironmentProfiles.assetHub(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret }) }
+    assetHub: { command: process.execPath, args: ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(internalPort)], cwd: projectDir, env: runtimeEnvironmentProfiles.assetHub(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret }), convergence: { verify: () => assertPortAvailable(internalPort, "内部 Asset Hub") } }
   };
   const rpc = async (method, payload) => {
     const response = await request(new URL(`/api/${method}`, runtimeUrl), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "client-request", rpcId: `host-supervisor-${method}`, method, payload }) });
@@ -273,9 +275,9 @@ export async function main() {
   const configureAgentSpecifications = () => {
     if (!runtimePaths?.agentRoot || !lastCanonicalSource) throw new Error("Agent Runtime 尚未完成受控预检。");
     const values = { DSH_HOME: path.join(runtimePaths.agentRoot, "dsh-home"), AGENT_WORKSPACE_ROOT: path.join(runtimePaths.agentRoot, "workspaces") };
-    specifications.gateway = { command: process.execPath, args: ["agent-integration/scripts/start-knowledge-gateway-mcp.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.gatewayBridge(process.env, { KNOWLEDGE_GATEWAY_MCP_PORT: String(gatewayPort), KNOWLEDGE_GATEWAY_INTERNAL_URL: `http://127.0.0.1:${internalPort}` }) };
-    specifications.dsh = { command: process.execPath, args: ["--import", "tsx/esm", "apps/cli/src/bin.ts", "web", "--patch", path.join(projectDir, "agent-integration", "dsh", "asset-hub-agent.overlay.yml"), "--host", "127.0.0.1", "--port", String(dshPort)], cwd: lastCanonicalSource, env: runtimeEnvironmentProfiles.dsh(process.env, { DSH_HOME: values.DSH_HOME, DSH_TELEMETRY_DISABLED: "1", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT, ASSET_HUB_MCP_URL: `http://127.0.0.1:${gatewayPort}/mcp` }) };
-    specifications.proxy = { command: process.execPath, args: ["agent-integration/scripts/start-agent-proxy.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.agentProxy(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, DSH_BASE_URL: runtimeUrl.origin, AGENT_PROXY_HOST: "127.0.0.1", AGENT_PROXY_BASE_PATH: "/agent-runtime", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT }) };
+    specifications.gateway = { command: process.execPath, args: ["agent-integration/scripts/start-knowledge-gateway-mcp.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.gatewayBridge(process.env, { KNOWLEDGE_GATEWAY_MCP_PORT: String(gatewayPort), KNOWLEDGE_GATEWAY_INTERNAL_URL: `http://127.0.0.1:${internalPort}` }), convergence: { verify: () => assertPortAvailable(gatewayPort, "Knowledge Gateway") } };
+    specifications.dsh = { command: process.execPath, args: ["--import", "tsx/esm", "apps/cli/src/bin.ts", "web", "--patch", path.join(projectDir, "agent-integration", "dsh", "asset-hub-agent.overlay.yml"), "--host", "127.0.0.1", "--port", String(dshPort)], cwd: lastCanonicalSource, env: runtimeEnvironmentProfiles.dsh(process.env, { DSH_HOME: values.DSH_HOME, DSH_TELEMETRY_DISABLED: "1", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT, ASSET_HUB_MCP_URL: `http://127.0.0.1:${gatewayPort}/mcp` }), convergence: { verify: () => assertPortAvailable(dshPort, "DSH") } };
+    specifications.proxy = { command: process.execPath, args: ["agent-integration/scripts/start-agent-proxy.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.agentProxy(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, DSH_BASE_URL: runtimeUrl.origin, AGENT_PROXY_HOST: "127.0.0.1", AGENT_PROXY_BASE_PATH: "/agent-runtime", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT }), convergence: { verify: () => assertPortAvailable(proxyPort, "Agent Proxy") } };
   };
   const inspectRuntime = async () => {
     let credentialStatus = "unknown";

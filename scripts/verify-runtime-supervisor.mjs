@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } fro
 import os from "node:os";
 import path from "node:path";
 import { ManagedProcessController, assertNoLiveManagedOrphans } from "./managed-process-controller.mjs";
+import { WindowsProcessAdapter } from "./managed-process-platform-adapter.mjs";
 import { RuntimeLifecycleCore } from "./runtime-lifecycle-core.mjs";
 import { ensureRuntimePaths, inspectRuntimePaths } from "./runtime-path-safety.mjs";
 import { acquireSupervisorLock } from "./supervisor-lock.mjs";
@@ -327,6 +328,84 @@ async function testRuntimePathSafety() {
   await assert.rejects(() => inspectRuntimePaths({ dataDir, agentRuntimeDir: runtimeDir }), /符号链接|DATA_DIR/);
 }
 
+async function testWindowsAdapterOwnershipAndForcedStop() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ued-windows-adapter-"));
+  const metadataPath = path.join(root, "managed-processes.json");
+  const child = new EventEmitter();
+  child.pid = 72001;
+  child.exitCode = null;
+  const observation = () => child.exitCode === null
+    ? { pid: 72001, processCreationTime: "2026-08-30T01:00:00.000Z", executablePath: "C:\\Program Files\\nodejs\\node.exe", commandLine: "node fixture.mjs", parentPid: 70000 }
+    : null;
+  const adapter = new WindowsProcessAdapter({
+    spawnImpl: () => child,
+    inspectProcess: async () => observation(),
+    runCommand: async (command, args) => {
+      assert.equal(command, "taskkill.exe");
+      assert.deepEqual(args, ["/PID", "72001", "/T", "/F"]);
+      child.exitCode = 1;
+      queueMicrotask(() => child.emit("exit", 1, null));
+      return { code: 0, signal: null };
+    }
+  });
+  const events = [];
+  const controller = new ManagedProcessController({ supervisorInstanceId: "supervisor-a", runtimeInstanceId: "runtime-a", metadataPath, platform: "win32", adapter, onProcessEvent: (event) => events.push(event) });
+  await controller.start("fixture", { command: "node", args: ["fixture.mjs"], cwd: root, env: {} });
+  const record = controller.get("fixture");
+  assert.equal(record.platform, "win32");
+  assert.equal(record.processCreationTime, "2026-08-30T01:00:00.000Z");
+  assert.equal(record.executablePath, "c:\\program files\\nodejs\\node.exe");
+  await controller.stop("fixture", { timeoutMs: 1 });
+  assert.equal(events.some((event) => event.type === "graceful_shutdown_failed" && event.reasonCode === "graceful_shutdown_capability_missing"), true, "Windows does not pretend SIGTERM is graceful shutdown");
+  assert.equal(events.some((event) => event.type === "exit"), true, "forced stop waits for a real child exit");
+  await rm(root, { recursive: true, force: true });
+}
+
+async function testWindowsIdentityMismatchFailsClosed() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ued-windows-identity-"));
+  const child = new EventEmitter();
+  child.pid = 73001;
+  child.exitCode = null;
+  const baseline = { pid: 73001, processCreationTime: "creation-a", executablePath: "C:\\node.exe", commandLine: "node fixture.mjs", parentPid: 1 };
+  let observed = baseline;
+  const adapter = new WindowsProcessAdapter({ spawnImpl: () => child, inspectProcess: async () => observed, runCommand: async () => ({ code: 0 }) });
+  const controller = new ManagedProcessController({ supervisorInstanceId: "supervisor-a", runtimeInstanceId: "runtime-a", platform: "win32", adapter });
+  await controller.start("fixture", { command: "node", args: ["fixture.mjs"], cwd: root, env: {} });
+  const record = controller.get("fixture");
+  for (const [field, value, reason] of [["processCreationTime", "creation-b", "process_creation_time_mismatch"], ["executablePath", "C:\\other.exe", "executable_mismatch"], ["commandLine", "node other.mjs", "command_fingerprint_mismatch"]]) {
+    observed = { ...baseline, [field]: value };
+    const inspection = await adapter.inspect(record);
+    assert.deepEqual({ alive: inspection.alive, ownership: inspection.ownership, reasonCode: inspection.reasonCode }, { alive: true, ownership: "unknown", reasonCode: reason });
+  }
+  record.supervisorInstanceId = "supervisor-b";
+  await assert.rejects(() => controller.stop("fixture"), /Supervisor ownership/);
+  record.supervisorInstanceId = "supervisor-a";
+  record.runtimeInstanceId = "runtime-b";
+  await assert.rejects(() => controller.stop("fixture"), /Runtime ownership/);
+  record.runtimeInstanceId = "runtime-a";
+  observed = baseline;
+  record.generation = 2;
+  await assert.rejects(() => controller.stop("fixture"), /generation/);
+  await rm(root, { recursive: true, force: true });
+}
+
+async function testWindowsStoredPidReuseFailsClosed() {
+  const adapter = new WindowsProcessAdapter({ inspectProcess: async () => ({ pid: 74001, processCreationTime: "new", executablePath: "C:\\node.exe", commandLine: "node fixture.mjs", parentPid: 1 }) });
+  const inspection = await adapter.inspectStoredProcess({ component: "fixture", pid: 74001, processCreationTime: "old", executablePath: "C:\\node.exe", commandFingerprint: "not-the-new-command", supervisorInstanceId: "supervisor-a", runtimeInstanceId: "runtime-a", generation: 1 });
+  assert.deepEqual({ alive: inspection.alive, ownership: inspection.ownership, reasonCode: inspection.reasonCode }, { alive: true, ownership: "unknown", reasonCode: "process_creation_time_mismatch" }, "PID reuse is never reclaimed automatically");
+}
+
+async function testWindowsSupervisorCrashFailsClosed() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ued-windows-crash-"));
+  const metadataPath = path.join(root, "managed-processes.json");
+  const processRecord = { component: "fixture", pid: 75001, processCreationTime: "creation-a", executablePath: "C:\\node.exe", commandLine: "node fixture.mjs", parentPid: 1 };
+  const adapter = new WindowsProcessAdapter({ inspectProcess: async () => processRecord });
+  const fingerprint = (await adapter.captureIdentity({ child: { pid: 75001 }, specification: { command: "node", args: [], cwd: root }, supervisorInstanceId: "previous-supervisor", runtimeInstanceId: "previous-runtime", generation: 1 })).commandFingerprint;
+  await writeFile(metadataPath, JSON.stringify({ version: 2, processes: [{ component: "fixture", pid: 75001, processCreationTime: "creation-a", executablePath: "C:\\node.exe", commandFingerprint: fingerprint, supervisorInstanceId: "previous-supervisor", runtimeInstanceId: "previous-runtime", generation: 1, managedState: "running" }] }));
+  await assert.rejects(() => assertNoLiveManagedOrphans(metadataPath, { adapter }), /拒绝接管或终止/, "a new Supervisor neither kills nor replaces a surviving previous tree");
+  await rm(root, { recursive: true, force: true });
+}
+
 await testLifecycleStates();
 await testRetryabilityAndDegradedRecovery();
 await testFailurePreservationAndClassification();
@@ -338,4 +417,8 @@ await testSharedShutdownPromise();
 await testRuntimePathSafety();
 await testSupervisorLock();
 await testOrphanMetadataFailsClosed();
+await testWindowsAdapterOwnershipAndForcedStop();
+await testWindowsIdentityMismatchFailsClosed();
+await testWindowsStoredPidReuseFailsClosed();
+await testWindowsSupervisorCrashFailsClosed();
 console.log("[UED Agent] Runtime Supervisor foundation checks passed.");

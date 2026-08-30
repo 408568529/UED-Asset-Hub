@@ -17,6 +17,7 @@
     "verify:agent-boundary": "node scripts/verify-agent-runtime-boundary.mjs",
     "verify:dsh-source-policy": "node scripts/verify-dsh-source-policy.mjs",
     "verify:runtime-supervisor": "node scripts/verify-runtime-supervisor.mjs",
+    "verify:windows-managed-process-native": "node scripts/verify-windows-managed-process-native.mjs",
     "verify:runtime-diagnostics-instrumentation": "node scripts/verify-runtime-diagnostics-instrumentation.mjs",
     "verify:runtime-control": "tsx scripts/verify-runtime-control.mjs",
     "verify:runtime-diagnostics-contract": "node scripts/verify-runtime-diagnostics-contract.mjs",
