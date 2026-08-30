@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -69,6 +69,8 @@ function capture(child) {
   child.stderr?.on("data", append);
   return () => output;
 }
+
+function digest(value) { return createHash("sha256").update(value).digest("hex"); }
 
 async function waitForExit(child, timeoutMs = 15_000) {
   if (child.exitCode !== null) return child.exitCode;
@@ -175,6 +177,28 @@ async function main() {
       return result;
     });
     assert.equal(runtime.text.includes(sentinel), false);
+
+    mark("runtime-status", "diagnostics_unexpected");
+    const lifecyclePath = path.join(agentRuntimeDir, "logs", "runtime-supervisor.ndjson");
+    const metadataPath = path.join(agentRuntimeDir, "supervisor", "managed-processes.json");
+    const [lifecycleBefore, metadataBefore] = await Promise.all([readFile(lifecyclePath, "utf8"), readFile(metadataPath, "utf8")]);
+    const diagnosticsBefore = await requestJson(`${publicBaseUrl}/api/admin/runtime-diagnostics`, { headers: { Cookie: cookie } });
+    assert.equal(diagnosticsBefore.response.status, 200);
+    assert.equal(diagnosticsBefore.body?.diagnostics?.shell, "ready");
+    assert.equal(diagnosticsBefore.body?.diagnostics?.status, "configuration_required", "diagnostics must safely represent the actual credential-missing Runtime state");
+    assert.equal(diagnosticsBefore.body?.diagnostics?.reasonCode, "credential_missing");
+    assert.equal(typeof diagnosticsBefore.body?.report, "string");
+    const diagnosticsAfter = await requestJson(`${publicBaseUrl}/api/admin/runtime-diagnostics`, { headers: { Cookie: cookie } });
+    assert.equal(diagnosticsAfter.response.status, 200);
+    for (const field of ["generation", "recoveryCount", "snapshotVersion"]) assert.equal(diagnosticsAfter.body?.diagnostics?.[field], diagnosticsBefore.body?.diagnostics?.[field], `diagnostics read must not mutate ${field}`);
+    assert.equal(digest(await readFile(lifecyclePath, "utf8")), digest(lifecycleBefore), "diagnostics read must not append lifecycle NDJSON");
+    assert.equal(digest(await readFile(metadataPath, "utf8")), digest(metadataBefore), "diagnostics read must not alter managed metadata");
+    assert.equal(diagnosticsBefore.text.includes(sentinel), false);
+    assert.equal(diagnosticsBefore.body?.report.includes(sentinel), false);
+    const invalidDiagnostics = await requestJson(`${publicBaseUrl}/api/admin/runtime-diagnostics?component=dsh`, { headers: { Cookie: cookie } });
+    assert.equal(invalidDiagnostics.response.status, 400);
+    const anonymousDiagnostics = await requestJson(`${publicBaseUrl}/api/admin/runtime-diagnostics`);
+    assert.equal(anonymousDiagnostics.response.status, 401);
 
     mark("model-settings", "model_settings_unexpected");
     const modelSettings = await requestJson(`${publicBaseUrl}/api/agent/model-settings`, { headers: { Cookie: cookie } });

@@ -67,19 +67,25 @@ export class ManagedProcessController {
     if (active.length > 0) throw new Error(`受管进程尚未全部退出：${active.map((record) => record.component).join(", ")}。`);
   }
 
-  async start(component, specification) {
+  async start(component, specification, { operation = "initial_start", operationId = null } = {}) {
     if (this.shuttingDown) throw new Error("Supervisor 正在停止，不能启动新进程。");
     if (this.isRunning(component)) return this.records.get(component);
     this.cancelRestart(component);
     const previous = this.records.get(component);
     const generation = (previous?.generation ?? 0) + 1;
-    const child = this.spawnImpl(specification.command, specification.args, {
-      cwd: specification.cwd,
-      env: specification.env,
-      stdio: "inherit",
-      detached: this.platform !== "win32",
-      shell: this.platform === "win32" && specification.command.endsWith(".cmd")
-    });
+    let child;
+    try {
+      child = this.spawnImpl(specification.command, specification.args, {
+        cwd: specification.cwd,
+        env: specification.env,
+        stdio: "inherit",
+        detached: this.platform !== "win32",
+        shell: this.platform === "win32" && specification.command.endsWith(".cmd")
+      });
+    } catch (error) {
+      this.onProcessEvent({ type: "start_failed", component, generation, intentional: false, operation, operationId, spawnFailed: true });
+      throw error;
+    }
     let resolveExit;
     const record = {
       component,
@@ -97,12 +103,14 @@ export class ManagedProcessController {
       record.managedState = "exited";
       record.exitPersistence = Promise.resolve(this.persistMetadata()).catch(() => {});
       resolveExit?.();
-      this.onProcessEvent({ type: "exit", component, generation, intentional: record.intentionalStop === true, record: this.publicRecord(record), ...reason });
+      this.onProcessEvent({ type: "exit", component, generation, pid: record.pid, intentional: record.intentionalStop === true, operation, operationId, record: this.publicRecord(record), ...reason });
     };
-    child.once("error", (error) => emitExit({ error: error.message }));
+    child.once("error", () => emitExit({ code: null, signal: null, spawnFailed: true }));
     child.once("exit", (code, signal) => emitExit({ code, signal }));
     await this.persistMetadata();
-    this.onProcessEvent({ type: "started", component, generation, record: this.publicRecord(record) });
+    if (record.managedState !== "exited" && Number.isInteger(record.pid) && record.pid > 0) {
+      this.onProcessEvent({ type: "started", component, generation, pid: record.pid, intentional: false, ownership: "owned", operation, operationId, record: this.publicRecord(record) });
+    }
     return record;
   }
 
@@ -141,6 +149,7 @@ export class ManagedProcessController {
     record.intentionalStop = true;
     record.managedState = "stopping";
     await this.persistMetadata().catch(() => {});
+    this.onProcessEvent({ type: "stopping", component, generation: record.generation, pid: record.pid, intentional: true, ownership: "owned", operation: "shutdown", record: this.publicRecord(record) });
     this.sendGracefulStop(record);
     const exited = await Promise.race([record.exitPromise.then(() => true), delay(timeoutMs).then(() => false)]);
     if (!exited && this.records.get(component) === record) {

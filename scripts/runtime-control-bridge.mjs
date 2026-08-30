@@ -3,9 +3,10 @@ import { createServer, createConnection } from "node:net";
 import { chmod, unlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { parseRuntimeDiagnosticsSnapshot } from "./runtime-diagnostics-contract.mjs";
 
 const maximumRequestBytes = 16 * 1024;
-const allowedOperations = new Set(["status", "start"]);
+const allowedOperations = new Set(["status", "start", "diagnostics"]);
 const nonRetryableReasonCodes = new Set(["port_conflict", "orphan_processes_detected", "runtime_ownership_conflict", "runtime_lock_conflict", "runtime_configuration_invalid", "agent_configuration_invalid", "source_invalid", "build_missing", "build_invalid", "credential_missing", "credential_status_unknown", "runtime_control_unavailable"]);
 
 function safeTokenEquals(received, expected) {
@@ -44,7 +45,7 @@ function write(socket, body) {
   socket.end(`${JSON.stringify(body)}\n`);
 }
 
-export function createRuntimeControlBridge({ endpoint, token, inspect, ensureReady, onEvent = () => {} }) {
+export function createRuntimeControlBridge({ endpoint, token, inspect, ensureReady, diagnostics = async () => null, onEvent = () => {} }) {
   const sockets = new Set();
   let started = false;
   let startPromise = null;
@@ -72,6 +73,13 @@ export function createRuntimeControlBridge({ endpoint, token, inspect, ensureRea
         return;
       }
       try {
+        if (request.operation === "diagnostics") {
+          if (Object.keys(request).length !== 2) { write(socket, { ok: false, reasonCode: "control_request_invalid" }); return; }
+          const snapshot = parseRuntimeDiagnosticsSnapshot(await diagnostics());
+          if (!snapshot) { write(socket, { ok: false, reasonCode: "runtime_diagnostics_unavailable" }); return; }
+          write(socket, { ok: true, diagnostics: snapshot });
+          return;
+        }
         const state = request.operation === "status" ? await inspect() : await ensureReady();
         const result = publicRuntimeState(state);
         try { onEvent({ operation: request.operation, status: result.status, reasonCode: result.reasonCode, generation: result.generation }); } catch {}
@@ -137,6 +145,12 @@ export async function requestRuntimeControl({ endpoint, token, operation, timeou
       } catch { finish(reject, new Error("Runtime control failed.")); return; }
       if (!response?.ok) {
         finish(reject, new Error(response?.reasonCode === "control_forbidden" ? "Runtime control rejected the request." : "Runtime control failed."));
+        return;
+      }
+      if (operation === "diagnostics") {
+        const diagnostics = parseRuntimeDiagnosticsSnapshot(response.diagnostics);
+        if (!diagnostics) { finish(reject, new Error("Runtime diagnostics response is invalid.")); return; }
+        finish(resolve, diagnostics);
         return;
       }
       finish(resolve, publicRuntimeState(response.runtime));

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Boxes, History, Settings, Upload, Wrench } from "lucide-react";
+import { Activity, Boxes, History, Settings, Upload, Wrench } from "lucide-react";
 import { Select } from "@/components/ui/select";
 
 const groups = [
@@ -12,7 +12,8 @@ const groups = [
     { href: "/admin/uploads", label: "上传记录", icon: Upload },
     { href: "/admin/logs", label: "更新日志", icon: History },
     { href: "/admin/versions", label: "版本记录", icon: History },
-    { href: "/admin/settings", label: "系统设置", icon: Settings }
+    { href: "/admin/settings", label: "系统设置", icon: Settings },
+    { href: "/admin/runtime-diagnostics", label: "运行诊断", icon: Activity }
   ] }
 ];
 const tabs = groups.flatMap((group) => group.items);

@@ -15,7 +15,7 @@ function lifecycleFailure(error, { recovering }) {
 }
 
 export class RuntimeLifecycleCore {
-  constructor({ controller, inspectStatic, inspectRuntime, prepareRuntime, startComponent, stopComponents, onStateChange = () => {} }) {
+  constructor({ controller, inspectStatic, inspectRuntime, prepareRuntime, startComponent, stopComponents, onStateChange = () => {}, onRecoveryEvent = () => {} }) {
     this.controller = controller;
     this.inspectStatic = inspectStatic;
     this.inspectRuntime = inspectRuntime;
@@ -23,6 +23,7 @@ export class RuntimeLifecycleCore {
     this.startComponent = startComponent;
     this.stopComponents = stopComponents;
     this.onStateChange = onStateChange;
+    this.onRecoveryEvent = onRecoveryEvent;
     this.state = { status: "unavailable", phase: null, reasonCode: null, operationId: null, startedAt: null, generation: 0, credentialStatus: "unknown", retryable: false, shell: "ready" };
     this.operation = null;
     this.shuttingDown = false;
@@ -68,14 +69,32 @@ export class RuntimeLifecycleCore {
     return report(state.status, state);
   }
 
-  async ensureReady({ recovering = false } = {}) {
+  emitRecovery(event) {
+    try { this.onRecoveryEvent(event); } catch { /* Diagnostics must not alter lifecycle behavior. */ }
+  }
+
+  startRecovery(operation) {
+    if (this.shuttingDown || operation.recoveryStarted) return false;
+    operation.recoveryStarted = true;
+    this.emitRecovery({ type: "started", operationId: operation.operationId, startedAt: operation.startedAt, generation: operation.generation });
+    return true;
+  }
+
+  completeRecovery(operation) {
+    if (!operation.recoveryStarted) return;
+    this.emitRecovery({ type: "completed", operationId: operation.operationId, completedAt: new Date().toISOString(), outcome: this.state.status === "ready" ? "succeeded" : "failed", generation: operation.generation });
+  }
+
+  async ensureReady({ recovering = false, trigger = "manual_start" } = {}) {
     if (this.shuttingDown) return this.snapshot();
     if (this.operation) return this.operation.promise;
     const previous = { status: this.state.status, reasonCode: this.state.reasonCode, retryable: this.state.retryable };
-    const operation = { operationId: randomUUID(), startedAt: new Date().toISOString(), generation: this.state.generation + 1, promise: null };
+    const operation = { operationId: randomUUID(), startedAt: new Date().toISOString(), generation: this.state.generation + 1, trigger, recoveryStarted: false, promise: null };
     this.operation = operation;
     this.state = { ...this.state, operationId: operation.operationId, startedAt: operation.startedAt, generation: operation.generation };
+    if (recovering) this.transition("starting", { phase: "recovering", reasonCode: null, credentialStatus: "unknown" });
     operation.promise = this.runEnsure(operation, { recovering, previous }).finally(() => {
+      this.completeRecovery(operation);
       if (this.operation === operation) this.operation = null;
     });
     return operation.promise;
@@ -84,8 +103,9 @@ export class RuntimeLifecycleCore {
   async runEnsure(operation, { recovering, previous }) {
     try {
       if (this.shuttingDown) return this.snapshot();
-      const requiresHealthConfirmation = previous.status === "ready" || (previous.status === "error" && previous.retryable);
+      const requiresHealthConfirmation = !recovering && (previous.status === "ready" || (previous.status === "error" && previous.retryable));
       const recoveryAttempt = recovering || previous.status === "ready" || previous.reasonCode === "recovery_failed";
+      if (recovering) this.startRecovery(operation);
       if (requiresHealthConfirmation) {
         this.transition("starting", { phase: "health-check", credentialStatus: "unknown" });
         const observation = await this.observeRuntime();
@@ -93,6 +113,7 @@ export class RuntimeLifecycleCore {
         if (observation.state.status === "ready") return this.transition("ready", observation.state);
         if (observation.state.status === "configuration_required") return this.transition("configuration_required", observation.state);
         if (observation.state.reasonCode === "credential_status_unknown") return this.transition("error", observation.state);
+        this.startRecovery(operation);
         await this.recoverUnhealthyRuntime(observation.runtime);
         if (this.shuttingDown) return this.snapshot();
       }
@@ -116,9 +137,9 @@ export class RuntimeLifecycleCore {
     if (!runtime.proxy) await this.stopComponents(["proxy"]);
   }
 
-  async start(component) {
+  async start(component, operation) {
     try {
-      await this.startComponent(component);
+      await this.startComponent(component, operation);
     } catch (error) {
       if (error && typeof error === "object" && "reasonCode" in error) throw error;
       const wrapped = error instanceof Error ? error : new Error(safeError(error));
@@ -137,13 +158,13 @@ export class RuntimeLifecycleCore {
       await this.prepareRuntime();
       if (this.shuttingDown) return this.snapshot();
       this.transition("starting", { phase: "starting-gateway", credentialStatus: "unknown" });
-      await this.start("gateway");
+      await this.start("gateway", operation);
       if (this.shuttingDown) return this.snapshot();
       this.transition("starting", { phase: "starting-dsh", credentialStatus: "unknown" });
-      await this.start("dsh");
+      await this.start("dsh", operation);
       if (this.shuttingDown) return this.snapshot();
       this.transition("starting", { phase: "starting-proxy", credentialStatus: "unknown" });
-      await this.start("proxy");
+      await this.start("proxy", operation);
       if (this.shuttingDown) return this.snapshot();
       this.transition("starting", { phase: "health-check", credentialStatus: "unknown" });
       const runtime = await this.inspectRuntime();
@@ -173,9 +194,8 @@ export class RuntimeLifecycleCore {
   async handleProcessExit(event) {
     if (this.shuttingDown || event.intentional || event.generation !== this.controller.get(event.component)?.generation) return;
     if (!new Set(["gateway", "dsh", "proxy"]).has(event.component)) return;
-    this.transition("starting", { phase: "recovering", reasonCode: null, credentialStatus: "unknown" });
     if (event.component === "gateway") await this.stopComponents(["proxy", "dsh"]);
-    await this.ensureReady({ recovering: true });
+    await this.ensureReady({ recovering: true, trigger: "runtime_recovery" });
   }
 
   isTerminal() {

@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import http from "node:http";
 import { createServer } from "node:net";
-import { access, appendFile, copyFile, readFile } from "node:fs/promises";
+import { access, copyFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { isInside, runtimeEnvironmentProfiles } from "../agent-integration/scripts/runtime-boundary.mjs";
@@ -13,6 +13,8 @@ import { RuntimeLifecycleCore } from "./runtime-lifecycle-core.mjs";
 import { acquireSupervisorLock, supervisorLockPath } from "./supervisor-lock.mjs";
 import { createRuntimeControlBridge, runtimeControlEndpoint } from "./runtime-control-bridge.mjs";
 import { resolveHostSecurityConfig } from "./host-security-config.mjs";
+import { createRuntimeDiagnosticsState } from "./runtime-diagnostics-state.mjs";
+import { createBoundedNdjsonWriter } from "./bounded-ndjson-writer.mjs";
 
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require("@next/env");
@@ -141,11 +143,6 @@ async function inspectBuild(sourceDir, identity) {
   } catch { return { ok: false, reasonCode: "build_missing" }; }
 }
 
-async function appendLifecycleLog(runtimePaths, event) {
-  if (!runtimePaths?.directories?.logs) return;
-  await appendFile(path.join(runtimePaths.directories.logs, "runtime-supervisor.ndjson"), `${JSON.stringify(publicLifecycleRecord(event))}\n`, { mode: 0o600 });
-}
-
 export function publicLifecycleRecord(event) {
   return {
     timestamp: new Date().toISOString(),
@@ -157,7 +154,13 @@ export function publicLifecycleRecord(event) {
     dshCommit: event.dshCommit ?? null,
     health: event.health ?? null,
     reasonCode: event.reasonCode ?? null,
-    status: event.status ?? null
+    status: event.status ?? null,
+    operation: event.operation ?? null,
+    ownership: event.ownership ?? null,
+    exitCode: Number.isInteger(event.exitCode) ? event.exitCode : null,
+    exitSignal: typeof event.exitSignal === "string" ? event.exitSignal : null,
+    restartCount: Number.isInteger(event.restartCount) ? event.restartCount : null,
+    recoveryCount: Number.isInteger(event.recoveryCount) ? event.recoveryCount : null
   };
 }
 
@@ -186,13 +189,26 @@ export async function main() {
   let runtimePaths = null;
   let releaseLock = async () => {};
   let runtimeControl = null;
+  const diagnostics = createRuntimeDiagnosticsState({ supervisorStartedAt: new Date().toISOString() });
+  diagnostics.recordInProcessLifecycle("supervisor", { status: "running", health: "healthy" });
+  let lifecycleWriter = null;
+  const ensureLifecycleWriter = () => {
+    if (lifecycleWriter || !runtimePaths?.directories?.logs) return lifecycleWriter;
+    lifecycleWriter = createBoundedNdjsonWriter({
+      filePath: path.join(runtimePaths.directories.logs, "runtime-supervisor.ndjson"),
+      onDegraded: () => { diagnostics.recordSupervisorDegradation("diagnostics_retention_failed"); },
+      onRecovered: () => { diagnostics.clearSupervisorDegradation("diagnostics_retention_failed"); }
+    });
+    return lifecycleWriter;
+  };
   const logLifecycle = (event) => {
-    void appendLifecycleLog(runtimePaths, event).catch((error) => console.error(`[Host Supervisor] Lifecycle log write failed: ${error instanceof Error ? error.message : error}`));
+    void ensureLifecycleWriter()?.append(publicLifecycleRecord(event));
   };
   if (agentRuntimeDir) {
     const inspected = await inspectRuntimePaths({ dataDir, agentRuntimeDir }).catch(() => null);
     if (inspected?.directories?.supervisor) {
       runtimePaths = inspected;
+      ensureLifecycleWriter();
       releaseLock = await acquireSupervisorLock({ lockPath: supervisorLockPath(inspected.directories), instanceId });
       await assertNoLiveManagedOrphans(managedMetadataPath(inspected.directories));
     }
@@ -201,15 +217,17 @@ export async function main() {
   const controller = new ManagedProcessController({
     supervisorInstanceId: instanceId,
     metadataPath: runtimePaths ? managedMetadataPath(runtimePaths.directories) : undefined,
-    onPersistenceError: (error) => {
-      console.error(`[Host Supervisor] Managed process metadata write failed: ${error instanceof Error ? error.message : error}`);
+    onPersistenceError: () => {
+      diagnostics.recordSupervisorDegradation("metadata_persistence_failed");
       logLifecycle({ status: "metadata_persistence_failed", reasonCode: "metadata_persistence_failed" });
     },
     onProcessEvent: (event) => {
-      logLifecycle({ component: event.component, pid: event.record?.pid, generation: event.generation, status: event.type, reasonCode: event.intentional ? "intentional_stop" : null });
+      diagnostics.recordManagedEvent(event);
+      const componentState = diagnostics.component(event.component === "assetHub" ? "assetHubInternal" : event.component);
+      logLifecycle({ component: event.component, pid: event.pid, generation: event.generation, status: event.type, operation: event.operation, operationId: event.operationId, ownership: event.ownership ?? null, exitCode: event.code, exitSignal: event.signal, restartCount: componentState?.restartCount ?? null, reasonCode: componentState?.reasonCode ?? null });
       if (stopping || event.type !== "exit") return;
       if (event.component === "assetHub") {
-        controller.scheduleRestart("assetHub", async () => { try { await controller.start("assetHub", specifications.assetHub); await waitFor("Asset Hub", () => request(`http://127.0.0.1:${internalPort}/api/auth/session`)); } catch (error) { console.error(`[Host Supervisor] Asset Hub recovery failed: ${error instanceof Error ? error.message : error}`); } }, 1_000);
+        controller.scheduleRestart("assetHub", async () => { try { await controller.start("assetHub", specifications.assetHub, { operation: "process_restart" }); await waitFor("Asset Hub", () => request(`http://127.0.0.1:${internalPort}/api/auth/session`)); } catch (error) { console.error(`[Host Supervisor] Asset Hub recovery failed: ${error instanceof Error ? error.message : error}`); } }, 1_000);
       } else if (core) void core.handleProcessExit(event);
     }
   });
@@ -221,6 +239,17 @@ export async function main() {
     const body = await response.json();
     if (body?.result?.ok !== true) throw new Error("DSH rejected read-only health RPC.");
     return body.result.value;
+  };
+  const observeHealth = async (component, check, { reasonCode = "health_check_failed", operation = "health_check", operationId = null } = {}) => {
+    const token = diagnostics.beginHealthProbe(component);
+    try {
+      const result = await check();
+      diagnostics.acceptHealthProbe(token, { health: "healthy", operation, operationId });
+      return result;
+    } catch (error) {
+      diagnostics.acceptHealthProbe(token, { health: "unhealthy", reasonCode, operation, operationId });
+      throw error;
+    }
   };
   const inspectStatic = async () => {
     try {
@@ -253,7 +282,7 @@ export async function main() {
     let agentConfigurationStatus = "unknown";
     let dsh = false;
     try {
-      await rpc("session.list", {});
+      await observeHealth("dsh", () => rpc("session.list", {}), { reasonCode: "dsh_unavailable" });
       dsh = true;
       const [credentialResult, settingsResult, catalogResult] = await Promise.allSettled([
         rpc("credentials.describe", { refs: ["DEEPSEEK_API_KEY"] }),
@@ -264,8 +293,8 @@ export async function main() {
       agentConfigurationStatus = settingsResult.status === "fulfilled" && catalogResult.status === "fulfilled" && hasValidAgentModelConfiguration(settingsResult.value, catalogResult.value) ? "valid" : "invalid";
     } catch {}
     const [gateway, proxy] = await Promise.all([
-      request(`http://127.0.0.1:${gatewayPort}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "health", method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "host-supervisor", version: "2.1.0.9" } } }) }).then(() => true).catch(() => false),
-      request(`http://127.0.0.1:${proxyPort}/healthz`).then(() => true).catch(() => false)
+      observeHealth("gateway", () => request(`http://127.0.0.1:${gatewayPort}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "health", method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "host-supervisor", version: "2.1.0.9" } } }) }), { reasonCode: "gateway_health_failed" }).then(() => true).catch(() => false),
+      observeHealth("proxy", () => request(`http://127.0.0.1:${proxyPort}/healthz`), { reasonCode: "proxy_health_failed" }).then(() => true).catch(() => false)
     ]);
     return { dsh, gateway, proxy, mcp: gateway, credentialStatus, agentConfigurationStatus, reasonCode: !dsh ? "dsh_unavailable" : gateway && proxy ? undefined : "runtime_health_failed" };
   };
@@ -275,6 +304,7 @@ export async function main() {
     prepareRuntime: async () => {
       try {
         runtimePaths = await ensureRuntimePaths({ dataDir, agentRuntimeDir });
+        ensureLifecycleWriter();
         if (!controller.metadataPath) {
           await controller.setMetadataPath(managedMetadataPath(runtimePaths.directories));
           releaseLock = await acquireSupervisorLock({ lockPath: supervisorLockPath(runtimePaths.directories), instanceId });
@@ -287,18 +317,23 @@ export async function main() {
         throw lifecycleError(message, reasonCode);
       }
     },
-    startComponent: async (component) => {
+    startComponent: async (component, operation) => {
       if (controller.isRunning(component)) return;
       await assertPortAvailable(componentPort[component], component, { reasonCode: "port_conflict" });
-      await controller.start(component, specifications[component]);
-      if (component === "gateway") await waitFor("Knowledge Gateway MCP", () => request(`http://127.0.0.1:${gatewayPort}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "health", method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "host-supervisor", version: "2.1.0.9" } } }) }));
-      if (component === "dsh") await waitFor("DSH Runtime", () => rpc("session.list", {}));
-      if (component === "proxy") await waitFor("Agent Proxy", () => request(`http://127.0.0.1:${proxyPort}/healthz`));
+      await controller.start(component, specifications[component], { operation: operation.trigger, operationId: operation.operationId });
+      if (component === "gateway") await observeHealth("gateway", () => waitFor("Knowledge Gateway MCP", () => request(`http://127.0.0.1:${gatewayPort}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "health", method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "host-supervisor", version: "2.1.0.9" } } }) })), { reasonCode: "gateway_health_failed", operation: operation.trigger, operationId: operation.operationId });
+      if (component === "dsh") await observeHealth("dsh", () => waitFor("DSH Runtime", () => rpc("session.list", {})), { reasonCode: "dsh_unavailable", operation: operation.trigger, operationId: operation.operationId });
+      if (component === "proxy") await observeHealth("proxy", () => waitFor("Agent Proxy", () => request(`http://127.0.0.1:${proxyPort}/healthz`)), { reasonCode: "proxy_health_failed", operation: operation.trigger, operationId: operation.operationId });
     },
     stopComponents: async (components = ["proxy", "dsh", "gateway"]) => { for (const component of components) await controller.stop(component); },
     onStateChange: (state) => {
+      diagnostics.recordRuntimeState(state);
       logLifecycle({ ...state, dshCommit: expectedVersion.sourceCommit, health: state.status === "ready" ? "pass" : null });
       console.log(`[Host Supervisor] Agent Runtime ${state.status}${state.phase ? ` (${state.phase})` : ""}${state.reasonCode ? `: ${state.reasonCode}` : ""}.`);
+    },
+    onRecoveryEvent: (event) => {
+      diagnostics.recordRecovery(event);
+      logLifecycle({ ...event, status: `recovery_${event.type}`, operation: "runtime_recovery", recoveryCount: diagnostics.recoveryCount });
     }
   });
   const token = randomBytes(32).toString("base64url");
@@ -307,33 +342,44 @@ export async function main() {
     endpoint,
     token,
     inspect: () => core.inspect({ readOnly: true }),
-    ensureReady: () => core.ensureReady(),
+    ensureReady: () => core.ensureReady({ trigger: "manual_start" }),
+    diagnostics: () => diagnostics.snapshot(),
     onEvent: (event) => { logLifecycle({ ...event, phase: `runtime-control:${event.operation}` }); }
   });
+  diagnostics.recordInProcessLifecycle("runtimeControl", { status: "starting" });
   await runtimeControl.start();
+  diagnostics.recordInProcessLifecycle("runtimeControl", { status: "running", health: "healthy" });
   specifications.assetHub.env = runtimeEnvironmentProfiles.assetHub(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, RUNTIME_CONTROL_ENDPOINT: endpoint, RUNTIME_CONTROL_TOKEN: token });
   await assertPortAvailable(publicPort, "公开 Asset Hub");
   await assertPortAvailable(internalPort, "内部 Asset Hub");
-  await controller.start("assetHub", specifications.assetHub);
-  await waitFor("Asset Hub", () => request(`http://127.0.0.1:${internalPort}/api/auth/session`));
+  await controller.start("assetHub", specifications.assetHub, { operation: "initial_start" });
+  await observeHealth("assetHubInternal", () => waitFor("Asset Hub", () => request(`http://127.0.0.1:${internalPort}/api/auth/session`)), { reasonCode: "asset_hub_health_failed", operation: "initial_start" });
   const edge = createEdgeServer({ host: value("HOST_BIND_HOST") || "0.0.0.0", port: publicPort, internalPort, proxyPort });
+  diagnostics.recordInProcessLifecycle("publicEdge", { status: "starting" });
   await edge.start();
-  await waitFor("Public Asset Hub", () => request(`http://127.0.0.1:${publicPort}/api/auth/session`));
+  await observeHealth("publicEdge", () => waitFor("Public Asset Hub", () => request(`http://127.0.0.1:${publicPort}/api/auth/session`)), { reasonCode: "public_edge_health_failed", operation: "initial_start" });
   console.log(`[Host Supervisor] Asset Hub Shell is ready at http://主机IP:${publicPort}.`);
-  const state = await core.ensureReady();
+  const state = await core.ensureReady({ trigger: "initial_start" });
   if (state.status !== "ready") console.error(`[Host Supervisor] Agent Runtime is ${state.status}${state.reasonCode ? `: ${state.reasonCode}` : ""}. Asset Hub Shell remains available.`);
   const shutdown = createSharedShutdown(async (signal, exitCode = 0) => {
     stopping = true;
+    diagnostics.beginShutdown();
     controller.beginShutdown();
     let releaseAllowed = false;
     try {
       console.log(`\n[Host Supervisor] Received ${signal}. Stopping managed services...`);
+      diagnostics.recordInProcessLifecycle("runtimeControl", { status: "stopping" });
       await runtimeControl?.stop();
+      diagnostics.recordInProcessLifecycle("runtimeControl", { status: "stopped" });
       await core.stopForShutdown();
+      diagnostics.recordInProcessLifecycle("publicEdge", { status: "stopping" });
       await edge.stop();
+      diagnostics.recordInProcessLifecycle("publicEdge", { status: "stopped" });
       await controller.stopAll(["assetHub"]);
       await controller.flushMetadata();
       controller.assertAllExited();
+      await lifecycleWriter?.flush();
+      diagnostics.recordInProcessLifecycle("supervisor", { status: "stopped" });
       releaseAllowed = true;
     } finally {
       if (releaseAllowed) await releaseLock();

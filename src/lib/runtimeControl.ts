@@ -1,4 +1,6 @@
 import { createConnection } from "node:net";
+import { parseRuntimeDiagnosticsSnapshot } from "../../scripts/runtime-diagnostics-contract.mjs";
+import type { RuntimeDiagnosticsSnapshot } from "../../scripts/runtime-diagnostics-contract.mjs";
 
 const maximumResponseBytes = 16 * 1024;
 
@@ -50,6 +52,45 @@ export async function invokeRuntimeControl(operation: "status" | "start"): Promi
         if (body.ok !== true || !isRuntimeState(body.runtime)) throw new Error("Runtime control failed.");
         succeed(body.runtime);
       } catch { fail(new Error("Runtime control failed.")); }
+    });
+  });
+}
+
+export class RuntimeDiagnosticsError extends Error {
+  constructor(public readonly code: "runtime_control_unavailable" | "runtime_diagnostics_unavailable" | "runtime_diagnostics_invalid_response") {
+    super(code);
+  }
+}
+
+export async function invokeRuntimeDiagnostics(): Promise<RuntimeDiagnosticsSnapshot> {
+  let endpoint: string;
+  let token: string;
+  try { ({ endpoint, token } = requireControlConfig()); }
+  catch { throw new RuntimeDiagnosticsError("runtime_control_unavailable"); }
+  return new Promise((resolve, reject) => {
+    let output = "";
+    let settled = false;
+    const fail = (code: RuntimeDiagnosticsError["code"]) => { if (settled) return; settled = true; clearTimeout(timeout); reject(new RuntimeDiagnosticsError(code)); };
+    const succeed = (value: RuntimeDiagnosticsSnapshot) => { if (settled) return; settled = true; clearTimeout(timeout); resolve(value); };
+    const socket = createConnection(endpoint);
+    const timeout = setTimeout(() => { socket.destroy(); fail("runtime_control_unavailable"); }, 5_000);
+    socket.setEncoding("utf8");
+    socket.once("connect", () => socket.write(`${JSON.stringify({ token, operation: "diagnostics" })}\n`));
+    socket.on("data", (chunk) => {
+      output += chunk;
+      if (Buffer.byteLength(output) > maximumResponseBytes) { socket.destroy(); fail("runtime_diagnostics_invalid_response"); }
+    });
+    socket.once("error", () => fail("runtime_control_unavailable"));
+    socket.once("end", () => {
+      try {
+        const body = JSON.parse(output) as { ok?: unknown; reasonCode?: unknown; diagnostics?: unknown };
+        if (body.ok !== true) throw new RuntimeDiagnosticsError(body.reasonCode === "runtime_diagnostics_unavailable" ? "runtime_diagnostics_unavailable" : "runtime_control_unavailable");
+        const diagnostics = parseRuntimeDiagnosticsSnapshot(body.diagnostics);
+        if (!diagnostics) throw new RuntimeDiagnosticsError("runtime_diagnostics_invalid_response");
+        succeed(diagnostics);
+      } catch (error) {
+        fail(error instanceof RuntimeDiagnosticsError ? error.code : "runtime_diagnostics_invalid_response");
+      }
     });
   });
 }
