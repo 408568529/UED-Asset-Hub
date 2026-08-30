@@ -6,7 +6,7 @@ import path from "node:path";
 
 const maximumRequestBytes = 16 * 1024;
 const allowedOperations = new Set(["status", "start"]);
-const nonRetryableReasonCodes = new Set(["port_conflict", "orphan_processes_detected", "runtime_ownership_conflict", "runtime_lock_conflict", "runtime_configuration_invalid", "source_invalid", "build_missing", "build_invalid", "credential_missing", "credential_status_unknown", "runtime_control_unavailable"]);
+const nonRetryableReasonCodes = new Set(["port_conflict", "orphan_processes_detected", "runtime_ownership_conflict", "runtime_lock_conflict", "runtime_configuration_invalid", "agent_configuration_invalid", "source_invalid", "build_missing", "build_invalid", "credential_missing", "credential_status_unknown", "runtime_control_unavailable"]);
 
 function safeTokenEquals(received, expected) {
   if (typeof received !== "string" || typeof expected !== "string") return false;

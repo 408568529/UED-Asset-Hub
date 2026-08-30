@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/adminAuth";
-import { deleteCredential, getModelSettings, saveModelSettings, testDeepSeekConnection } from "@/lib/dshModelSettings";
+import { deleteCredential, DshModelSettingsError, getModelSettings, saveModelSettings, testDeepSeekConnection } from "@/lib/dshModelSettings";
 
 function failure(error: unknown) {
-  const message = error instanceof Error ? error.message : "模型设置请求失败。";
-  return NextResponse.json({ message }, { status: 400 });
+  if (error instanceof DshModelSettingsError) return NextResponse.json({ reasonCode: error.reasonCode, message: error.message }, { status: 400 });
+  return NextResponse.json({ message: error instanceof Error ? error.message : "模型设置请求失败。" }, { status: 400 });
 }
 
 export async function GET(request: Request) {

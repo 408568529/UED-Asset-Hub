@@ -44,6 +44,7 @@ export class RuntimeLifecycleCore {
     const runtime = await this.inspectRuntime();
     if (!runtime.dsh) return { state: { status: "unavailable", reasonCode: "dsh_unavailable", credentialStatus: "unknown", retryable: false }, runtime };
     if (!runtime.gateway || !runtime.proxy || !runtime.mcp) return { state: { status: "error", reasonCode: runtime.reasonCode || "runtime_health_failed", credentialStatus: "unknown", retryable: true }, runtime };
+    if (runtime.agentConfigurationStatus === "invalid") return { state: { status: "configuration_required", reasonCode: "agent_configuration_invalid", credentialStatus: "unknown", retryable: false }, runtime };
     if (runtime.credentialStatus === "missing") return { state: { status: "configuration_required", reasonCode: "credential_missing", credentialStatus: "missing", retryable: false }, runtime };
     if (runtime.credentialStatus !== "configured") return { state: { status: "error", reasonCode: "credential_status_unknown", credentialStatus: "unknown", retryable: false }, runtime };
     return { state: { status: "ready", reasonCode: null, credentialStatus: "configured", retryable: false }, runtime };
@@ -149,6 +150,7 @@ export class RuntimeLifecycleCore {
       if (!runtime.dsh || !runtime.gateway || !runtime.proxy || !runtime.mcp) {
         return this.transition("error", { reasonCode: recovering ? "recovery_failed" : runtime.reasonCode || "runtime_health_failed", credentialStatus: "unknown", retryable: true });
       }
+      if (runtime.agentConfigurationStatus === "invalid") return this.transition("configuration_required", { reasonCode: "agent_configuration_invalid", credentialStatus: "unknown" });
       if (runtime.credentialStatus === "missing") return this.transition("configuration_required", { reasonCode: "credential_missing", credentialStatus: "missing" });
       if (runtime.credentialStatus !== "configured") return this.transition("error", { reasonCode: "credential_status_unknown", credentialStatus: "unknown" });
       return this.transition("ready", { credentialStatus: "configured" });

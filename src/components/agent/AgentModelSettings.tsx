@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/select";
 
 type Settings = {
   runtime: "ready" | "unavailable";
+  reasonCode: "dsh_unavailable" | "credential_missing" | "credential_status_unknown" | "agent_configuration_invalid" | null;
   provider: "deepseek";
   credential: { configured: boolean; writable: boolean; source?: "env" | "file" | "unknown" };
   baseUrl: string;
@@ -14,7 +15,7 @@ type Settings = {
   models: { id: string; name: string }[];
 };
 
-const initial: Settings = { runtime: "unavailable", provider: "deepseek", credential: { configured: false, writable: false }, baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash", models: [] };
+const initial: Settings = { runtime: "unavailable", reasonCode: "dsh_unavailable", provider: "deepseek", credential: { configured: false, writable: false }, baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash", models: [] };
 
 export function AgentModelSettings() {
   const [settings, setSettings] = useState<Settings>(initial);
@@ -85,6 +86,8 @@ export function AgentModelSettings() {
           </Select>
         </label>
         {settings.runtime !== "ready" ? <p className="text-sm text-red-600">DSH Runtime 未启动。请先启动 Host Runner。</p> : null}
+        {settings.reasonCode === "credential_status_unknown" ? <p className="text-sm text-red-600">Credential 状态暂不可确认，请检查 Agent Runtime。</p> : null}
+        {settings.reasonCode === "agent_configuration_invalid" ? <p className="text-sm text-red-600">Agent 模型配置无效，请检查 Provider、Base URL 与模型选择。</p> : null}
         {message ? <p role="status" className="text-sm text-muted-foreground">{message}</p> : null}
         <div className="flex flex-wrap gap-3 pt-1">
           <Button type="button" variant="outline" onClick={() => void submit("test")} disabled={!canWrite || busy !== null}>测试连接</Button>

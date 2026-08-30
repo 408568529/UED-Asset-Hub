@@ -11,6 +11,7 @@ type RpcEnvelope = { result?: { ok?: boolean; value?: unknown; error?: { code?: 
 
 export type ModelSettingsStatus = {
   runtime: "ready" | "unavailable";
+  reasonCode: "dsh_unavailable" | "credential_missing" | "credential_status_unknown" | "agent_configuration_invalid" | null;
   provider: "deepseek";
   credential: { configured: boolean; writable: boolean; source?: "env" | "file" | "unknown" };
   baseUrl: string;
@@ -18,11 +19,21 @@ export type ModelSettingsStatus = {
   models: { id: string; name: string }[];
 };
 
+export class DshModelSettingsError extends Error {
+  constructor(public readonly reasonCode: "dsh_unavailable" | "agent_configuration_invalid", message: string) {
+    super(message);
+  }
+}
+
 function dshBaseUrl() {
   const configured = process.env.DSH_BASE_URL?.trim() || "http://127.0.0.1:3080";
-  const url = new URL(configured);
-  if (url.protocol !== "http:" || !LOOPBACK_HOSTS.has(url.hostname)) throw new Error("DSH Runtime 地址必须保持为本机回环地址。");
-  return url;
+  try {
+    const url = new URL(configured);
+    if (url.protocol !== "http:" || !LOOPBACK_HOSTS.has(url.hostname)) throw new Error();
+    return url;
+  } catch {
+    throw new DshModelSettingsError("dsh_unavailable", "DSH Runtime 地址不可用。");
+  }
 }
 
 async function rpc(method: string, payload: unknown) {
@@ -37,10 +48,13 @@ async function rpc(method: string, payload: unknown) {
       cache: "no-store",
       signal: controller.signal
     });
-    if (!response.ok) throw new Error("DSH Runtime 无法响应配置请求。");
+    if (!response.ok) throw new DshModelSettingsError("dsh_unavailable", "DSH Runtime 无法响应配置请求。");
     const body = await response.json() as RpcEnvelope;
-    if (body.result?.ok !== true) throw new Error(body.result?.error?.message || "DSH Runtime 拒绝了配置请求。");
+    if (body.result?.ok !== true) throw new DshModelSettingsError("agent_configuration_invalid", "DSH Runtime 配置无效。");
     return body.result.value;
+  } catch (error) {
+    if (error instanceof DshModelSettingsError) throw error;
+    throw new DshModelSettingsError("dsh_unavailable", "DSH Runtime 无法响应配置请求。");
   } finally {
     clearTimeout(timeout);
   }
@@ -64,27 +78,42 @@ function sanitizeCredentialSource(value: unknown): "env" | "file" | "unknown" | 
 }
 
 export async function getModelSettings(): Promise<ModelSettingsStatus> {
-  try {
-    const [credentialValue, settingsValue, catalogValue] = await Promise.all([
+  const [credentialResult, settingsResult, catalogResult] = await Promise.allSettled([
       rpc("credentials.describe", { refs: [DEEPSEEK_CREDENTIAL_REF] }) as Promise<{ credentials?: Record<string, { configured?: boolean; writable?: boolean; source?: unknown }> }>,
       rpc("settings.describe", {}) as Promise<{ namespaces?: { ns?: string; value?: unknown }[] }>,
       rpc("llm.models", {}) as Promise<{ groups?: { id?: string; models?: { id?: string; name?: string }[] }[] }>
-    ]);
+  ]);
+  if ([credentialResult, settingsResult, catalogResult].some((result) => result.status === "rejected" && result.reason instanceof DshModelSettingsError && result.reason.reasonCode === "dsh_unavailable")) {
+    return { runtime: "unavailable", reasonCode: "dsh_unavailable", provider: "deepseek", credential: { configured: false, writable: false }, baseUrl: DEFAULT_BASE_URL, model: "deepseek-v4-flash", models: [] };
+  }
+  if (settingsResult.status !== "fulfilled" || catalogResult.status !== "fulfilled") {
+    return { runtime: "ready", reasonCode: "agent_configuration_invalid", provider: "deepseek", credential: { configured: false, writable: false }, baseUrl: DEFAULT_BASE_URL, model: "deepseek-v4-flash", models: [] };
+  }
+  try {
+    const credentialValue = credentialResult.status === "fulfilled" ? credentialResult.value : null;
+    const settingsValue = settingsResult.value;
+    const catalogValue = catalogResult.value;
     const namespaces = settingsValue.namespaces ?? [];
     const deepseek = namespaces.find((item) => item.ns === "llm-deepseek")?.value as { baseURL?: unknown } | undefined;
     const selection = namespaces.find((item) => item.ns === "agent-default-model")?.value as { provider?: unknown; model?: unknown } | undefined;
-    const credential = credentialValue.credentials?.[DEEPSEEK_CREDENTIAL_REF];
     const group = catalogValue.groups?.find((item) => item.id === DEEPSEEK_PROVIDER);
+    const baseUrl = typeof deepseek?.baseURL === "string" && deepseek.baseURL ? normalizeBaseUrl(deepseek.baseURL) : DEFAULT_BASE_URL;
+    const model = selection?.provider === DEEPSEEK_PROVIDER && typeof selection.model === "string" ? normalizeModel(selection.model) : "deepseek-v4-flash";
+    const models = (group?.models ?? []).flatMap((item) => typeof item.id === "string" ? [{ id: item.id, name: typeof item.name === "string" ? item.name : item.id }] : []);
+    const credential = credentialValue?.credentials?.[DEEPSEEK_CREDENTIAL_REF];
+    const credentialUnknown = credentialResult.status !== "fulfilled";
+    const configurationInvalid = !group || !models.some((item) => item.id === model) || (selection && selection.provider !== DEEPSEEK_PROVIDER);
     return {
       runtime: "ready",
+      reasonCode: configurationInvalid ? "agent_configuration_invalid" : credentialUnknown ? "credential_status_unknown" : credential?.configured === true ? null : "credential_missing",
       provider: "deepseek",
       credential: { configured: credential?.configured === true, writable: credential?.writable === true, source: sanitizeCredentialSource(credential?.source) },
-      baseUrl: typeof deepseek?.baseURL === "string" && deepseek.baseURL ? deepseek.baseURL : DEFAULT_BASE_URL,
-      model: selection?.provider === DEEPSEEK_PROVIDER && typeof selection.model === "string" ? selection.model : "deepseek-v4-flash",
-      models: (group?.models ?? []).flatMap((item) => typeof item.id === "string" ? [{ id: item.id, name: typeof item.name === "string" ? item.name : item.id }] : [])
+      baseUrl,
+      model,
+      models
     };
   } catch {
-    return { runtime: "unavailable", provider: "deepseek", credential: { configured: false, writable: false }, baseUrl: DEFAULT_BASE_URL, model: "deepseek-v4-flash", models: [] };
+    return { runtime: "ready", reasonCode: "agent_configuration_invalid", provider: "deepseek", credential: { configured: false, writable: false }, baseUrl: DEFAULT_BASE_URL, model: "deepseek-v4-flash", models: [] };
   }
 }
 
@@ -93,7 +122,7 @@ export async function saveModelSettings(input: { apiKey?: unknown; baseUrl?: unk
   const baseUrl = normalizeBaseUrl(input.baseUrl);
   const model = normalizeModel(input.model);
   const current = await getModelSettings();
-  if (current.runtime !== "ready") throw new Error("DSH Runtime 未启动，无法保存模型设置。");
+  if (current.runtime !== "ready") throw new DshModelSettingsError("dsh_unavailable", "DSH Runtime 未启动，无法保存模型设置。");
   if (!apiKey && !current.credential.configured) throw new Error("请先输入 DeepSeek API Key。");
   await rpc("settings.update", { ns: "llm-deepseek", patch: { baseURL: baseUrl } });
   await rpc("settings.update", { ns: "agent-default-model", patch: { provider: DEEPSEEK_PROVIDER, model } });
@@ -128,7 +157,8 @@ export async function testDeepSeekConnection(input: { apiKey?: unknown; baseUrl?
     throw new Error("模型或 Base URL 无法连接，请检查配置。");
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw new Error("连接超时，请检查 Base URL 或网络状态。");
-    throw error;
+    if (error instanceof Error && ["Credential 验证失败，请检查 API Key。", "Provider 当前限流，请稍后再试。", "Provider 服务暂时不可用，请稍后再试。", "模型或 Base URL 无法连接，请检查配置。"].includes(error.message)) throw error;
+    throw new Error("无法连接 Provider，请检查 Base URL 或网络状态。");
   } finally {
     clearTimeout(timeout);
   }

@@ -3,12 +3,9 @@ import { mkdir, readdir, realpath, stat } from "node:fs/promises";
 import http from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
-
+import { resolveProxySessionConfig } from "../../scripts/host-security-config.mjs";
 const require = createRequire(import.meta.url);
-const { loadEnvConfig } = require("@next/env");
 const httpProxy = require("http-proxy");
-
-loadEnvConfig(process.cwd());
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 const target = new URL(process.env.DSH_BASE_URL || "http://127.0.0.1:3080");
@@ -26,9 +23,7 @@ if (!LOOPBACK_HOSTS.has(host)) {
 }
 const basePath = (process.env.AGENT_PROXY_BASE_PATH || "/agent-runtime").replace(/\/$/, "");
 const cookieName = "ued_admin_session";
-const username = process.env.ADMIN_USERNAME || "admin";
-const password = process.env.ADMIN_PASSWORD || "admin123";
-const sessionSecret = process.env.ADMIN_SESSION_SECRET || `${username}:${password}:ued-asset-hub`;
+const { username, sessionSecret } = resolveProxySessionConfig(process.env);
 const agentRuntimeDir = process.env.AGENT_RUNTIME_DIR?.trim();
 if (!agentRuntimeDir) throw new Error("AGENT_RUNTIME_DIR must be configured before starting the Agent Proxy.");
 const workspaceRoot = path.resolve(process.env.AGENT_WORKSPACE_ROOT || path.join(agentRuntimeDir, "workspaces"));
@@ -360,7 +355,7 @@ proxy.on("proxyRes", (proxyResponse, request, response) => {
 proxy.on("error", (error, _request, response) => {
   if (response && "writeHead" in response) {
     response.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
-    response.end(`DSH runtime is unavailable: ${error.message}`);
+    response.end("DSH runtime is unavailable.");
   }
 });
 

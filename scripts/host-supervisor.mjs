@@ -12,6 +12,7 @@ import { ManagedProcessController, assertNoLiveManagedOrphans, managedMetadataPa
 import { RuntimeLifecycleCore } from "./runtime-lifecycle-core.mjs";
 import { acquireSupervisorLock, supervisorLockPath } from "./supervisor-lock.mjs";
 import { createRuntimeControlBridge, runtimeControlEndpoint } from "./runtime-control-bridge.mjs";
+import { resolveHostSecurityConfig } from "./host-security-config.mjs";
 
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require("@next/env");
@@ -53,6 +54,20 @@ function dshUrl() {
   return parsed;
 }
 
+function hasValidAgentModelConfiguration(settings, catalog) {
+  const namespaces = Array.isArray(settings?.namespaces) ? settings.namespaces : [];
+  const deepseek = namespaces.find((item) => item?.ns === "llm-deepseek")?.value;
+  const selection = namespaces.find((item) => item?.ns === "agent-default-model")?.value;
+  const baseUrl = typeof deepseek?.baseURL === "string" && deepseek.baseURL ? deepseek.baseURL : "https://api.deepseek.com";
+  const model = selection?.provider === "deepseek-official" && typeof selection.model === "string" ? selection.model : "deepseek-v4-flash";
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password || !parsed.hostname || !/^[A-Za-z0-9._:-]{1,160}$/.test(model)) return false;
+  } catch { return false; }
+  const group = Array.isArray(catalog?.groups) ? catalog.groups.find((item) => item?.id === "deepseek-official") : null;
+  return Boolean(group && Array.isArray(group.models) && group.models.some((item) => item?.id === model) && (!selection || selection.provider === "deepseek-official"));
+}
+
 async function waitFor(label, check, timeoutMs = 60_000) {
   const startedAt = Date.now();
   let lastError = "";
@@ -89,7 +104,7 @@ function createEdgeServer({ host, port: publicPort, internalPort, proxyPort }) {
     try { return Boolean(request.headers.referer && new URL(request.headers.referer).pathname.startsWith("/agent-runtime/")); } catch { return false; }
   };
   edge.on("error", (error, _request, response) => {
-    if (response && "writeHead" in response) { response.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" }); response.end(`Asset Hub internal service is unavailable: ${error.message}`); }
+    if (response && "writeHead" in response) { response.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" }); response.end("Asset Hub internal service is unavailable."); }
   });
   const server = http.createServer((request, response) => {
     const requestUrl = new URL(request.url || "/", "http://localhost");
@@ -128,7 +143,11 @@ async function inspectBuild(sourceDir, identity) {
 
 async function appendLifecycleLog(runtimePaths, event) {
   if (!runtimePaths?.directories?.logs) return;
-  const record = {
+  await appendFile(path.join(runtimePaths.directories.logs, "runtime-supervisor.ndjson"), `${JSON.stringify(publicLifecycleRecord(event))}\n`, { mode: 0o600 });
+}
+
+export function publicLifecycleRecord(event) {
+  return {
     timestamp: new Date().toISOString(),
     operationId: event.operationId ?? null,
     phase: event.phase ?? null,
@@ -140,19 +159,19 @@ async function appendLifecycleLog(runtimePaths, event) {
     reasonCode: event.reasonCode ?? null,
     status: event.status ?? null
   };
-  await appendFile(path.join(runtimePaths.directories.logs, "runtime-supervisor.ndjson"), `${JSON.stringify(record)}\n`, { mode: 0o600 });
 }
 
 export async function main() {
   loadEnvConfig(projectDir);
+  const securityConfig = resolveHostSecurityConfig(process.env);
   assertNodeVersion();
   if (value("AGENT_ENABLED") === "false") fail("AGENT_ENABLED=false 时不能启动 Host Supervisor。");
   const dataDir = requiredPath("DATA_DIR");
   const agentRuntimeDir = optionalPath("AGENT_RUNTIME_DIR");
   const sourceDir = optionalPath("DSH_SOURCE_DIR");
   const expectedVersion = JSON.parse(await readFile(path.join(projectDir, "agent-integration/dsh/version.json"), "utf8"));
-  const runtimeUrl = dshUrl();
-  const dshPort = Number.parseInt(runtimeUrl.port || "3080", 10);
+  let runtimeUrl = new URL("http://127.0.0.1:3080");
+  const dshPort = 3080;
   const proxyPort = port("AGENT_PROXY_PORT", 3081);
   const publicPort = port("HOST_PORT", 3027);
   const internalPort = port("HOST_INTERNAL_PORT", 3028);
@@ -195,7 +214,7 @@ export async function main() {
     }
   });
   const specifications = {
-    assetHub: { command: process.execPath, args: ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(internalPort)], cwd: projectDir, env: runtimeEnvironmentProfiles.assetHub(process.env) }
+    assetHub: { command: process.execPath, args: ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(internalPort)], cwd: projectDir, env: runtimeEnvironmentProfiles.assetHub(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret }) }
   };
   const rpc = async (method, payload) => {
     const response = await request(new URL(`/api/${method}`, runtimeUrl), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "client-request", rpcId: `host-supervisor-${method}`, method, payload }) });
@@ -206,12 +225,15 @@ export async function main() {
   const inspectStatic = async () => {
     try {
       if (!agentRuntimeDir || !sourceDir || !value("AGENT_GATEWAY_TOKEN")) return { ok: false, reasonCode: "runtime_configuration_invalid" };
+      const configuredUrl = dshUrl();
+      if (Number.parseInt(configuredUrl.port || "3080", 10) !== dshPort) return { ok: false, reasonCode: "runtime_configuration_invalid" };
       await inspectRuntimePaths({ dataDir, agentRuntimeDir });
       const canonicalSource = await resolveAllowedDshSourcePath(projectDir, sourceDir);
       const identity = await validateDshSource(canonicalSource, expectedVersion, { readOnly: true });
       const build = await inspectBuild(canonicalSource, identity);
       if (!build.ok) return build;
       lastCanonicalSource = canonicalSource;
+      runtimeUrl = configuredUrl;
       return { ok: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
@@ -224,22 +246,28 @@ export async function main() {
     const values = { DSH_HOME: path.join(runtimePaths.agentRoot, "dsh-home"), AGENT_WORKSPACE_ROOT: path.join(runtimePaths.agentRoot, "workspaces") };
     specifications.gateway = { command: process.execPath, args: ["agent-integration/scripts/start-knowledge-gateway-mcp.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.gatewayBridge(process.env, { KNOWLEDGE_GATEWAY_MCP_PORT: String(gatewayPort), KNOWLEDGE_GATEWAY_INTERNAL_URL: `http://127.0.0.1:${internalPort}` }) };
     specifications.dsh = { command: process.execPath, args: ["--import", "tsx/esm", "apps/cli/src/bin.ts", "web", "--patch", path.join(projectDir, "agent-integration", "dsh", "asset-hub-agent.overlay.yml"), "--host", "127.0.0.1", "--port", String(dshPort)], cwd: lastCanonicalSource, env: runtimeEnvironmentProfiles.dsh(process.env, { DSH_HOME: values.DSH_HOME, DSH_TELEMETRY_DISABLED: "1", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT, ASSET_HUB_MCP_URL: `http://127.0.0.1:${gatewayPort}/mcp` }) };
-    specifications.proxy = { command: process.execPath, args: ["agent-integration/scripts/start-agent-proxy.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.agentProxy(process.env, { AGENT_PROXY_HOST: "127.0.0.1", AGENT_PROXY_BASE_PATH: "/agent-runtime", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT }) };
+    specifications.proxy = { command: process.execPath, args: ["agent-integration/scripts/start-agent-proxy.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.agentProxy(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, DSH_BASE_URL: runtimeUrl.origin, AGENT_PROXY_HOST: "127.0.0.1", AGENT_PROXY_BASE_PATH: "/agent-runtime", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT }) };
   };
   const inspectRuntime = async () => {
     let credentialStatus = "unknown";
+    let agentConfigurationStatus = "unknown";
     let dsh = false;
     try {
       await rpc("session.list", {});
-      const described = await rpc("credentials.describe", { refs: ["DEEPSEEK_API_KEY"] });
-      credentialStatus = described?.credentials?.DEEPSEEK_API_KEY?.configured === true ? "configured" : "missing";
       dsh = true;
+      const [credentialResult, settingsResult, catalogResult] = await Promise.allSettled([
+        rpc("credentials.describe", { refs: ["DEEPSEEK_API_KEY"] }),
+        rpc("settings.describe", {}),
+        rpc("llm.models", {})
+      ]);
+      if (credentialResult.status === "fulfilled") credentialStatus = credentialResult.value?.credentials?.DEEPSEEK_API_KEY?.configured === true ? "configured" : "missing";
+      agentConfigurationStatus = settingsResult.status === "fulfilled" && catalogResult.status === "fulfilled" && hasValidAgentModelConfiguration(settingsResult.value, catalogResult.value) ? "valid" : "invalid";
     } catch {}
     const [gateway, proxy] = await Promise.all([
       request(`http://127.0.0.1:${gatewayPort}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "health", method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "host-supervisor", version: "2.1.0.9" } } }) }).then(() => true).catch(() => false),
       request(`http://127.0.0.1:${proxyPort}/healthz`).then(() => true).catch(() => false)
     ]);
-    return { dsh, gateway, proxy, mcp: gateway, credentialStatus, reasonCode: !dsh ? "dsh_unavailable" : gateway && proxy ? undefined : "runtime_health_failed" };
+    return { dsh, gateway, proxy, mcp: gateway, credentialStatus, agentConfigurationStatus, reasonCode: !dsh ? "dsh_unavailable" : gateway && proxy ? undefined : "runtime_health_failed" };
   };
   const componentPort = { gateway: gatewayPort, dsh: dshPort, proxy: proxyPort };
   core = new RuntimeLifecycleCore({
@@ -273,19 +301,17 @@ export async function main() {
       console.log(`[Host Supervisor] Agent Runtime ${state.status}${state.phase ? ` (${state.phase})` : ""}${state.reasonCode ? `: ${state.reasonCode}` : ""}.`);
     }
   });
-  if (agentRuntimeDir) {
-    const token = randomBytes(32).toString("base64url");
-    const endpoint = runtimeControlEndpoint({ supervisorDirectory: runtimePaths?.directories?.supervisor || path.join(agentRuntimeDir, "supervisor"), instanceId });
-    runtimeControl = createRuntimeControlBridge({
-      endpoint,
-      token,
-      inspect: () => core.inspect({ readOnly: true }),
-      ensureReady: () => core.ensureReady(),
-      onEvent: (event) => { logLifecycle({ ...event, phase: `runtime-control:${event.operation}` }); }
-    });
-    await runtimeControl.start();
-    specifications.assetHub.env = runtimeEnvironmentProfiles.assetHub(process.env, { RUNTIME_CONTROL_ENDPOINT: endpoint, RUNTIME_CONTROL_TOKEN: token });
-  }
+  const token = randomBytes(32).toString("base64url");
+  const endpoint = runtimeControlEndpoint({ supervisorDirectory: runtimePaths?.directories?.supervisor || (agentRuntimeDir ? path.join(agentRuntimeDir, "supervisor") : projectDir), instanceId });
+  runtimeControl = createRuntimeControlBridge({
+    endpoint,
+    token,
+    inspect: () => core.inspect({ readOnly: true }),
+    ensureReady: () => core.ensureReady(),
+    onEvent: (event) => { logLifecycle({ ...event, phase: `runtime-control:${event.operation}` }); }
+  });
+  await runtimeControl.start();
+  specifications.assetHub.env = runtimeEnvironmentProfiles.assetHub(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, RUNTIME_CONTROL_ENDPOINT: endpoint, RUNTIME_CONTROL_TOKEN: token });
   await assertPortAvailable(publicPort, "公开 Asset Hub");
   await assertPortAvailable(internalPort, "内部 Asset Hub");
   await controller.start("assetHub", specifications.assetHub);

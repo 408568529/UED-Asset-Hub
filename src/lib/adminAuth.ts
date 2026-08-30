@@ -1,7 +1,7 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import { ADMIN_SESSION_COOKIE, ADMIN_SESSION_MAX_AGE, adminCredentials, adminSessionSecret } from "@/config/admin";
+import { ADMIN_SESSION_COOKIE, ADMIN_SESSION_MAX_AGE, getAdminSecurityConfig } from "@/config/admin";
 
 type AdminSessionPayload = {
   username: string;
@@ -13,7 +13,7 @@ function encode(payload: AdminSessionPayload) {
 }
 
 function sign(value: string) {
-  return createHmac("sha256", adminSessionSecret).update(value).digest("base64url");
+  return createHmac("sha256", getAdminSecurityConfig().sessionSecret).update(value).digest("base64url");
 }
 
 function verifySession(token?: string) {
@@ -28,7 +28,7 @@ function verifySession(token?: string) {
 
   try {
     const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as AdminSessionPayload;
-    return payload.username === adminCredentials.username && Number.isFinite(payload.expiresAt) && payload.expiresAt > Date.now();
+    return payload.username === getAdminSecurityConfig().username && Number.isFinite(payload.expiresAt) && payload.expiresAt > Date.now();
   } catch {
     return false;
   }
@@ -40,11 +40,12 @@ function getRequestCookie(request: Request) {
 }
 
 export function authenticateAdmin(username: string, password: string) {
-  return username === adminCredentials.username && password === adminCredentials.password;
+  const config = getAdminSecurityConfig();
+  return username === config.username && password === config.password;
 }
 
 export function createAdminSession() {
-  const payload = encode({ username: adminCredentials.username, expiresAt: Date.now() + ADMIN_SESSION_MAX_AGE * 1000 });
+  const payload = encode({ username: getAdminSecurityConfig().username, expiresAt: Date.now() + ADMIN_SESSION_MAX_AGE * 1000 });
   return `${payload}.${sign(payload)}`;
 }
 

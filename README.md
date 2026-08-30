@@ -101,8 +101,8 @@ DATA_DIR=/UED-Asset-Hub-Storage/data
 TRAINING_MEDIA_DIR=/UED-Asset-Hub-Storage/training-media
 TEST_ENV_ENCRYPTION_KEY=可选：设置后测试环境密码将以服务端加密方式保存
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=REPLACE_WITH_A_UNIQUE_HOST_PASSWORD
-ADMIN_SESSION_SECRET=请设置一段仅保存在主机环境变量中的随机密钥
+ADMIN_PASSWORD=
+ADMIN_SESSION_SECRET=
 # 仅在通过 HTTPS 访问时设置为 true；内网 HTTP 环境保持 false。
 ADMIN_SESSION_SECURE=false
 ```
@@ -114,8 +114,8 @@ DATA_DIR=D:/UED-Asset-Hub/data
 TRAINING_MEDIA_DIR=D:/UED-Asset-Hub/training-media
 TEST_ENV_ENCRYPTION_KEY=可选：设置主机专用随机密钥以启用测试密码加密
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=REPLACE_WITH_A_UNIQUE_HOST_PASSWORD
-ADMIN_SESSION_SECRET=请设置主机专用随机密钥
+ADMIN_PASSWORD=
+ADMIN_SESSION_SECRET=
 ```
 
 首次部署空主机时，可以用 `data.example/` 初始化真实数据目录：
@@ -284,13 +284,9 @@ Compress-Archive -Path "D:\UED-Asset-Hub\data" -DestinationPath "D:\UED-Asset-Hu
 新建 / 编辑 / 删除 Product 或组件规范
 ```
 
-第一期默认账号密码：
+`ADMIN_USERNAME` 是可选项：缺失或仅含空白时，共享 Host Security Validator 统一使用 `admin`。`ADMIN_PASSWORD` 与 `ADMIN_SESSION_SECRET` 仍必须由主机显式配置。
 
-```txt
-admin / admin123
-```
-
-登录成功后由服务端写入 `HttpOnly` 会话 Cookie；账号密码不会写入浏览器 `localStorage`，也不会作为请求头发送。部署时请在主机 `.env.local` 配置 `ADMIN_USERNAME`、`ADMIN_PASSWORD` 和 `ADMIN_SESSION_SECRET`。`/publish` 不再作为普通发布入口，会导向管理登录流程。
+登录成功后由服务端写入 `HttpOnly` 会话 Cookie；账号密码不会写入浏览器 `localStorage`，也不会作为请求头发送。部署时可选配置 `ADMIN_USERNAME`，并必须配置非默认 `ADMIN_PASSWORD` 和至少 32 UTF-8 字节且独立的 `ADMIN_SESSION_SECRET`。只有后两者缺失或不安全时，`npm run dev`、`npm start` 与 `npm run start:host` 才会在启动前触发 Fatal Host Security Gate；`npm run build` 不读取这些运行时凭据。`/publish` 不再作为普通发布入口，会导向管理登录流程。
 
 ## V1.3 日志与版本记录
 

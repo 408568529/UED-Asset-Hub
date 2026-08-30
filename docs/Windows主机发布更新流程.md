@@ -20,8 +20,8 @@ DATA_DIR=D:/UED-Asset-Hub/runtime-data
 TRAINING_MEDIA_DIR=D:/UED-Asset-Hub/training-media
 TEST_ENV_ENCRYPTION_KEY=仅保存在主机上的随机密钥
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=REPLACE_WITH_A_UNIQUE_HOST_PASSWORD
-ADMIN_SESSION_SECRET=仅保存在主机上的随机长字符串
+ADMIN_PASSWORD=
+ADMIN_SESSION_SECRET=
 ADMIN_SESSION_SECURE=false
 AGENT_RUNTIME_DIR=D:/UED-Asset-Hub/agent-data
 DSH_SOURCE_DIR=D:/UED-Asset-Hub-Host/UED-Asset-Hub/vendor/deepseek-harness
@@ -32,6 +32,8 @@ HOST_BIND_HOST=0.0.0.0
 HOST_PORT=3027
 HOST_INTERNAL_PORT=3028
 ```
+
+`ADMIN_USERNAME` 可省略并统一默认 `admin`；非默认 `ADMIN_PASSWORD` 和至少 32 UTF-8 字节的 `ADMIN_SESSION_SECRET` 必须填写。后两者缺失或不安全时，Host Runner 会在创建运行目录、锁、端口和子进程前停止。
 
 `DATA_DIR` 必须在 Git 代码目录之外。只要该设置不变，更新代码不会覆盖上传的资产、历史记录或测试环境数据。
 

@@ -43,6 +43,8 @@ function configurationMessage(runtime: RuntimeState) {
   switch (runtime.reasonCode) {
     case "credential_missing":
       return "模型 Credential 尚未配置。请先前往模型设置完成配置。";
+    case "agent_configuration_invalid":
+      return "Agent 模型配置无效。请前往模型设置检查 Provider、Base URL 与模型选择。";
     case "build_missing":
     case "build_invalid":
       return "DSH Runtime 构建不可用。请由主机管理员检查正式运行配置。";
@@ -261,7 +263,7 @@ export function AgentOfficialWorkbench() {
 
   if (state.status === "error") {
     const configurationRequired = state.kind === "configuration-required";
-    const credentialMissing = configurationRequired && state.runtime?.reasonCode === "credential_missing";
+    const modelSettingsRequired = configurationRequired && (state.runtime?.reasonCode === "credential_missing" || state.runtime?.reasonCode === "agent_configuration_invalid");
     const recoveryAction = state.kind === "runtime-action" && (state.runtime?.reasonCode === "recovery_failed" || state.runtime?.reasonCode === "runtime_degraded");
     const actionLabel = recoveryAction ? "恢复 Agent" : state.runtime?.status === "unavailable" ? "启动 Agent" : "重试启动 Agent";
     const title = state.kind === "status-failed" ? "无法读取 Agent Runtime 状态" : configurationRequired ? "Agent Runtime 需要配置" : state.kind === "runtime-admin" ? "Agent Runtime 需要管理员处理" : "悠鼎 Agent 暂时不可用";
@@ -282,7 +284,7 @@ export function AgentOfficialWorkbench() {
           <p className="text-base font-medium text-white">{title}</p>
           <p>{message}</p>
           <div className="flex flex-wrap gap-3">
-            {credentialMissing ? <Link href="/agent/settings" className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">前往模型设置</Link> : null}
+            {modelSettingsRequired ? <Link href="/agent/settings" className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">前往模型设置</Link> : null}
             {state.kind === "agent-unavailable" ? <button type="button" onClick={refreshRuntimeStatus} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">重新连接</button> : null}
             {state.kind === "runtime-action" ? <button type="button" onClick={startRuntime} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">{actionLabel}</button> : null}
             {state.kind === "status-failed" || configurationRequired || state.kind === "runtime-waiting" || state.kind === "runtime-admin" ? <button type="button" onClick={refreshRuntimeStatus} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">重新检查</button> : null}

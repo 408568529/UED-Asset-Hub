@@ -9,8 +9,8 @@ import { ensureRuntimePaths, inspectRuntimePaths } from "./runtime-path-safety.m
 import { acquireSupervisorLock } from "./supervisor-lock.mjs";
 import { createSharedShutdown } from "./host-supervisor.mjs";
 
-function runtime({ credentialStatus = "configured" } = {}) {
-  return { dsh: true, gateway: true, proxy: true, mcp: true, credentialStatus };
+function runtime({ credentialStatus = "configured", agentConfigurationStatus = "valid" } = {}) {
+  return { dsh: true, gateway: true, proxy: true, mcp: true, credentialStatus, agentConfigurationStatus };
 }
 
 function createCore({ staticResult = { ok: true }, runtimeResult = runtime(), failComponent = null, componentError = null, prepareError = null, managed = false } = {}) {
@@ -160,6 +160,10 @@ async function testFailurePreservationAndClassification() {
   const missingCredential = createCore({ runtimeResult: runtime({ credentialStatus: "missing" }) });
   const credentialState = await missingCredential.core.ensureReady();
   assert.deepEqual({ status: credentialState.status, reasonCode: credentialState.reasonCode, retryable: credentialState.retryable }, { status: "configuration_required", reasonCode: "credential_missing", retryable: false });
+
+  const invalidModel = createCore({ runtimeResult: runtime({ agentConfigurationStatus: "invalid" }) });
+  const invalidModelState = await invalidModel.core.ensureReady();
+  assert.deepEqual({ status: invalidModelState.status, reasonCode: invalidModelState.reasonCode, retryable: invalidModelState.retryable }, { status: "configuration_required", reasonCode: "agent_configuration_invalid", retryable: false });
 }
 
 async function testRecoveryAndGeneration() {
