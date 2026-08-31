@@ -9,7 +9,7 @@ const coverExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 const legacyTrainingMediaDir = path.join(DATA_DIR, "training-media");
 const uploadedPrefix = "uploaded:";
 
-async function ensureTrainingMediaLayout() {
+async function ensureTrainingMediaLayoutForMutation() {
   if (shouldMigrateLegacyTrainingMedia) {
     const [legacy, target] = await Promise.all([fs.stat(legacyTrainingMediaDir).catch(() => null), fs.stat(TRAINING_MEDIA_DIR).catch(() => null)]);
     if (legacy?.isDirectory() && !target) await fs.rename(legacyTrainingMediaDir, TRAINING_MEDIA_DIR);
@@ -23,6 +23,19 @@ async function ensureTrainingMediaLayout() {
     const target = path.join(TRAINING_LIBRARY_DIR, entry.name);
     if (!(await fs.stat(target).catch(() => null))) await fs.rename(source, target);
   }
+}
+
+async function trainingLibraryRootReadonly() {
+  const [legacy, library] = await Promise.all([
+    fs.stat(legacyTrainingMediaDir).catch(() => null),
+    fs.stat(TRAINING_LIBRARY_DIR).catch(() => null)
+  ]);
+  if (shouldMigrateLegacyTrainingMedia && legacy?.isDirectory() && !library) {
+    throw new Error("MIGRATION_REQUIRED: legacy training-media must be migrated by an explicit maintenance operation.");
+  }
+  if (!library) return null;
+  if (!library.isDirectory()) throw new Error("Training library path is not a directory.");
+  return path.resolve(TRAINING_LIBRARY_DIR);
 }
 
 function assertInside(root: string, target: string) {
@@ -40,7 +53,7 @@ export function isSupportedCover(file: File) {
 
 export async function prepareTrainingUploadPath(input: TrainingVideoInput, videoId: string, fileName: string) {
   if (!isSupportedVideoName(fileName)) throw new Error("仅支持 MP4、WebM、MOV、M4V 或 OGG 视频。");
-  await ensureTrainingMediaLayout();
+  await ensureTrainingMediaLayoutForMutation();
   const relativeDir = path.join(
     sanitizePathName(input.groupName),
     sanitizePathName(videoId)
@@ -118,8 +131,8 @@ export async function removeLinkedServerFile(videoPath: string) {
 }
 
 export async function listTrainingServerFiles(): Promise<TrainingServerFile[]> {
-  await ensureTrainingMediaLayout();
-  const root = path.resolve(TRAINING_LIBRARY_DIR);
+  const root = await trainingLibraryRootReadonly();
+  if (!root) return [];
   const pending = [root];
   const files: TrainingServerFile[] = [];
   while (pending.length) {
@@ -144,11 +157,12 @@ export async function listTrainingServerFiles(): Promise<TrainingServerFile[]> {
 }
 
 export async function getLinkedServerFile(relativePath: string) {
-  await ensureTrainingMediaLayout();
-  const absolutePath = path.resolve(TRAINING_LIBRARY_DIR, relativePath);
-  assertInside(path.resolve(TRAINING_LIBRARY_DIR), absolutePath);
+  const root = await trainingLibraryRootReadonly();
+  if (!root) throw new Error("服务器媒体目录不存在。");
+  const absolutePath = path.resolve(root, relativePath);
+  assertInside(root, absolutePath);
   if (!isSupportedVideoName(absolutePath)) throw new Error("文件格式不受支持。");
   const stat = await fs.stat(absolutePath);
   if (!stat.isFile()) throw new Error("服务器文件不存在。");
-  return { absolutePath, fileName: path.basename(absolutePath), fileSize: stat.size, storedPath: `server-local:${path.relative(TRAINING_LIBRARY_DIR, absolutePath)}` };
+  return { absolutePath, fileName: path.basename(absolutePath), fileSize: stat.size, storedPath: `server-local:${path.relative(root, absolutePath)}` };
 }

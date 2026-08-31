@@ -1,5 +1,5 @@
 import { promises as fs } from "node:fs";
-import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFileForMutation, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { normalizeTagName } from "@/lib/tagUtils";
 import { normalizeTrainingName } from "@/lib/trainingUtils";
 import { removeLinkedServerFile, removeTrainingVideoFiles, resolveTrainingCoverPath } from "@/lib/trainingStorage";
@@ -42,7 +42,11 @@ function createItem(type: TaxonomyType, name: string, id?: string): TaxonomyItem
 }
 
 async function readRecords(file: string) {
-  return readJsonFile<LooseRecord[]>(file, []);
+  return readJsonFileReadonly<LooseRecord[]>(file, []);
+}
+
+async function readRecordsForMutation(file: string) {
+  return readJsonFileForMutation<LooseRecord[]>(file, []);
 }
 
 async function writeRecords(file: string, records: LooseRecord[]) {
@@ -63,53 +67,12 @@ async function log(type: "create" | "update" | "delete", title: string, descript
   await operationLogService.createLog({ type, title, description, targetType: "system", targetId, targetName, operator: "admin", diffSummary }).catch((error) => console.error("Taxonomy log write failed", error));
 }
 
-async function migrateItems(items: TaxonomyItem[]) {
-  const existing = new Map(items.map((item) => [`${item.type}:${item.normalizedName}`, item]));
-  let changed = false;
-  const ensure = (type: Exclude<TaxonomyType, "training-folder">, name: string) => {
-    const key = `${type}:${normalName(name)}`;
-    let item = existing.get(key);
-    if (!item) {
-      item = createItem(type, name);
-      items.push(item);
-      existing.set(key, item);
-      changed = true;
-    }
-    return item;
-  };
-
-  ["Codex", "Claude", "Cursor", "Prompt", "Workflow", "MCP", "Other"].forEach((name) => ensure("skill-category", name));
-  ["设计研发", "通用 Prompt"].forEach((name) => ensure("prompt-category", name));
-
-  for (const [type, source] of Object.entries(references) as [Exclude<TaxonomyType, "training-folder">, ReferenceSource][]) {
-    const records = await readRecords(source.file);
-    let recordsChanged = false;
-    for (const record of records) {
-      const values = source.multiple ? stringArray(record[source.valueKey]) : [String(record[source.valueKey] ?? "")].filter(Boolean);
-      const ids = values.map((value) => ensure(type, value).id);
-      if (source.multiple) {
-        if (JSON.stringify(record[source.idKey]) !== JSON.stringify(ids)) { record[source.idKey] = ids; recordsChanged = true; }
-      } else if (record[source.idKey] !== ids[0]) {
-        record[source.idKey] = ids[0] ?? "";
-        recordsChanged = true;
-      }
-    }
-    if (recordsChanged) await writeRecords(source.file, records);
-  }
-  return changed;
-}
-
 async function loadItems() {
-  const items = await readJsonFile<TaxonomyItem[]>(FILE_NAME, []);
-  const legacy = await readJsonFile<AssetTagOption[]>(LEGACY_TAGS_FILE, []);
-  let importedLegacy = false;
-  legacy.forEach((tag) => {
-    if (items.some((item) => item.type === tag.type && item.normalizedName === normalName(tag.name))) return;
-    items.push({ ...createItem(tag.type, tag.name, tag.id), createdAt: tag.createdAt, updatedAt: tag.createdAt, usageCount: tag.usageCount });
-    importedLegacy = true;
-  });
-  const migrated = await migrateItems(items);
-  if (migrated || importedLegacy || !(await readJsonFile<TaxonomyItem[]>(FILE_NAME, [])).length) await writeJsonFile(FILE_NAME, items);
+  const [items, legacy] = await Promise.all([
+    readJsonFileForMutation<TaxonomyItem[]>(FILE_NAME, []),
+    readJsonFileReadonly<AssetTagOption[]>(LEGACY_TAGS_FILE, [])
+  ]);
+  if (!items.length && legacy.length) throw new Error("MIGRATION_REQUIRED: legacy taxonomy data requires an explicit maintenance migration.");
   return items;
 }
 
@@ -124,7 +87,7 @@ async function referencesFor(type: Exclude<TaxonomyType, "training-folder">, ite
 
 async function updateReferences(type: Exclude<TaxonomyType, "training-folder">, item: TaxonomyItem, next?: TaxonomyItem) {
   const source = references[type];
-  const records = await readRecords(source.file);
+  const records = await readRecordsForMutation(source.file);
   let count = 0;
   for (const record of records) {
     const matches = source.multiple
@@ -161,7 +124,31 @@ export const taxonomyService = {
         .filter((item) => !query || item.name.toLocaleLowerCase().includes(query))
         .sort((a, b) => b.usageCount - a.usageCount || b.updatedAt.localeCompare(a.updatedAt));
     }
-    const items = await loadItems();
+    const [storedItems, legacyTags] = await Promise.all([
+      readJsonFileReadonly<TaxonomyItem[]>(FILE_NAME, []),
+      readJsonFileReadonly<AssetTagOption[]>(LEGACY_TAGS_FILE, [])
+    ]);
+    const items = [...storedItems];
+    legacyTags.forEach((tag) => {
+      if (items.some((item) => item.type === tag.type && item.normalizedName === normalName(tag.name))) return;
+      items.push({
+        id: tag.id || `legacy-${tag.type}-${normalName(tag.name)}`,
+        type: tag.type,
+        name: tag.name,
+        normalizedName: normalName(tag.name),
+        createdAt: tag.createdAt || new Date(0).toISOString(),
+        updatedAt: tag.createdAt || new Date(0).toISOString(),
+        usageCount: tag.usageCount ?? 0
+      });
+    });
+    const defaults: Array<[Extract<TaxonomyType, "skill-category" | "prompt-category">, string]> = [
+      ["skill-category", "Codex"], ["skill-category", "Claude"], ["skill-category", "Cursor"], ["skill-category", "Prompt"], ["skill-category", "Workflow"], ["skill-category", "MCP"], ["skill-category", "Other"],
+      ["prompt-category", "设计研发"], ["prompt-category", "通用 Prompt"]
+    ];
+    defaults.forEach(([itemType, name]) => {
+      if (items.some((item) => item.type === itemType && item.normalizedName === normalName(name))) return;
+      items.push({ id: `legacy-${itemType}-${normalName(name)}`, type: itemType, name, normalizedName: normalName(name), createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(), usageCount: 0 });
+    });
     const query = keyword?.trim().toLocaleLowerCase();
     const result = [] as TaxonomyItem[];
     for (const item of items.filter((item) => item.type === type && (!query || item.name.toLocaleLowerCase().includes(query)))) {

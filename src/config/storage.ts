@@ -3,6 +3,8 @@ import path from "node:path";
 export const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 export const META_DIR = path.join(DATA_DIR, "meta");
 export const KNOWLEDGE_DIR = path.join(DATA_DIR, "knowledge");
+const configuredAssetHubRuntimeDir = process.env.ASSET_HUB_RUNTIME_DIR;
+export const ASSET_HUB_RUNTIME_DIR = configuredAssetHubRuntimeDir || path.join(path.dirname(DATA_DIR), "asset-hub-runtime");
 const legacyTrainingMediaDir = path.join(DATA_DIR, "training-media");
 const configuredTrainingMediaDir = process.env.TRAINING_MEDIA_DIR;
 // Keep manually managed training videos beside runtime data, not inside it.

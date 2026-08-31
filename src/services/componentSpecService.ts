@@ -1,4 +1,4 @@
-import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFileForMutation, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { storageFolders } from "@/config/storage";
 import { diffComponent } from "@/lib/auditDiff";
 import { removeStoredModuleEntry } from "@/lib/storage/deleteStoredEntry";
@@ -23,7 +23,7 @@ function sortComponents(a: ComponentSpec, b: ComponentSpec) {
   return (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999) || +new Date(b.updatedAt) - +new Date(a.updatedAt);
 }
 
-async function getComponentsWithReader(reader: typeof readJsonFile, keyword?: string) {
+async function getComponentsWithReader(reader: typeof readJsonFileForMutation, keyword?: string) {
   const components = await reader<ComponentSpec[]>(FILE_NAME, []);
   return components.filter((component) => matchesKeyword(component, keyword)).sort(sortComponents);
 }
@@ -52,7 +52,7 @@ export const componentSpecService = {
   },
 
   async createComponent(input: ComponentSpecInput, operator = "admin"): Promise<MutationResult<ComponentSpec>> {
-    const components = await readJsonFile<ComponentSpec[]>(FILE_NAME, []);
+    const components = await readJsonFileForMutation<ComponentSpec[]>(FILE_NAME, []);
     const now = new Date().toISOString();
     const component: ComponentSpec = {
       id: createId(input.name),
@@ -82,7 +82,7 @@ export const componentSpecService = {
   },
 
   async updateComponent(id: string, input: ComponentSpecInput, operator = "admin"): Promise<MutationResult<ComponentSpec> | null> {
-    const components = await readJsonFile<ComponentSpec[]>(FILE_NAME, []);
+    const components = await readJsonFileForMutation<ComponentSpec[]>(FILE_NAME, []);
     const index = components.findIndex((component) => component.id === id);
     if (index < 0) return null;
 
@@ -127,7 +127,7 @@ export const componentSpecService = {
   },
 
   async deleteComponent(id: string, operator = "admin"): Promise<DeleteResult> {
-    const components = await readJsonFile<ComponentSpec[]>(FILE_NAME, []);
+    const components = await readJsonFileForMutation<ComponentSpec[]>(FILE_NAME, []);
     const component = components.find((item) => item.id === id);
     const nextComponents = components.filter((component) => component.id !== id);
     if (nextComponents.length === components.length) return { deleted: false };

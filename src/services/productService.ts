@@ -1,4 +1,4 @@
-import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFileForMutation, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { storageFolders } from "@/config/storage";
 import { diffProduct } from "@/lib/auditDiff";
 import { removeStoredModuleEntry } from "@/lib/storage/deleteStoredEntry";
@@ -23,7 +23,7 @@ function sortProducts(a: Product, b: Product) {
   return (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999) || +new Date(b.updatedAt) - +new Date(a.updatedAt);
 }
 
-async function getProductsWithReader(reader: typeof readJsonFile, keyword?: string) {
+async function getProductsWithReader(reader: typeof readJsonFileForMutation, keyword?: string) {
   const products = await reader<Product[]>(FILE_NAME, []);
   return products.filter((product) => matchesKeyword(product, keyword)).sort(sortProducts);
 }
@@ -52,7 +52,7 @@ export const productService = {
   },
 
   async createProduct(input: ProductInput, operator = "admin"): Promise<MutationResult<Product>> {
-    const products = await readJsonFile<Product[]>(FILE_NAME, []);
+    const products = await readJsonFileForMutation<Product[]>(FILE_NAME, []);
     const now = new Date().toISOString();
     const product: Product = {
       id: createId(input.name),
@@ -82,7 +82,7 @@ export const productService = {
   },
 
   async updateProduct(id: string, input: ProductInput, operator = "admin"): Promise<MutationResult<Product> | null> {
-    const products = await readJsonFile<Product[]>(FILE_NAME, []);
+    const products = await readJsonFileForMutation<Product[]>(FILE_NAME, []);
     const index = products.findIndex((product) => product.id === id);
     if (index < 0) return null;
 
@@ -127,7 +127,7 @@ export const productService = {
   },
 
   async deleteProduct(id: string, operator = "admin"): Promise<DeleteResult> {
-    const products = await readJsonFile<Product[]>(FILE_NAME, []);
+    const products = await readJsonFileForMutation<Product[]>(FILE_NAME, []);
     const product = products.find((item) => item.id === id);
     const nextProducts = products.filter((product) => product.id !== id);
     if (nextProducts.length === products.length) return { deleted: false };

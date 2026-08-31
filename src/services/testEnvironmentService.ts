@@ -1,5 +1,5 @@
 import { decryptServerValue, encryptServerValue } from "@/lib/serverEncryption";
-import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFileForMutation, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { operationLogService } from "@/services/operationLogService";
 import type { DeleteResult, MutationResult } from "@/types/serviceResult";
 import type { SafeTestEnvironment, TestEnvironment, TestEnvironmentInput } from "@/types/testEnvironment";
@@ -68,7 +68,7 @@ export const testEnvironmentService = {
 
   async createEnvironment(input: TestEnvironmentInput, operator = "admin"): Promise<MutationResult<SafeTestEnvironment>> {
     if (!input.password) throw new Error("测试密码为必填项。");
-    const environments = await readJsonFile<TestEnvironment[]>(FILE_NAME, []);
+    const environments = await readJsonFileForMutation<TestEnvironment[]>(FILE_NAME, []);
     const now = new Date().toISOString();
     const environment: TestEnvironment = {
       id: createId(input.environmentName || input.productName),
@@ -102,7 +102,7 @@ export const testEnvironmentService = {
   },
 
   async updateEnvironment(id: string, input: TestEnvironmentInput, operator = "admin"): Promise<MutationResult<SafeTestEnvironment> | null> {
-    const environments = await readJsonFile<TestEnvironment[]>(FILE_NAME, []);
+    const environments = await readJsonFileForMutation<TestEnvironment[]>(FILE_NAME, []);
     const index = environments.findIndex((item) => item.id === id);
     if (index < 0) return null;
     const previous = environments[index];
@@ -136,7 +136,7 @@ export const testEnvironmentService = {
   },
 
   async deleteEnvironment(id: string, operator = "admin"): Promise<DeleteResult> {
-    const environments = await readJsonFile<TestEnvironment[]>(FILE_NAME, []);
+    const environments = await readJsonFileForMutation<TestEnvironment[]>(FILE_NAME, []);
     const environment = environments.find((item) => item.id === id);
     if (!environment) return { deleted: false };
     await writeJsonFile(FILE_NAME, environments.filter((item) => item.id !== id));
@@ -154,7 +154,7 @@ export const testEnvironmentService = {
   },
 
   async reorderEnvironments(ids: string[], operator = "admin"): Promise<MutationResult<SafeTestEnvironment[]> | null> {
-    const environments = await readJsonFile<TestEnvironment[]>(FILE_NAME, []);
+    const environments = await readJsonFileForMutation<TestEnvironment[]>(FILE_NAME, []);
     if (ids.length !== environments.length || new Set(ids).size !== ids.length) return null;
 
     const byId = new Map(environments.map((item) => [item.id, item]));
@@ -180,7 +180,7 @@ export const testEnvironmentService = {
   },
 
   async revealPassword(id: string, operator = "admin", action: "reveal" | "copy-password" = "reveal") {
-    const environments = await readJsonFile<TestEnvironment[]>(FILE_NAME, []);
+    const environments = await readJsonFileForMutation<TestEnvironment[]>(FILE_NAME, []);
     const environment = environments.find((item) => item.id === id);
     if (!environment) return null;
     const password = decryptServerValue(environment.encryptedPassword);
@@ -197,7 +197,7 @@ export const testEnvironmentService = {
   },
 
   async logUsernameCopy(id: string, operator = "admin") {
-    const environment = (await readJsonFile<TestEnvironment[]>(FILE_NAME, [])).find((item) => item.id === id);
+    const environment = (await readJsonFileForMutation<TestEnvironment[]>(FILE_NAME, [])).find((item) => item.id === id);
     if (!environment) return false;
     await operationLogService.createLog({
       type: "copy",

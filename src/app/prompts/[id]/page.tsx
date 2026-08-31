@@ -6,7 +6,7 @@ import { promptService } from "@/services/promptService";
 
 export default async function PromptDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const prompt = await promptService.incrementView(decodeURIComponent(id));
+  const prompt = await promptService.getPromptById(decodeURIComponent(id));
   if (!prompt) notFound();
   const related = (await promptService.getPrompts()).filter((item) => item.id !== prompt.id).slice(0, 3);
 

@@ -1,4 +1,4 @@
-import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFileForMutation, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { normalizeTagName } from "@/lib/tagUtils";
 import type { AssetTagOption, TagType } from "@/types/tag";
 
@@ -23,13 +23,34 @@ function uniqueNames(names: string[]) {
 
 export const tagService = {
   async getTagsByType(type: TagType) {
-    const tags = await readJsonFile<AssetTagOption[]>(FILE_NAME, []);
+    const tags = await readJsonFileReadonly<AssetTagOption[]>(FILE_NAME, []);
     return tags.filter((tag) => tag.type === type).sort((a, b) => b.usageCount - a.usageCount || a.name.localeCompare(b.name));
+  },
+
+  async getTagsProjectionByType(type: TagType, usedNames: string[]) {
+    const tags = await readJsonFileReadonly<AssetTagOption[]>(FILE_NAME, []);
+    const names = uniqueNames(usedNames);
+    const usageCounts = new Map<string, number>();
+    usedNames.forEach((name) => {
+      const key = normalizeTagName(name);
+      if (key) usageCounts.set(key, (usageCounts.get(key) ?? 0) + 1);
+    });
+    const existing = new Map(tags.filter((tag) => tag.type === type).map((tag) => [normalizeTagName(tag.name), tag]));
+    const projected = names.map<AssetTagOption>((name) => {
+      const current = existing.get(normalizeTagName(name));
+      return current
+        ? { ...current, name, usageCount: usageCounts.get(normalizeTagName(name)) ?? 0 }
+        : { id: `legacy-${type}-${normalizeTagName(name)}`, type, name, usageCount: usageCounts.get(normalizeTagName(name)) ?? 0, createdAt: new Date(0).toISOString() };
+    });
+    const unused = [...existing.values()]
+      .filter((tag) => !usageCounts.has(normalizeTagName(tag.name)))
+      .map((tag) => ({ ...tag, usageCount: 0 }));
+    return [...projected, ...unused].sort((a, b) => b.usageCount - a.usageCount || a.name.localeCompare(b.name));
   },
 
   async createTag(type: TagType, name: string) {
     return mutateTags(async () => {
-      const tags = await readJsonFile<AssetTagOption[]>(FILE_NAME, []);
+      const tags = await readJsonFileForMutation<AssetTagOption[]>(FILE_NAME, []);
       const normalized = normalizeTagName(name);
       const existing = tags.find((tag) => tag.type === type && normalizeTagName(tag.name) === normalized);
       if (existing) return existing;
@@ -47,7 +68,7 @@ export const tagService = {
 
   async syncTagsByType(type: TagType, usedNames: string[]) {
     return mutateTags(async () => {
-      const tags = await readJsonFile<AssetTagOption[]>(FILE_NAME, []);
+      const tags = await readJsonFileForMutation<AssetTagOption[]>(FILE_NAME, []);
       const names = uniqueNames(usedNames);
       const usageCounts = new Map<string, number>();
       usedNames.forEach((name) => {
@@ -71,7 +92,7 @@ export const tagService = {
   async mergeTags(type: TagType, sourceNames: string[], targetName: string) {
     return mutateTags(async () => {
       const sourceKeys = new Set(sourceNames.map(normalizeTagName));
-      const tags = await readJsonFile<AssetTagOption[]>(FILE_NAME, []);
+      const tags = await readJsonFileForMutation<AssetTagOption[]>(FILE_NAME, []);
       const next = tags.filter((tag) => tag.type !== type || !sourceKeys.has(normalizeTagName(tag.name)));
       const normalizedTarget = normalizeTagName(targetName);
       const existing = next.find((tag) => tag.type === type && normalizeTagName(tag.name) === normalizedTarget);
@@ -84,7 +105,7 @@ export const tagService = {
 
   async updateTag(id: string, name: string) {
     return mutateTags(async () => {
-      const tags = await readJsonFile<AssetTagOption[]>(FILE_NAME, []);
+      const tags = await readJsonFileForMutation<AssetTagOption[]>(FILE_NAME, []);
       const index = tags.findIndex((tag) => tag.id === id);
       if (index < 0) return null;
       const normalized = normalizeTagName(name);
@@ -98,7 +119,7 @@ export const tagService = {
 
   async deleteTag(id: string) {
     return mutateTags(async () => {
-      const tags = await readJsonFile<AssetTagOption[]>(FILE_NAME, []);
+      const tags = await readJsonFileForMutation<AssetTagOption[]>(FILE_NAME, []);
       const next = tags.filter((tag) => tag.id !== id);
       if (next.length === tags.length) return false;
       await writeJsonFile(FILE_NAME, next);

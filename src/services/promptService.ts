@@ -1,7 +1,8 @@
-import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFileForMutation, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { storageFolders } from "@/config/storage";
 import { removeStoredModuleEntry } from "@/lib/storage/deleteStoredEntry";
 import { operationLogService } from "@/services/operationLogService";
+import { operationalStateService } from "@/services/operationalStateService";
 import type { DeleteResult, MutationResult } from "@/types/serviceResult";
 import type { PromptAsset, PromptInput } from "@/types/prompt";
 
@@ -21,8 +22,11 @@ function sortPrompts(a: PromptAsset, b: PromptAsset) {
   return b.copyCount - a.copyCount || b.viewCount - a.viewCount || +new Date(b.updatedAt) - +new Date(a.updatedAt);
 }
 
-async function getPromptsWithReader(reader: typeof readJsonFile, keyword?: string) {
-  const prompts = await reader<PromptAsset[]>(FILE_NAME, []);
+async function getPromptsWithReader(reader: typeof readJsonFileForMutation, keyword?: string) {
+  const prompts = await Promise.all((await reader<PromptAsset[]>(FILE_NAME, [])).map(async (prompt) => {
+    const counters = await operationalStateService.promptCounters(prompt.id);
+    return { ...prompt, viewCount: prompt.viewCount + Number(counters.views ?? 0), copyCount: prompt.copyCount + Number(counters.copies ?? 0) };
+  }));
   return prompts.filter((prompt) => matchesPrompt(prompt, keyword)).sort(sortPrompts);
 }
 
@@ -51,7 +55,10 @@ export const promptService = {
 
   async getPromptById(id: string) {
     const prompts = await readJsonFileReadonly<PromptAsset[]>(FILE_NAME, []);
-    return prompts.find((prompt) => prompt.id === id) ?? null;
+    const prompt = prompts.find((item) => item.id === id);
+    if (!prompt) return null;
+    const counters = await operationalStateService.promptCounters(prompt.id);
+    return { ...prompt, viewCount: prompt.viewCount + Number(counters.views ?? 0), copyCount: prompt.copyCount + Number(counters.copies ?? 0) };
   },
 
   async getPromptForKnowledgeById(id: string) {
@@ -60,7 +67,7 @@ export const promptService = {
   },
 
   async createPrompt(input: PromptInput, operator = "admin"): Promise<MutationResult<PromptAsset>> {
-    const prompts = await readJsonFile<PromptAsset[]>(FILE_NAME, []);
+    const prompts = await readJsonFileForMutation<PromptAsset[]>(FILE_NAME, []);
     const now = new Date().toISOString();
     const prompt: PromptAsset = {
       id: createId(input.name),
@@ -87,7 +94,7 @@ export const promptService = {
   },
 
   async updatePrompt(id: string, input: PromptInput, operator = "admin"): Promise<MutationResult<PromptAsset> | null> {
-    const prompts = await readJsonFile<PromptAsset[]>(FILE_NAME, []);
+    const prompts = await readJsonFileForMutation<PromptAsset[]>(FILE_NAME, []);
     const index = prompts.findIndex((prompt) => prompt.id === id);
     if (index < 0) return null;
     const prompt = { ...prompts[index], ...input, updatedAt: new Date().toISOString() };
@@ -109,34 +116,30 @@ export const promptService = {
   },
 
   async incrementView(id: string) {
-    const prompts = await readJsonFile<PromptAsset[]>(FILE_NAME, []);
-    const index = prompts.findIndex((prompt) => prompt.id === id);
-    if (index < 0) return null;
-    prompts[index] = { ...prompts[index], viewCount: prompts[index].viewCount + 1 };
-    await writeJsonFile(FILE_NAME, prompts);
-    return prompts[index];
+    const prompt = await this.getPromptById(id);
+    if (!prompt) return null;
+    await operationalStateService.recordPrompt(id, "views");
+    return { ...prompt, viewCount: prompt.viewCount + 1 };
   },
 
   async incrementCopy(id: string, operator = "visitor") {
-    const prompts = await readJsonFile<PromptAsset[]>(FILE_NAME, []);
-    const index = prompts.findIndex((prompt) => prompt.id === id);
-    if (index < 0) return null;
-    prompts[index] = { ...prompts[index], copyCount: prompts[index].copyCount + 1 };
-    await writeJsonFile(FILE_NAME, prompts);
+    const prompt = await this.getPromptById(id);
+    if (!prompt) return null;
+    await operationalStateService.recordPrompt(id, "copies");
     await captureWarning(() => operationLogService.createLog({
       type: "copy",
-      title: `复制 Prompt：${prompts[index].name}`,
+      title: `复制 Prompt：${prompt.name}`,
       description: "从 Prompt 列表或详情复制完整内容",
       targetType: "asset",
       targetId: id,
-      targetName: prompts[index].name,
+      targetName: prompt.name,
       operator
     }).then(() => undefined));
-    return prompts[index];
+    return { ...prompt, copyCount: prompt.copyCount + 1 };
   },
 
   async deletePrompt(id: string, operator = "admin"): Promise<DeleteResult> {
-    const prompts = await readJsonFile<PromptAsset[]>(FILE_NAME, []);
+    const prompts = await readJsonFileForMutation<PromptAsset[]>(FILE_NAME, []);
     const prompt = prompts.find((item) => item.id === id);
     const nextPrompts = prompts.filter((item) => item.id !== id);
     if (nextPrompts.length === prompts.length) return { deleted: false };

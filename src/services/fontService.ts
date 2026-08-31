@@ -2,8 +2,9 @@ import { promises as fs } from "node:fs";
 import { resolveDataPath, storageFolders } from "@/config/storage";
 import { getFontFormat } from "@/lib/fontStorage";
 import { removeStoredAssetFoldersFromPaths } from "@/lib/storage/deleteStoredEntry";
-import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFileForMutation, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { operationLogService } from "@/services/operationLogService";
+import { operationalStateService } from "@/services/operationalStateService";
 import { uploadRecordService } from "@/services/uploadRecordService";
 import type { DeleteResult, MutationResult } from "@/types/serviceResult";
 import type { FontAsset, FontInput, FontVersion } from "@/types/font";
@@ -24,8 +25,11 @@ function matchesKeyword(font: FontAsset, keyword?: string) {
   return `${font.name} ${font.description} ${font.category} ${font.designer ?? ""} ${font.tags.join(" ")}`.toLowerCase().includes(keyword.toLowerCase());
 }
 
-async function getFontsWithReader(reader: typeof readJsonFile, keyword?: string) {
-  const fonts = await reader<FontAsset[]>(FONTS_FILE, []);
+async function getFontsWithReader(reader: typeof readJsonFileForMutation, keyword?: string) {
+  const fonts = await Promise.all((await reader<FontAsset[]>(FONTS_FILE, [])).map(async (font) => {
+    const counters = await operationalStateService.downloadCounters("fonts", font.id);
+    return { ...font, downloadCount: font.downloadCount + Number(counters.downloads ?? 0) };
+  }));
   return fonts.filter((font) => matchesKeyword(font, keyword)).sort(sortFonts);
 }
 
@@ -54,12 +58,18 @@ export const fontService = {
 
   async getFontById(id: string) {
     const fonts = await readJsonFileReadonly<FontAsset[]>(FONTS_FILE, []);
-    return fonts.find((font) => font.id === id) ?? null;
+    const font = fonts.find((item) => item.id === id);
+    if (!font) return null;
+    const counters = await operationalStateService.downloadCounters("fonts", font.id);
+    return { ...font, downloadCount: font.downloadCount + Number(counters.downloads ?? 0) };
   },
 
   async getFontVersions(fontId: string) {
     const versions = await readJsonFileReadonly<FontVersion[]>(FONT_VERSIONS_FILE, []);
-    return versions.filter((version) => version.fontId === fontId).sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+    return Promise.all(versions.filter((version) => version.fontId === fontId).sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)).map(async (version) => {
+      const counters = await operationalStateService.downloadCounters("fontVersions", version.id);
+      return { ...version, downloadCount: version.downloadCount + Number(counters.downloads ?? 0) };
+    }));
   },
 
   async getFontVersionsForKnowledge(fontId: string) {
@@ -68,8 +78,8 @@ export const fontService = {
   },
 
   async createFont(input: FontInput, filePath: string, file: File, operator = "admin"): Promise<MutationResult<FontAsset>> {
-    const fonts = await readJsonFile<FontAsset[]>(FONTS_FILE, []);
-    const versions = await readJsonFile<FontVersion[]>(FONT_VERSIONS_FILE, []);
+    const fonts = await readJsonFileForMutation<FontAsset[]>(FONTS_FILE, []);
+    const versions = await readJsonFileForMutation<FontVersion[]>(FONT_VERSIONS_FILE, []);
     const now = new Date().toISOString();
     const font: FontAsset = {
       id: createId(input.name),
@@ -123,7 +133,7 @@ export const fontService = {
   },
 
   async updateFont(id: string, input: FontInput, operator = "admin"): Promise<MutationResult<FontAsset> | null> {
-    const fonts = await readJsonFile<FontAsset[]>(FONTS_FILE, []);
+    const fonts = await readJsonFileForMutation<FontAsset[]>(FONTS_FILE, []);
     const index = fonts.findIndex((font) => font.id === id);
     if (index < 0) return null;
     const font = { ...fonts[index], ...input, version: fonts[index].version, updatedAt: new Date().toISOString() };
@@ -145,8 +155,8 @@ export const fontService = {
   },
 
   async addVersion(fontId: string, versionName: string, filePath: string, file: File, operator = "admin") {
-    const fonts = await readJsonFile<FontAsset[]>(FONTS_FILE, []);
-    const versions = await readJsonFile<FontVersion[]>(FONT_VERSIONS_FILE, []);
+    const fonts = await readJsonFileForMutation<FontAsset[]>(FONTS_FILE, []);
+    const versions = await readJsonFileForMutation<FontVersion[]>(FONT_VERSIONS_FILE, []);
     const index = fonts.findIndex((font) => font.id === fontId);
     if (index < 0) return null;
     const now = new Date().toISOString();
@@ -201,25 +211,13 @@ export const fontService = {
   },
 
   async incrementDownload(fontId: string, versionId?: string) {
-    const fonts = await readJsonFile<FontAsset[]>(FONTS_FILE, []);
-    const versions = await readJsonFile<FontVersion[]>(FONT_VERSIONS_FILE, []);
-    const fontIndex = fonts.findIndex((font) => font.id === fontId);
-    if (fontIndex >= 0) {
-      fonts[fontIndex] = { ...fonts[fontIndex], downloadCount: fonts[fontIndex].downloadCount + 1 };
-      await writeJsonFile(FONTS_FILE, fonts);
-    }
-    if (versionId) {
-      const versionIndex = versions.findIndex((version) => version.id === versionId);
-      if (versionIndex >= 0) {
-        versions[versionIndex] = { ...versions[versionIndex], downloadCount: versions[versionIndex].downloadCount + 1 };
-        await writeJsonFile(FONT_VERSIONS_FILE, versions);
-      }
-    }
+    await operationalStateService.recordDownload("fonts", fontId);
+    if (versionId) await operationalStateService.recordDownload("fontVersions", versionId);
   },
 
   async deleteFont(id: string, operator = "admin"): Promise<DeleteResult> {
-    const fonts = await readJsonFile<FontAsset[]>(FONTS_FILE, []);
-    const versions = await readJsonFile<FontVersion[]>(FONT_VERSIONS_FILE, []);
+    const fonts = await readJsonFileForMutation<FontAsset[]>(FONTS_FILE, []);
+    const versions = await readJsonFileForMutation<FontVersion[]>(FONT_VERSIONS_FILE, []);
     const font = fonts.find((item) => item.id === id);
     const fontVersions = versions.filter((version) => version.fontId === id);
     const nextFonts = fonts.filter((item) => item.id !== id);

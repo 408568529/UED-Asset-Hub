@@ -1,4 +1,5 @@
-import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFileForMutation, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { createHash } from "node:crypto";
 import type { UploadRecord } from "@/types/audit";
 
 const FILE_NAME = "uploads.json";
@@ -11,7 +12,7 @@ function normalizeUpload(upload: LegacyUploadRecord): UploadRecord {
     : "other";
 
   return {
-    id: upload.id ?? `upload-legacy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: upload.id ?? `upload-legacy-${createHash("sha256").update(JSON.stringify(upload)).digest("hex").slice(0, 16)}`,
     fileName: upload.fileName ?? "未命名文件",
     fileType,
     assetModule: upload.assetModule,
@@ -30,13 +31,13 @@ function normalizeUpload(upload: LegacyUploadRecord): UploadRecord {
 
 export const uploadRecordService = {
   async getUploads(limit?: number): Promise<UploadRecord[]> {
-    const uploads = (await readJsonFile<LegacyUploadRecord[]>(FILE_NAME, [])).map(normalizeUpload);
+    const uploads = (await readJsonFileReadonly<LegacyUploadRecord[]>(FILE_NAME, [])).map(normalizeUpload);
     const result = uploads.sort((a, b) => +new Date(b.uploadedAt) - +new Date(a.uploadedAt));
     return limit ? result.slice(0, limit) : result;
   },
 
   async createUpload(input: Omit<UploadRecord, "id" | "uploadedAt"> & { uploadedAt?: string }): Promise<UploadRecord> {
-    const uploads = await readJsonFile<UploadRecord[]>(FILE_NAME, []);
+    const uploads = await readJsonFileForMutation<UploadRecord[]>(FILE_NAME, []);
     const upload: UploadRecord = {
       id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       uploadedAt: input.uploadedAt ?? new Date().toISOString(),

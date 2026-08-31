@@ -1,4 +1,4 @@
-import { readJsonFile, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFileForMutation, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import type { AssetVersion, AssetVersionType } from "@/types/audit";
 
 const FILE_NAME = "versions.json";
@@ -12,7 +12,7 @@ function nextVersion(versions: AssetVersion[], assetId: string, assetType: Asset
 
 export const assetVersionService = {
   async getVersions(assetType?: AssetVersionType, assetId?: string): Promise<AssetVersion[]> {
-    const versions = await readJsonFile<AssetVersion[]>(FILE_NAME, []);
+    const versions = await readJsonFileReadonly<AssetVersion[]>(FILE_NAME, []);
     return versions
       .filter((version) => (assetType ? version.assetType === assetType : true))
       .filter((version) => (assetId ? version.assetId === assetId : true))
@@ -20,12 +20,12 @@ export const assetVersionService = {
   },
 
   async getVersionById(id: string): Promise<AssetVersion | null> {
-    const versions = await readJsonFile<AssetVersion[]>(FILE_NAME, []);
+    const versions = await readJsonFileReadonly<AssetVersion[]>(FILE_NAME, []);
     return versions.find((version) => version.id === id) ?? null;
   },
 
   async createVersion(input: VersionInput): Promise<AssetVersion> {
-    const versions = await readJsonFile<AssetVersion[]>(FILE_NAME, []);
+    const versions = await readJsonFileForMutation<AssetVersion[]>(FILE_NAME, []);
     const version: AssetVersion = {
       id: `ver-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       version: nextVersion(versions, input.assetId, input.assetType),

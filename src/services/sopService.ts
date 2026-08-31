@@ -1,4 +1,4 @@
-import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFileForMutation, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { storageFolders } from "@/config/storage";
 import { removeStoredModuleEntry } from "@/lib/storage/deleteStoredEntry";
 import { operationLogService } from "@/services/operationLogService";
@@ -21,7 +21,7 @@ function sortSops(a: Sop, b: Sop) {
   return (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999) || +new Date(b.updatedAt) - +new Date(a.updatedAt);
 }
 
-async function getSopsWithReader(reader: typeof readJsonFile, keyword?: string) {
+async function getSopsWithReader(reader: typeof readJsonFileForMutation, keyword?: string) {
   const sops = await reader<Sop[]>(FILE_NAME, []);
   return sops.filter((sop) => matchesKeyword(sop, keyword)).sort(sortSops);
 }
@@ -55,7 +55,7 @@ export const sopService = {
   },
 
   async createSop(input: SopInput, operator = "admin"): Promise<MutationResult<Sop>> {
-    const sops = await readJsonFile<Sop[]>(FILE_NAME, []);
+    const sops = await readJsonFileForMutation<Sop[]>(FILE_NAME, []);
     const now = new Date().toISOString();
     const sop: Sop = {
       id: createId(input.name),
@@ -85,7 +85,7 @@ export const sopService = {
   },
 
   async updateSop(id: string, input: SopInput, operator = "admin"): Promise<MutationResult<Sop> | null> {
-    const sops = await readJsonFile<Sop[]>(FILE_NAME, []);
+    const sops = await readJsonFileForMutation<Sop[]>(FILE_NAME, []);
     const index = sops.findIndex((sop) => sop.id === id);
     if (index < 0) return null;
 
@@ -108,7 +108,7 @@ export const sopService = {
   },
 
   async deleteSop(id: string, operator = "admin"): Promise<DeleteResult> {
-    const sops = await readJsonFile<Sop[]>(FILE_NAME, []);
+    const sops = await readJsonFileForMutation<Sop[]>(FILE_NAME, []);
     const sop = sops.find((item) => item.id === id);
     const nextSops = sops.filter((item) => item.id !== id);
     if (nextSops.length === sops.length) return { deleted: false };

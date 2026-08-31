@@ -34,8 +34,7 @@ export async function GET(request: Request) {
   const type = getTagType(new URL(request.url).searchParams.get("type"));
   if (!type) return NextResponse.json({ message: "Unsupported tag type" }, { status: 400 });
   const usedNames = (await getUsedNames(type)).filter((name): name is string => Boolean(name));
-  await tagService.syncTagsByType(type, usedNames);
-  return NextResponse.json(await tagService.getTagsByType(type));
+  return NextResponse.json(await tagService.getTagsProjectionByType(type, usedNames));
 }
 
 export async function POST(request: Request) {

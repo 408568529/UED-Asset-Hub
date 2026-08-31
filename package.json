@@ -12,6 +12,7 @@
     "verify:knowledge-readonly": "node --experimental-strip-types scripts/verify-knowledge-readonly.mjs",
     "verify:knowledge-write": "node --experimental-strip-types scripts/verify-knowledge-write.mjs",
     "verify:knowledge-gateway": "tsx scripts/verify-knowledge-gateway.ts",
+    "verify:formal-data-readonly": "tsx scripts/verify-formal-data-readonly.ts",
     "verify:e2e-fixture": "node scripts/verify-e2e-fixture.mjs",
     "verify:agent-runtime": "node agent-integration/scripts/verify-dsh.mjs",
     "verify:agent-boundary": "node scripts/verify-agent-runtime-boundary.mjs",

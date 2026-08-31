@@ -18,32 +18,6 @@ function enqueueWrite(fileName: string, action: () => Promise<void>) {
   });
 }
 
-export async function readJsonFile<T>(fileName: string, fallback: T): Promise<T> {
-  await ensureDataDir();
-  const filePath = path.join(META_DIR, fileName);
-  const legacyPath = path.join(DATA_DIR, fileName);
-
-  try {
-    const content = await fs.readFile(filePath, "utf8");
-    return JSON.parse(content) as T;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") {
-      try {
-        const legacyContent = await fs.readFile(legacyPath, "utf8");
-        const legacyData = JSON.parse(legacyContent) as T;
-        await writeJsonFile(fileName, legacyData);
-        return legacyData;
-      } catch (legacyError) {
-        if ((legacyError as NodeJS.ErrnoException).code !== "ENOENT") throw legacyError;
-      }
-      await writeJsonFile(fileName, fallback);
-      return fallback;
-    }
-    throw error;
-  }
-}
-
 /**
  * Reads the current or legacy JSON file without creating directories, copying
  * legacy data, or persisting a fallback. Use this for read-only projections.
@@ -62,6 +36,13 @@ export async function readJsonFileReadonly<T>(fileName: string, fallback: T): Pr
 
   return fallback;
 }
+
+/**
+ * Reads an existing current or legacy document before an explicit mutation.
+ * The caller's later write is the mutation; this helper never initializes or
+ * migrates storage on its own.
+ */
+export const readJsonFileForMutation = readJsonFileReadonly;
 
 export async function writeJsonFile<T>(fileName: string, data: T): Promise<void> {
   await enqueueWrite(fileName, async () => {

@@ -1,8 +1,10 @@
 import { promises as fs } from "node:fs";
-import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { createHash } from "node:crypto";
+import { readJsonFileForMutation, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { normalizeTrainingName } from "@/lib/trainingUtils";
 import { getLinkedServerFile, removeLinkedServerFile, removeTrainingVideoFiles, resolveTrainingCoverPath, resolveTrainingVideoPath } from "@/lib/trainingStorage";
 import { operationLogService } from "@/services/operationLogService";
+import { operationalStateService } from "@/services/operationalStateService";
 import { uploadRecordService } from "@/services/uploadRecordService";
 import type { DeleteResult, MutationResult } from "@/types/serviceResult";
 import type { TrainingFolder, TrainingGroup, TrainingSourceMode, TrainingTopic, TrainingUploadTask, TrainingVideo, TrainingVideoInput } from "@/types/training";
@@ -15,6 +17,10 @@ const TASKS_FILE = "training-upload-tasks.json";
 function createId(prefix: string, name: string) {
   const slug = name.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-").replace(/^-|-$/g, "") || prefix;
   return `${prefix}-${slug}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function legacyId(video: Omit<Partial<TrainingVideo>, "rating"> & { rating?: number | null }) {
+  return `training-legacy-${createHash("sha256").update(JSON.stringify(video)).digest("hex").slice(0, 16)}`;
 }
 
 function normalizeRating(value: unknown) {
@@ -31,7 +37,6 @@ function withResolvedTitle(input: TrainingVideoInput, fileName: string): Trainin
 }
 
 function normalizeVideo(video: Omit<Partial<TrainingVideo>, "rating"> & { rating?: number | null }): TrainingVideo {
-  const now = new Date().toISOString();
   const playCount = Number(video.playCount ?? 0);
   const totalWatchDuration = Number(video.totalWatchDuration ?? 0);
   const groupName = video.groupName?.trim() || "未分类资料";
@@ -39,7 +44,7 @@ function normalizeVideo(video: Omit<Partial<TrainingVideo>, "rating"> & { rating
   const tags = [...(Array.isArray(video.tags) ? video.tags : []), ...(legacyTopic && legacyTopic !== "未分类" ? [legacyTopic] : [])];
   const uniqueTags = [...new Map(tags.map((tag) => [tag.trim().toLocaleLowerCase(), tag.trim()])).values()].filter(Boolean);
   return {
-    id: video.id ?? createId("training", video.title ?? "video"),
+    id: video.id ?? legacyId(video),
     title: video.title ?? "未命名培训视频",
     description: video.description ?? "",
     groupId: video.groupId ?? (groupName === "未分类资料" ? "ungrouped" : `legacy-${normalizeTrainingName(groupName)}`),
@@ -60,8 +65,8 @@ function normalizeVideo(video: Omit<Partial<TrainingVideo>, "rating"> & { rating
     averageWatchDuration: playCount ? totalWatchDuration / playCount : 0,
     playCount,
     uploadedBy: video.uploadedBy ?? "unknown",
-    createdAt: video.createdAt ?? now,
-    updatedAt: video.updatedAt ?? video.createdAt ?? now
+    createdAt: video.createdAt ?? new Date(0).toISOString(),
+    updatedAt: video.updatedAt ?? video.createdAt ?? new Date(0).toISOString()
   };
 }
 
@@ -76,7 +81,7 @@ async function captureWarning(action: () => Promise<void>) {
 }
 
 async function ensureGroup(groupName: string) {
-  const groups = await readJsonFile<TrainingGroup[]>(GROUPS_FILE, []);
+  const groups = await readJsonFileForMutation<TrainingGroup[]>(GROUPS_FILE, []);
   const normalizedGroupName = normalizeTrainingName(groupName);
   let group = groups.find((item) => item.normalizedName === normalizedGroupName);
   if (!group) {
@@ -93,8 +98,14 @@ function matchesVideo(video: TrainingVideo, keyword?: string) {
   return [video.title, video.description, video.groupName, video.speaker, ...(video.tags ?? [])].filter(Boolean).join(" ").toLocaleLowerCase().includes(normalized);
 }
 
-async function getVideosWithReader(reader: typeof readJsonFile, filters?: { keyword?: string; groupId?: string }) {
-  const videos = (await reader<Partial<TrainingVideo>[]>(VIDEOS_FILE, [])).map(normalizeVideo);
+async function getVideosWithReader(reader: typeof readJsonFileForMutation, filters?: { keyword?: string; groupId?: string }, includeOperationalMetrics = false) {
+  const normalizedVideos = (await reader<Partial<TrainingVideo>[]>(VIDEOS_FILE, [])).map(normalizeVideo);
+  const videos = includeOperationalMetrics ? await Promise.all(normalizedVideos.map(async (video) => {
+    const delta = await operationalStateService.trainingMetric(video.id);
+    const playCount = video.playCount + delta.playCount;
+    const totalWatchDuration = video.totalWatchDuration + delta.totalWatchDuration;
+    return { ...video, playCount, totalWatchDuration, averageWatchDuration: playCount ? totalWatchDuration / playCount : 0 };
+  })) : normalizedVideos;
   return videos
     .filter((video) => matchesVideo(video, filters?.keyword))
     .filter((video) => !filters?.groupId || video.groupId === filters.groupId)
@@ -143,7 +154,7 @@ export const trainingService = {
   },
 
   async createGroup(name: string) {
-    const groups = await readJsonFile<TrainingGroup[]>(GROUPS_FILE, []);
+    const groups = await readJsonFileForMutation<TrainingGroup[]>(GROUPS_FILE, []);
     const normalizedName = normalizeTrainingName(name);
     const existing = groups.find((group) => group.normalizedName === normalizedName);
     if (existing) return existing;
@@ -154,9 +165,9 @@ export const trainingService = {
   },
 
   async createTopic(groupId: string, name: string) {
-    const groups = await readJsonFile<TrainingGroup[]>(GROUPS_FILE, []);
+    const groups = await readJsonFileForMutation<TrainingGroup[]>(GROUPS_FILE, []);
     if (!groups.some((group) => group.id === groupId)) throw new Error("培训分组不存在。");
-    const topics = await readJsonFile<TrainingTopic[]>(TOPICS_FILE, []);
+    const topics = await readJsonFileForMutation<TrainingTopic[]>(TOPICS_FILE, []);
     const normalizedName = normalizeTrainingName(name);
     const existing = topics.find((topic) => topic.groupId === groupId && topic.normalizedName === normalizedName);
     if (existing) return existing;
@@ -166,11 +177,11 @@ export const trainingService = {
   },
 
   async getVideos(filters?: { keyword?: string; groupId?: string }) {
-    return getVideosWithReader(readJsonFileReadonly, filters);
+    return getVideosWithReader(readJsonFileReadonly, filters, true);
   },
 
   async getVideosForKnowledge(filters?: { keyword?: string; groupId?: string }) {
-    return getVideosWithReader(readJsonFileReadonly, filters);
+    return getVideosWithReader(readJsonFileReadonly, filters, true);
   },
 
   async countVideos() {
@@ -182,7 +193,7 @@ export const trainingService = {
   },
 
   async createVideo(input: TrainingVideoInput, file: { videoPath: string; fileName: string; fileSize: number; sourceMode: "upload" | "server-local" }, operator = "admin"): Promise<MutationResult<TrainingVideo>> {
-    const videos = await this.getVideos();
+    const videos = await getVideosWithReader(readJsonFileForMutation);
     const resolvedInput = withResolvedTitle(input, file.fileName);
     const group = await ensureGroup(resolvedInput.groupName);
     const now = new Date().toISOString();
@@ -237,7 +248,7 @@ export const trainingService = {
   },
 
   async updateVideo(id: string, input: TrainingVideoInput, operator = "admin") {
-    const videos = await this.getVideos();
+    const videos = await getVideosWithReader(readJsonFileForMutation);
     const index = videos.findIndex((video) => video.id === id);
     if (index < 0) return null;
     const resolvedInput = withResolvedTitle(input, videos[index].fileName);
@@ -259,7 +270,7 @@ export const trainingService = {
   },
 
   async replaceVideoFile(id: string, input: TrainingVideoInput, file: { videoPath: string; fileName: string; fileSize: number; sourceMode: TrainingSourceMode }, options: { deleteOriginalFile?: boolean; operator?: string } = {}) {
-    const videos = await this.getVideos();
+    const videos = await getVideosWithReader(readJsonFileForMutation);
     const index = videos.findIndex((video) => video.id === id);
     if (index < 0) return null;
     const previous = videos[index];
@@ -301,7 +312,7 @@ export const trainingService = {
   },
 
   async updateCover(id: string, coverPath: string, operator = "admin") {
-    const videos = await this.getVideos();
+    const videos = await getVideosWithReader(readJsonFileForMutation);
     const index = videos.findIndex((video) => video.id === id);
     if (index < 0) return null;
     videos[index] = { ...videos[index], coverPath, updatedAt: new Date().toISOString() };
@@ -319,7 +330,7 @@ export const trainingService = {
   },
 
   async deleteVideo(id: string, options: { deleteFile?: boolean; operator?: string } = {}): Promise<DeleteResult> {
-    const videos = await this.getVideos();
+    const videos = await getVideosWithReader(readJsonFileForMutation);
     const video = videos.find((item) => item.id === id);
     if (!video) return { deleted: false };
     await writeJsonFile(VIDEOS_FILE, videos.filter((item) => item.id !== id));
@@ -360,15 +371,13 @@ export const trainingService = {
   },
 
   async getUploadTask(id: string) {
-    return (await readJsonFileReadonly<TrainingUploadTask[]>(TASKS_FILE, [])).find((task) => task.id === id) ?? null;
+    return (await operationalStateService.getTrainingTask(id))
+      ?? (await readJsonFileReadonly<TrainingUploadTask[]>(TASKS_FILE, [])).find((task) => task.id === id)
+      ?? null;
   },
 
   async upsertUploadTask(task: TrainingUploadTask) {
-    const tasks = await readJsonFile<TrainingUploadTask[]>(TASKS_FILE, []);
-    const index = tasks.findIndex((item) => item.id === task.id);
-    if (index >= 0) tasks[index] = task;
-    else tasks.unshift(task);
-    await writeJsonFile(TASKS_FILE, tasks.slice(0, 200));
+    await operationalStateService.upsertTrainingTask(task);
     return task;
   }
 };

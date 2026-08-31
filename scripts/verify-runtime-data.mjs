@@ -28,6 +28,8 @@ const projectDir = path.resolve(process.cwd());
 const dataDir = process.env.DATA_DIR || readLocalEnvironment("DATA_DIR");
 const trainingMediaDir = process.env.TRAINING_MEDIA_DIR || readLocalEnvironment("TRAINING_MEDIA_DIR");
 const agentRuntimeDir = process.env.AGENT_RUNTIME_DIR || readLocalEnvironment("AGENT_RUNTIME_DIR");
+const dshSourceDir = process.env.DSH_SOURCE_DIR || readLocalEnvironment("DSH_SOURCE_DIR");
+const assetHubRuntimeDir = process.env.ASSET_HUB_RUNTIME_DIR || readLocalEnvironment("ASSET_HUB_RUNTIME_DIR") || (dataDir ? path.join(path.dirname(dataDir), "asset-hub-runtime") : undefined);
 
 if (!dataDir) {
   fail("缺少 DATA_DIR。生产主机必须在 .env.local 中配置仓库外的真实数据目录。");
@@ -35,6 +37,10 @@ if (!dataDir) {
 
 if (isInside(projectDir, path.resolve(dataDir))) {
   fail("DATA_DIR 位于 Git 代码目录内。请改为仓库外路径，例如 D:/UED-Asset-Hub/runtime-data。");
+}
+
+if (!fs.existsSync(dataDir) || !fs.statSync(dataDir).isDirectory()) {
+  fail("DATA_DIR 必须预先存在且为目录；启动不会初始化正式数据目录。");
 }
 
 if (trainingMediaDir && isInside(projectDir, path.resolve(trainingMediaDir))) {
@@ -45,11 +51,39 @@ if (agentRuntimeDir && isInside(projectDir, path.resolve(agentRuntimeDir))) {
   fail("AGENT_RUNTIME_DIR 位于 Git 代码目录内。请改为仓库外路径，例如 D:/UED-Asset-Hub/agent-data。");
 }
 
+if (!assetHubRuntimeDir || isInside(projectDir, path.resolve(assetHubRuntimeDir))) {
+  fail("ASSET_HUB_RUNTIME_DIR 必须位于 Git 代码目录之外。");
+}
+
+if (dataDir && assetHubRuntimeDir) {
+  const dataRoot = path.resolve(dataDir);
+  const operationalRoot = path.resolve(assetHubRuntimeDir);
+  if (dataRoot === operationalRoot || isInside(dataRoot, operationalRoot) || isInside(operationalRoot, dataRoot)) {
+    fail("DATA_DIR 与 ASSET_HUB_RUNTIME_DIR 必须彼此独立且互不包含。");
+  }
+}
+
 if (dataDir && agentRuntimeDir) {
   const dataRoot = path.resolve(dataDir);
   const agentRoot = path.resolve(agentRuntimeDir);
   if (dataRoot === agentRoot || isInside(dataRoot, agentRoot) || isInside(agentRoot, dataRoot)) {
     fail("DATA_DIR 与 AGENT_RUNTIME_DIR 必须彼此独立且互不包含。");
+  }
+}
+
+if (assetHubRuntimeDir && agentRuntimeDir) {
+  const operationalRoot = path.resolve(assetHubRuntimeDir);
+  const agentRoot = path.resolve(agentRuntimeDir);
+  if (operationalRoot === agentRoot || isInside(operationalRoot, agentRoot) || isInside(agentRoot, operationalRoot)) {
+    fail("ASSET_HUB_RUNTIME_DIR 与 AGENT_RUNTIME_DIR 必须彼此独立且互不包含。");
+  }
+}
+
+if (assetHubRuntimeDir && dshSourceDir) {
+  const operationalRoot = path.resolve(assetHubRuntimeDir);
+  const dshRoot = path.resolve(dshSourceDir);
+  if (operationalRoot === dshRoot || isInside(operationalRoot, dshRoot) || isInside(dshRoot, operationalRoot)) {
+    fail("ASSET_HUB_RUNTIME_DIR 与 DSH_SOURCE_DIR 必须彼此独立且互不包含。");
   }
 }
 

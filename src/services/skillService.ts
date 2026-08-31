@@ -1,8 +1,10 @@
 import { promises as fs } from "node:fs";
+import { createHash } from "node:crypto";
 import { resolveDataPath, storageFolders } from "@/config/storage";
 import { removeStoredAssetFoldersFromPaths } from "@/lib/storage/deleteStoredEntry";
-import { readJsonFile, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
+import { readJsonFileForMutation, readJsonFileReadonly, writeJsonFile } from "@/lib/storage/jsonStorage";
 import { operationLogService } from "@/services/operationLogService";
+import { operationalStateService } from "@/services/operationalStateService";
 import { tagService } from "@/services/tagService";
 import { uploadRecordService } from "@/services/uploadRecordService";
 import type { DeleteResult, MutationResult } from "@/types/serviceResult";
@@ -13,6 +15,10 @@ const VERSIONS_FILE = "skill-versions.json";
 
 function createId(name: string) {
   return `${name.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-").replace(/^-|-$/g, "")}-${Date.now()}`;
+}
+
+function legacyId(skill: Partial<Skill>) {
+  return `skill-legacy-${createHash("sha256").update(JSON.stringify(skill)).digest("hex").slice(0, 16)}`;
 }
 
 function sortSkills(a: Skill, b: Skill) {
@@ -26,7 +32,7 @@ function sortVersions(a: SkillVersion, b: SkillVersion) {
 function normalizeSkill(skill: Partial<Skill>): Skill {
   const authorName = String(skill.authorName ?? skill.username ?? skill.author ?? "").trim() || "未填写作者";
   return {
-    id: skill.id ?? createId(skill.name ?? "skill"),
+    id: skill.id ?? legacyId(skill),
     name: skill.name ?? "未命名 Skill",
     description: skill.description ?? "",
     cover: skill.cover ?? "",
@@ -45,8 +51,13 @@ function normalizeSkill(skill: Partial<Skill>): Skill {
   };
 }
 
-async function readSkills(reader: typeof readJsonFile = readJsonFile) {
-  return (await reader<Partial<Skill>[]>(SKILLS_FILE, [])).map(normalizeSkill);
+async function readSkills(reader: typeof readJsonFileForMutation = readJsonFileForMutation, includeOperationalCounters = false) {
+  const skills = (await reader<Partial<Skill>[]>(SKILLS_FILE, [])).map(normalizeSkill);
+  if (!includeOperationalCounters) return skills;
+  return Promise.all(skills.map(async (normalized) => {
+    const counters = await operationalStateService.downloadCounters("skills", normalized.id);
+    return { ...normalized, downloadCount: normalized.downloadCount + Number(counters.downloads ?? 0) };
+  }));
 }
 
 async function syncUsageScenarioTags(skills: Skill[]) {
@@ -71,12 +82,12 @@ async function captureWarning(action: () => Promise<void>) {
 
 export const skillService = {
   async getSkills(keyword?: string): Promise<Skill[]> {
-    const skills = await readSkills(readJsonFileReadonly);
+    const skills = await readSkills(readJsonFileReadonly, true);
     return skills.filter((skill) => matchesKeyword(skill, keyword)).sort(sortSkills);
   },
 
   async getSkillsForKnowledge(keyword?: string): Promise<Skill[]> {
-    const skills = await readSkills(readJsonFileReadonly);
+    const skills = await readSkills(readJsonFileReadonly, true);
     return skills.filter((skill) => matchesKeyword(skill, keyword)).sort(sortSkills);
   },
 
@@ -85,18 +96,21 @@ export const skillService = {
   },
 
   async getSkillById(id: string): Promise<Skill | null> {
-    const skills = await readSkills(readJsonFileReadonly);
+    const skills = await readSkills(readJsonFileReadonly, true);
     return skills.find((skill) => skill.id === id) ?? null;
   },
 
   async getSkillForKnowledgeById(id: string): Promise<Skill | null> {
-    const skills = await readSkills(readJsonFileReadonly);
+    const skills = await readSkills(readJsonFileReadonly, true);
     return skills.find((skill) => skill.id === id) ?? null;
   },
 
   async getSkillVersions(skillId: string): Promise<SkillVersion[]> {
     const versions = await readJsonFileReadonly<SkillVersion[]>(VERSIONS_FILE, []);
-    return versions.filter((version) => version.skillId === skillId).sort(sortVersions);
+    return Promise.all(versions.filter((version) => version.skillId === skillId).sort(sortVersions).map(async (version) => {
+      const counters = await operationalStateService.downloadCounters("skillVersions", version.id);
+      return { ...version, downloadCount: version.downloadCount + Number(counters.downloads ?? 0) };
+    }));
   },
 
   async getSkillVersionsForKnowledge(skillId: string): Promise<SkillVersion[]> {
@@ -106,7 +120,7 @@ export const skillService = {
 
   async createSkill(input: SkillInput, packagePath: string, file: File, operator = "admin"): Promise<MutationResult<Skill>> {
     const skills = await readSkills();
-    const versions = await readJsonFile<SkillVersion[]>(VERSIONS_FILE, []);
+    const versions = await readJsonFileForMutation<SkillVersion[]>(VERSIONS_FILE, []);
     const now = new Date().toISOString();
     const skill: Skill = {
       id: createId(input.name),
@@ -192,7 +206,7 @@ export const skillService = {
 
   async addVersion(skillId: string, versionName: string, packagePath: string, file: File, changeLog: string, readme: string, operator = "admin"): Promise<MutationResult<SkillVersion> | null> {
     const skills = await readSkills();
-    const versions = await readJsonFile<SkillVersion[]>(VERSIONS_FILE, []);
+    const versions = await readJsonFileForMutation<SkillVersion[]>(VERSIONS_FILE, []);
     const index = skills.findIndex((skill) => skill.id === skillId);
     if (index < 0) return null;
     const now = new Date().toISOString();
@@ -248,7 +262,7 @@ export const skillService = {
 
   async overwriteCurrentVersion(skillId: string, versionName: string, packagePath: string, file: File, changeLog: string, readme: string, operator = "admin"): Promise<MutationResult<Skill> | null> {
     const skills = await readSkills();
-    const versions = await readJsonFile<SkillVersion[]>(VERSIONS_FILE, []);
+    const versions = await readJsonFileForMutation<SkillVersion[]>(VERSIONS_FILE, []);
     const index = skills.findIndex((skill) => skill.id === skillId);
     if (index < 0) return null;
     const now = new Date().toISOString();
@@ -323,25 +337,13 @@ export const skillService = {
   },
 
   async incrementDownload(skillId: string, versionId?: string) {
-    const skills = await readSkills();
-    const versions = await readJsonFile<SkillVersion[]>(VERSIONS_FILE, []);
-    const skillIndex = skills.findIndex((skill) => skill.id === skillId);
-    if (skillIndex >= 0) {
-      skills[skillIndex] = { ...skills[skillIndex], downloadCount: skills[skillIndex].downloadCount + 1 };
-      await writeJsonFile(SKILLS_FILE, skills);
-    }
-    if (versionId) {
-      const versionIndex = versions.findIndex((version) => version.id === versionId);
-      if (versionIndex >= 0) {
-        versions[versionIndex] = { ...versions[versionIndex], downloadCount: versions[versionIndex].downloadCount + 1 };
-        await writeJsonFile(VERSIONS_FILE, versions);
-      }
-    }
+    await operationalStateService.recordDownload("skills", skillId);
+    if (versionId) await operationalStateService.recordDownload("skillVersions", versionId);
   },
 
   async deleteSkill(id: string, operator = "admin"): Promise<DeleteResult> {
     const skills = await readSkills();
-    const versions = await readJsonFile<SkillVersion[]>(VERSIONS_FILE, []);
+    const versions = await readJsonFileForMutation<SkillVersion[]>(VERSIONS_FILE, []);
     const skill = skills.find((item) => item.id === id);
     const skillVersions = versions.filter((version) => version.skillId === id);
     const nextSkills = skills.filter((item) => item.id !== id);
