@@ -6,7 +6,7 @@ import path from "node:path";
 import { parseRuntimeDiagnosticsSnapshot } from "./runtime-diagnostics-contract.mjs";
 
 const maximumRequestBytes = 16 * 1024;
-const allowedOperations = new Set(["status", "start", "diagnostics"]);
+const allowedOperations = new Set(["status", "start", "diagnostics", "shutdown"]);
 const nonRetryableReasonCodes = new Set(["port_conflict", "orphan_processes_detected", "runtime_ownership_conflict", "runtime_lock_conflict", "runtime_configuration_invalid", "agent_configuration_invalid", "source_invalid", "build_missing", "build_invalid", "credential_missing", "credential_status_unknown", "runtime_control_unavailable"]);
 
 function safeTokenEquals(received, expected) {
@@ -16,6 +16,10 @@ function safeTokenEquals(received, expected) {
   return actual.length === wanted.length && timingSafeEqual(actual, wanted);
 }
 
+function sameShutdownBinding(received, expected) {
+  return Boolean(received && expected && received.supervisorInstanceId === expected.supervisorInstanceId && received.runtimeInstanceId === expected.runtimeInstanceId && Number.isInteger(received.generation) && received.generation === expected.generation);
+}
+
 export function runtimeControlEndpoint({ supervisorDirectory, instanceId, platform = process.platform }) {
   if (platform === "win32") return `\\\\.\\pipe\\ued-asset-hub-runtime-control-${instanceId}`;
   const digest = createHash("sha256").update(`${supervisorDirectory}:${instanceId}`).digest("hex").slice(0, 24);
@@ -23,7 +27,7 @@ export function runtimeControlEndpoint({ supervisorDirectory, instanceId, platfo
 }
 
 export function publicRuntimeState(state) {
-  const status = ["unavailable", "starting", "ready", "configuration_required", "error"].includes(state?.status) ? state.status : "unavailable";
+  const status = ["unavailable", "starting", "shutting_down", "ready", "configuration_required", "error"].includes(state?.status) ? state.status : "unavailable";
   const reasonCode = state?.reasonCode ?? null;
   return {
     status,
@@ -41,15 +45,16 @@ export function publicRuntimeState(state) {
   };
 }
 
-function write(socket, body) {
-  socket.end(`${JSON.stringify(body)}\n`);
+function write(socket, body, callback) {
+  socket.end(`${JSON.stringify(body)}\n`, callback);
 }
 
-export function createRuntimeControlBridge({ endpoint, token, inspect, ensureReady, diagnostics = async () => null, onEvent = () => {} }) {
+export function createRuntimeControlBridge({ endpoint, token, inspect, ensureReady, shutdown, shutdownBinding = () => null, diagnostics = async () => null, onEvent = () => {}, onShutdownDelivered = () => {} }) {
   const sockets = new Set();
   let started = false;
   let startPromise = null;
   let stopPromise = null;
+  let shutdownRequested = false;
   const server = createServer((socket) => {
     sockets.add(socket);
     socket.once("close", () => sockets.delete(socket));
@@ -73,6 +78,16 @@ export function createRuntimeControlBridge({ endpoint, token, inspect, ensureRea
         return;
       }
       try {
+        if (request.operation === "shutdown") {
+          if (Object.keys(request).length !== 3 || !sameShutdownBinding(request.binding, shutdownBinding())) { write(socket, { ok: false, reasonCode: "control_forbidden" }); return; }
+          if (typeof shutdown !== "function") { write(socket, { ok: false, reasonCode: "control_forbidden" }); return; }
+          if (shutdownRequested) { write(socket, { ok: false, reasonCode: "already_shutting_down" }); return; }
+          shutdownRequested = true;
+          try { onEvent({ operation: "shutdown", status: "accepted", reasonCode: null, generation: null }); } catch {}
+          await shutdown();
+          write(socket, { ok: true, shutdown: { status: "terminal", reasonCode: null } }, () => { try { onShutdownDelivered(); } catch {} });
+          return;
+        }
         if (request.operation === "diagnostics") {
           if (Object.keys(request).length !== 2) { write(socket, { ok: false, reasonCode: "control_request_invalid" }); return; }
           const snapshot = parseRuntimeDiagnosticsSnapshot(await diagnostics());
@@ -125,7 +140,7 @@ export function createRuntimeControlBridge({ endpoint, token, inspect, ensureRea
   };
 }
 
-export async function requestRuntimeControl({ endpoint, token, operation, timeoutMs = 5_000, signal }) {
+export async function requestRuntimeControl({ endpoint, token, operation, binding, timeoutMs = 5_000, signal }) {
   if (!allowedOperations.has(operation)) throw new Error("Unsupported runtime control operation.");
   return new Promise((resolve, reject) => {
     let output = "";
@@ -135,7 +150,7 @@ export async function requestRuntimeControl({ endpoint, token, operation, timeou
     const socket = createConnection(endpoint);
     const timeout = setTimeout(() => { socket.destroy(); finish(reject, new Error("Runtime control request timed out.")); }, timeoutMs);
     socket.setEncoding("utf8");
-    socket.once("connect", () => socket.write(`${JSON.stringify({ token, operation })}\n`));
+    socket.once("connect", () => socket.write(`${JSON.stringify(operation === "shutdown" ? { token, operation, binding } : { token, operation })}\n`));
     socket.on("data", (chunk) => { output += chunk; });
     socket.once("error", () => finish(reject, new Error("Runtime control is unavailable.")));
     socket.once("end", () => {
@@ -144,7 +159,12 @@ export async function requestRuntimeControl({ endpoint, token, operation, timeou
         response = JSON.parse(output);
       } catch { finish(reject, new Error("Runtime control failed.")); return; }
       if (!response?.ok) {
-        finish(reject, new Error(response?.reasonCode === "control_forbidden" ? "Runtime control rejected the request." : "Runtime control failed."));
+        finish(reject, new Error(response?.reasonCode === "control_forbidden" || response?.reasonCode === "already_shutting_down" ? "Runtime control rejected the request." : "Runtime control failed."));
+        return;
+      }
+      if (operation === "shutdown") {
+        if (response?.shutdown?.status !== "terminal") { finish(reject, new Error("Runtime control shutdown failed.")); return; }
+        finish(resolve, response.shutdown);
         return;
       }
       if (operation === "diagnostics") {

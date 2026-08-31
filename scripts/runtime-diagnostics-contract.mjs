@@ -12,8 +12,8 @@ export const runtimeComponentScopes = Object.freeze({
 });
 export const managedRuntimeComponents = new Set(["assetHubInternal", "gateway", "dsh", "proxy"]);
 
-export const runtimeStatuses = Object.freeze(["unavailable", "starting", "ready", "configuration_required", "error"]);
-export const runtimePhases = Object.freeze(["preflight", "initializing-runtime-dir", "starting-gateway", "starting-dsh", "starting-proxy", "health-check", "recovering"]);
+export const runtimeStatuses = Object.freeze(["unavailable", "starting", "shutting_down", "ready", "configuration_required", "error"]);
+export const runtimePhases = Object.freeze(["preflight", "initializing-runtime-dir", "starting-gateway", "starting-dsh", "starting-proxy", "health-check", "recovering", "stopping"]);
 export const componentStatuses = Object.freeze(["unknown", "not_started", "starting", "running", "stopping", "stopped", "exited", "failed"]);
 export const componentHealths = Object.freeze(["unknown", "healthy", "unhealthy", "not_applicable"]);
 export const ownershipStates = Object.freeze(["owned", "not_owned", "unknown", "not_applicable"]);

@@ -207,7 +207,7 @@ async function testShutdownDuringStart() {
   await Promise.all([starting, stopping]);
   assert.deepEqual(starts, ["prepare"], "shutdown barrier prevents the next Runtime component from starting");
   assert.deepEqual(stops, ["agent"], "shutdown still stops confirmed Runtime components");
-  assert.equal((await core.ensureReady()).status, "starting", "shutdown refuses a new Lifecycle start");
+  assert.equal((await core.ensureReady()).status, "shutting_down", "shutdown refuses a new Lifecycle start");
 }
 
 async function testSupervisorLock() {

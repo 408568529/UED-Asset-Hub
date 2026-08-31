@@ -5,7 +5,7 @@ import type { RuntimeDiagnosticsSnapshot } from "../../scripts/runtime-diagnosti
 const maximumResponseBytes = 16 * 1024;
 
 export type RuntimeState = {
-  status: "unavailable" | "starting" | "ready" | "configuration_required" | "error";
+  status: "unavailable" | "starting" | "shutting_down" | "ready" | "configuration_required" | "error";
   phase: string | null;
   reasonCode: string | null;
   operationId: string | null;
@@ -27,7 +27,7 @@ function requireControlConfig() {
 function isRuntimeState(value: unknown): value is RuntimeState {
   if (!value || typeof value !== "object") return false;
   const state = value as Partial<RuntimeState>;
-  return ["unavailable", "starting", "ready", "configuration_required", "error"].includes(String(state.status))
+  return ["unavailable", "starting", "shutting_down", "ready", "configuration_required", "error"].includes(String(state.status))
     && ["configured", "missing", "unknown"].includes(String(state.credentialStatus))
     && typeof state.retryable === "boolean"
     && ["ready", "unavailable"].includes(String(state.shell));

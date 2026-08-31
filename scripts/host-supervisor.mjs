@@ -12,6 +12,7 @@ import { ManagedProcessController, assertNoLiveManagedOrphans, managedMetadataPa
 import { RuntimeLifecycleCore } from "./runtime-lifecycle-core.mjs";
 import { acquireSupervisorLock, supervisorLockPath } from "./supervisor-lock.mjs";
 import { createRuntimeControlBridge, runtimeControlEndpoint } from "./runtime-control-bridge.mjs";
+import { createWindowsStopDiscoveryBridge, windowsServiceMode } from "./windows-stop-discovery.mjs";
 import { resolveHostSecurityConfig } from "./host-security-config.mjs";
 import { createRuntimeDiagnosticsState } from "./runtime-diagnostics-state.mjs";
 import { createBoundedNdjsonWriter } from "./bounded-ndjson-writer.mjs";
@@ -47,6 +48,7 @@ function port(name, fallback) { const parsed = Number.parseInt(value(name) || St
 function assertNodeVersion() {
   const [major, minor] = process.versions.node.split(".").map(Number);
   if (major < 22 || (major === 22 && minor < 19)) fail(`Node.js ${process.versions.node} 不满足 DSH 需要的 22.19+。`);
+  if (windowsServiceMode() && process.versions.node !== "22.23.2") fail(`Windows service mode requires pinned Node.js 22.23.2, received ${process.versions.node}.`);
 }
 
 function dshUrl() {
@@ -140,6 +142,17 @@ async function windowsJobHelperSpecification() {
   return { path: helperPath, manifestPath, sha256: manifest.sha256 };
 }
 
+async function windowsPipeSecurityAdapterSpecification() {
+  if (process.platform !== "win32") return undefined;
+  const directory = path.join(projectDir, "native", "windows-pipe-security-adapter", "bin");
+  const helperPath = path.join(directory, "ued-windows-pipe-security-adapter.exe");
+  const manifestPath = path.join(directory, "ued-windows-pipe-security-adapter.manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (manifest?.architecture !== "x64" || manifest?.version !== 1 || typeof manifest?.sha256 !== "string") throw new Error("Windows Pipe Security Adapter manifest is invalid.");
+  await access(helperPath);
+  return { path: helperPath, manifestPath, sha256: manifest.sha256 };
+}
+
 async function installRestrictedPreset(runtimePaths) {
   const source = path.join(projectDir, "agent-integration", "dsh", "agent-presets", "asset-hub-restricted");
   const destination = await ensureRuntimeSubdirectory({ dataRoot: runtimePaths.dataRoot, agentRoot: runtimePaths.agentRoot, relativePath: "dsh-home/.agent-presets/asset-hub-restricted" });
@@ -199,11 +212,16 @@ export async function main() {
 
   const instanceId = randomUUID();
   const runtimeInstanceId = randomUUID();
+  const serviceMode = windowsServiceMode();
   const windowsJobHelper = await windowsJobHelperSpecification();
+  const windowsPipeSecurityAdapter = serviceMode ? await windowsPipeSecurityAdapterSpecification() : undefined;
   let stopping = false;
   let runtimePaths = null;
   let releaseLock = async () => {};
   let runtimeControl = null;
+  let stopDiscovery = null;
+  let managedShutdown = null;
+  let finalizationPromise = null;
   const diagnostics = createRuntimeDiagnosticsState({ supervisorStartedAt: new Date().toISOString() });
   diagnostics.recordInProcessLifecycle("supervisor", { status: "running", health: "healthy" });
   let lifecycleWriter = null;
@@ -359,8 +377,14 @@ export async function main() {
     token,
     inspect: () => core.inspect({ readOnly: true }),
     ensureReady: () => core.ensureReady({ trigger: "manual_start" }),
+    shutdown: () => {
+      if (!managedShutdown) throw new Error("Managed shutdown is unavailable during startup.");
+      return managedShutdown();
+    },
+    shutdownBinding: () => ({ supervisorInstanceId: instanceId, runtimeInstanceId, generation: core.snapshot().generation }),
     diagnostics: () => diagnostics.snapshot(),
-    onEvent: (event) => { logLifecycle({ ...event, phase: `runtime-control:${event.operation}` }); }
+    onEvent: (event) => { logLifecycle({ ...event, phase: `runtime-control:${event.operation}` }); },
+    onShutdownDelivered: () => { void finalizeShutdown({ exitCode: 0, exitProcess: true }); }
   });
   diagnostics.recordInProcessLifecycle("runtimeControl", { status: "starting" });
   await runtimeControl.start();
@@ -370,14 +394,18 @@ export async function main() {
   await assertPortAvailable(internalPort, "内部 Asset Hub");
   await controller.start("assetHub", specifications.assetHub, { operation: "initial_start" });
   await observeHealth("assetHubInternal", () => waitFor("Asset Hub", () => request(`http://127.0.0.1:${internalPort}/api/auth/session`)), { reasonCode: "asset_hub_health_failed", operation: "initial_start" });
-  const edge = createEdgeServer({ host: value("HOST_BIND_HOST") || "0.0.0.0", port: publicPort, internalPort, proxyPort });
+  const configuredEdgeHost = value("HOST_BIND_HOST");
+  if (serviceMode && configuredEdgeHost && configuredEdgeHost !== "127.0.0.1") fail("Windows service mode requires HOST_BIND_HOST=127.0.0.1.");
+  const winswExecutable = value("UED_WINSW_EXECUTABLE");
+  if (serviceMode && !winswExecutable) fail("Windows service mode requires UED_WINSW_EXECUTABLE.");
+  const edge = createEdgeServer({ host: serviceMode ? "127.0.0.1" : configuredEdgeHost || "0.0.0.0", port: publicPort, internalPort, proxyPort });
   diagnostics.recordInProcessLifecycle("publicEdge", { status: "starting" });
   await edge.start();
   await observeHealth("publicEdge", () => waitFor("Public Asset Hub", () => request(`http://127.0.0.1:${publicPort}/api/auth/session`)), { reasonCode: "public_edge_health_failed", operation: "initial_start" });
   console.log(`[Host Supervisor] Asset Hub Shell is ready at http://主机IP:${publicPort}.`);
   const state = await core.ensureReady({ trigger: "initial_start" });
   if (state.status !== "ready") console.error(`[Host Supervisor] Agent Runtime is ${state.status}${state.reasonCode ? `: ${state.reasonCode}` : ""}. Asset Hub Shell remains available.`);
-  const shutdown = createSharedShutdown(async (signal, exitCode = 0) => {
+  const shutdown = createSharedShutdown(async (signal) => {
     stopping = true;
     diagnostics.beginShutdown();
     controller.beginShutdown();
@@ -392,18 +420,37 @@ export async function main() {
       await controller.flushMetadata();
       controller.assertAllExited();
       await lifecycleWriter?.flush();
+      releaseAllowed = true;
+    } finally { if (!releaseAllowed) diagnostics.recordSupervisorDegradation("shutdown_incomplete"); }
+    return 0;
+  });
+  const finalizeShutdown = ({ exitCode = 0, exitProcess = false } = {}) => {
+    if (!finalizationPromise) finalizationPromise = (async () => {
+      await stopDiscovery?.stop();
       diagnostics.recordInProcessLifecycle("runtimeControl", { status: "stopping" });
       await runtimeControl?.stop();
       diagnostics.recordInProcessLifecycle("runtimeControl", { status: "stopped" });
       diagnostics.recordInProcessLifecycle("supervisor", { status: "stopped" });
-      releaseAllowed = true;
-    } finally {
-      if (releaseAllowed) await releaseLock();
-    }
-    return exitCode;
-  });
+      await releaseLock();
+      if (exitProcess) process.exit(exitCode);
+    })();
+    return finalizationPromise;
+  };
+  managedShutdown = () => shutdown("SCM_STOP");
+  if (serviceMode) {
+    stopDiscovery = createWindowsStopDiscoveryBridge({
+      adapterPath: windowsPipeSecurityAdapter.path,
+      clientExecutable: process.execPath,
+      clientScript: path.join(projectDir, "scripts", "windows-managed-shutdown-client.mjs"),
+      parentPid: process.ppid,
+      parentExecutable: winswExecutable,
+      capability: () => ({ endpoint, token, supervisorInstanceId: instanceId, runtimeInstanceId, generation: core.snapshot().generation }),
+      onEvent: (event) => logLifecycle({ ...event, phase: "stop-discovery" })
+    });
+    stopDiscovery.start();
+  }
   const handleSignal = (signal) => {
-    void shutdown(signal).then((exitCode) => process.exit(exitCode)).catch((error) => {
+    void shutdown(signal).then((exitCode) => finalizeShutdown({ exitCode, exitProcess: true })).catch((error) => {
       console.error(`[Host Supervisor] Shutdown failed: ${error instanceof Error ? error.message : error}`);
       process.exitCode = 1;
     });

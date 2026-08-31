@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type RuntimeState = {
-  status: "unavailable" | "starting" | "ready" | "configuration_required" | "error";
+  status: "unavailable" | "starting" | "shutting_down" | "ready" | "configuration_required" | "error";
   phase: string | null;
   reasonCode: string | null;
   generation: number;
@@ -21,7 +21,7 @@ type WorkbenchState =
 
 type RequestScope = { sequence: number; controller: AbortController };
 
-const runtimeStatuses = new Set<RuntimeState["status"]>(["unavailable", "starting", "ready", "configuration_required", "error"]);
+const runtimeStatuses = new Set<RuntimeState["status"]>(["unavailable", "starting", "shutting_down", "ready", "configuration_required", "error"]);
 const credentialStatuses = new Set<RuntimeState["credentialStatus"]>(["configured", "missing", "unknown"]);
 
 function isRuntimeState(value: unknown): value is RuntimeState {

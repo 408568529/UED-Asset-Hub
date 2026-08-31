@@ -11,13 +11,13 @@ function mutation(headers = {}) {
   return new Request("http://asset-hub.test/api/runtime/start", { method: "POST", headers: { Host: "asset-hub.test", Origin: "http://asset-hub.test", "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin", ...headers }, body: "{}" });
 }
 
-async function createFixture({ inspect = async () => ready, ensureReady = async () => ready } = {}) {
+async function createFixture({ inspect = async () => ready, ensureReady = async () => ready, shutdown, shutdownBinding } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ued-runtime-control-"));
   const supervisorDirectory = path.join(root, "supervisor");
   await mkdir(supervisorDirectory);
   const endpoint = runtimeControlEndpoint({ supervisorDirectory, instanceId: "test" });
   const events = [];
-  const bridge = createRuntimeControlBridge({ endpoint, token: "control-token", inspect, ensureReady, onEvent: (event) => events.push(event) });
+  const bridge = createRuntimeControlBridge({ endpoint, token: "control-token", inspect, ensureReady, shutdown, shutdownBinding, onEvent: (event) => events.push(event) });
   await bridge.start();
   return { root, endpoint, events, bridge };
 }
@@ -96,6 +96,21 @@ async function testBridgeShutdownBarrier() {
   await rm(fixture.root, { recursive: true, force: true });
 }
 
+async function testShutdownBindingAndIdempotency() {
+  let calls = 0;
+  const binding = { supervisorInstanceId: "supervisor", runtimeInstanceId: "runtime", generation: 8 };
+  const fixture = await createFixture({ shutdownBinding: () => binding, shutdown: async () => { calls += 1; } });
+  await assert.rejects(() => requestRuntimeControl({ endpoint: fixture.endpoint, token: "control-token", operation: "shutdown", binding: { ...binding, generation: 7 } }), /rejected/);
+  assert.equal(calls, 0, "stale generation capability is denied before lifecycle entry");
+  const result = await requestRuntimeControl({ endpoint: fixture.endpoint, token: "control-token", operation: "shutdown", binding });
+  assert.equal(result.status, "terminal");
+  assert.equal(calls, 1, "shutdown enters the shared closure once");
+  await assert.rejects(() => requestRuntimeControl({ endpoint: fixture.endpoint, token: "control-token", operation: "shutdown", binding }), /rejected/);
+  assert.equal(calls, 1, "duplicate shutdown never creates a second lifecycle");
+  await fixture.bridge.stop();
+  await rm(fixture.root, { recursive: true, force: true });
+}
+
 function testRequestSecurity() {
   assert.equal(acceptsSameOriginJsonMutation(mutation()), true);
   assert.equal(acceptsSameOriginJsonMutation(mutation({ Origin: "https://attacker.invalid" })), false, "cross-origin mutation is rejected");
@@ -159,6 +174,7 @@ async function main() {
   await testStartConcurrencyAndFailures();
   await testAbortDoesNotCancelLifecycle();
   await testBridgeShutdownBarrier();
+  await testShutdownBindingAndIdempotency();
   testRequestSecurity();
   await testReasonAndShellContract();
   await testReasonMappingIsPreserved();

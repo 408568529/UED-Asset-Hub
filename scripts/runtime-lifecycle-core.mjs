@@ -60,6 +60,7 @@ export class RuntimeLifecycleCore {
   }
 
   async inspect({ readOnly = false } = {}) {
+    if (this.shuttingDown) return this.snapshot();
     if (readOnly && this.operation) return this.snapshot();
     const report = (status, options = {}) => readOnly
       ? { ...this.state, status, phase: options.phase ?? null, reasonCode: options.reasonCode ?? null, credentialStatus: options.credentialStatus ?? this.state.credentialStatus, retryable: options.retryable === true, operation: this.operation ? { operationId: this.operation.operationId, startedAt: this.operation.startedAt, phase: this.state.phase, generation: this.operation.generation } : null }
@@ -185,6 +186,7 @@ export class RuntimeLifecycleCore {
 
   async stopForShutdown() {
     this.shuttingDown = true;
+    this.transition("shutting_down", { phase: "stopping", credentialStatus: "unknown" });
     const activeOperation = this.operation?.promise;
     if (activeOperation) await activeOperation.catch(() => {});
     this.state = { ...this.state, generation: this.state.generation + 1 };
