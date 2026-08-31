@@ -13,6 +13,7 @@ import { RuntimeLifecycleCore } from "./runtime-lifecycle-core.mjs";
 import { acquireSupervisorLock, supervisorLockPath } from "./supervisor-lock.mjs";
 import { createRuntimeControlBridge, runtimeControlEndpoint } from "./runtime-control-bridge.mjs";
 import { createWindowsStopDiscoveryBridge, windowsServiceMode } from "./windows-stop-discovery.mjs";
+import { credentialHelperPath, loadWindowsCredentialBundle } from "./windows-credential-bundle.mjs";
 import { resolveHostSecurityConfig } from "./host-security-config.mjs";
 import { createRuntimeDiagnosticsState } from "./runtime-diagnostics-state.mjs";
 import { createBoundedNdjsonWriter } from "./bounded-ndjson-writer.mjs";
@@ -192,7 +193,15 @@ export function publicLifecycleRecord(event) {
 
 export async function main() {
   loadEnvConfig(projectDir);
-  const securityConfig = resolveHostSecurityConfig(process.env);
+  const serviceMode = windowsServiceMode();
+  let securityEnvironment = process.env;
+  if (serviceMode && process.env.NODE_ENV === "production") {
+    for (const key of ["ADMIN_PASSWORD", "ADMIN_SESSION_SECRET", "DEEPSEEK_API_KEY", "AGENT_GATEWAY_TOKEN", "TEST_ENV_ENCRYPTION_KEY"]) if (process.env[key]) fail(`Windows production credential ${key} must come from the DPAPI bundle.`);
+    const bundlePath = value("UED_CREDENTIAL_BUNDLE_PATH");
+    if (!bundlePath) fail("Windows production requires UED_CREDENTIAL_BUNDLE_PATH.");
+    securityEnvironment = { ...process.env, ...await loadWindowsCredentialBundle({ helperPath: credentialHelperPath(projectDir), bundlePath: path.resolve(bundlePath) }) };
+  }
+  const securityConfig = resolveHostSecurityConfig(securityEnvironment);
   assertNodeVersion();
   if (value("AGENT_ENABLED") === "false") fail("AGENT_ENABLED=false 时不能启动 Host Supervisor。");
   const dataDir = requiredPath("DATA_DIR");
@@ -212,7 +221,6 @@ export async function main() {
 
   const instanceId = randomUUID();
   const runtimeInstanceId = randomUUID();
-  const serviceMode = windowsServiceMode();
   const windowsJobHelper = await windowsJobHelperSpecification();
   const windowsPipeSecurityAdapter = serviceMode ? await windowsPipeSecurityAdapterSpecification() : undefined;
   let stopping = false;
@@ -266,7 +274,7 @@ export async function main() {
     }
   });
   const specifications = {
-    assetHub: { command: process.execPath, args: ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(internalPort)], cwd: projectDir, env: runtimeEnvironmentProfiles.assetHub(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(internalPort, "内部 Asset Hub") } }
+    assetHub: { command: process.execPath, args: ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(internalPort)], cwd: projectDir, env: runtimeEnvironmentProfiles.assetHub(securityEnvironment, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(internalPort, "内部 Asset Hub") } }
   };
   const rpc = async (method, payload) => {
     const response = await request(new URL(`/api/${method}`, runtimeUrl), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "client-request", rpcId: `host-supervisor-${method}`, method, payload }) });
@@ -287,7 +295,7 @@ export async function main() {
   };
   const inspectStatic = async () => {
     try {
-      if (!agentRuntimeDir || !sourceDir || !value("AGENT_GATEWAY_TOKEN")) return { ok: false, reasonCode: "runtime_configuration_invalid" };
+      if (!agentRuntimeDir || !sourceDir || !securityEnvironment.AGENT_GATEWAY_TOKEN) return { ok: false, reasonCode: "runtime_configuration_invalid" };
       const configuredUrl = dshUrl();
       if (Number.parseInt(configuredUrl.port || "3080", 10) !== dshPort) return { ok: false, reasonCode: "runtime_configuration_invalid" };
       await inspectRuntimePaths({ dataDir, agentRuntimeDir });
@@ -307,9 +315,9 @@ export async function main() {
   const configureAgentSpecifications = () => {
     if (!runtimePaths?.agentRoot || !lastCanonicalSource) throw new Error("Agent Runtime 尚未完成受控预检。");
     const values = { DSH_HOME: path.join(runtimePaths.agentRoot, "dsh-home"), AGENT_WORKSPACE_ROOT: path.join(runtimePaths.agentRoot, "workspaces") };
-    specifications.gateway = { command: process.execPath, args: ["agent-integration/scripts/start-knowledge-gateway-mcp.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.gatewayBridge(process.env, { KNOWLEDGE_GATEWAY_MCP_PORT: String(gatewayPort), KNOWLEDGE_GATEWAY_INTERNAL_URL: `http://127.0.0.1:${internalPort}` }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(gatewayPort, "Knowledge Gateway") } };
-    specifications.dsh = { command: process.execPath, args: ["--import", "tsx/esm", "apps/cli/src/bin.ts", "web", "--patch", path.join(projectDir, "agent-integration", "dsh", "asset-hub-agent.overlay.yml"), "--host", "127.0.0.1", "--port", String(dshPort)], cwd: lastCanonicalSource, env: runtimeEnvironmentProfiles.dsh(process.env, { DSH_HOME: values.DSH_HOME, DSH_TELEMETRY_DISABLED: "1", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT, ASSET_HUB_MCP_URL: `http://127.0.0.1:${gatewayPort}/mcp` }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(dshPort, "DSH") } };
-    specifications.proxy = { command: process.execPath, args: ["agent-integration/scripts/start-agent-proxy.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.agentProxy(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, DSH_BASE_URL: runtimeUrl.origin, AGENT_PROXY_HOST: "127.0.0.1", AGENT_PROXY_BASE_PATH: "/agent-runtime", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(proxyPort, "Agent Proxy") } };
+    specifications.gateway = { command: process.execPath, args: ["agent-integration/scripts/start-knowledge-gateway-mcp.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.gatewayBridge(securityEnvironment, { KNOWLEDGE_GATEWAY_MCP_PORT: String(gatewayPort), KNOWLEDGE_GATEWAY_INTERNAL_URL: `http://127.0.0.1:${internalPort}` }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(gatewayPort, "Knowledge Gateway") } };
+    specifications.dsh = { command: process.execPath, args: ["--import", "tsx/esm", "apps/cli/src/bin.ts", "web", "--patch", path.join(projectDir, "agent-integration", "dsh", "asset-hub-agent.overlay.yml"), "--host", "127.0.0.1", "--port", String(dshPort)], cwd: lastCanonicalSource, env: runtimeEnvironmentProfiles.dsh(securityEnvironment, { DSH_HOME: values.DSH_HOME, DSH_TELEMETRY_DISABLED: "1", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT, ASSET_HUB_MCP_URL: `http://127.0.0.1:${gatewayPort}/mcp` }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(dshPort, "DSH") } };
+    specifications.proxy = { command: process.execPath, args: ["agent-integration/scripts/start-agent-proxy.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.agentProxy(securityEnvironment, { ADMIN_USERNAME: securityConfig.username, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, DSH_BASE_URL: runtimeUrl.origin, AGENT_PROXY_HOST: "127.0.0.1", AGENT_PROXY_BASE_PATH: "/agent-runtime", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(proxyPort, "Agent Proxy") } };
   };
   const inspectRuntime = async () => {
     let credentialStatus = "unknown";
@@ -389,7 +397,7 @@ export async function main() {
   diagnostics.recordInProcessLifecycle("runtimeControl", { status: "starting" });
   await runtimeControl.start();
   diagnostics.recordInProcessLifecycle("runtimeControl", { status: "running", health: "healthy" });
-  specifications.assetHub.env = runtimeEnvironmentProfiles.assetHub(process.env, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, RUNTIME_CONTROL_ENDPOINT: endpoint, RUNTIME_CONTROL_TOKEN: token });
+  specifications.assetHub.env = runtimeEnvironmentProfiles.assetHub(securityEnvironment, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, RUNTIME_CONTROL_ENDPOINT: endpoint, RUNTIME_CONTROL_TOKEN: token });
   await assertPortAvailable(publicPort, "公开 Asset Hub");
   await assertPortAvailable(internalPort, "内部 Asset Hub");
   await controller.start("assetHub", specifications.assetHub, { operation: "initial_start" });

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "service": { "account": "NT SERVICE\\UEDAssetHub", "sidType": "unrestricted", "forbiddenAccounts": ["LocalSystem", "Administrators"] },
+  "credentials": { "provider": "dpapi", "scope": "machine", "path": "D:\\UED-Asset-Hub\\credentials\\ued-asset-hub.credentials.dpapi" },
+  "edge": { "site": "UEDAssetHubEdge", "appPool": "UEDAssetHubEdge", "httpsPort": 443, "httpPort": "closed", "upstream": "http://127.0.0.1:3027", "webSocket": true, "responseBuffering": false },
+  "tls": { "store": "LocalMachine\\My", "minimumRemainingDays": 30, "requiredEku": "1.3.6.1.5.5.7.3.1" },
+  "firewall": { "allowInbound": [443], "denyInbound": [80, 3027, 3028, 3080, 3081, 3082], "profiles": ["Domain", "Private"], "publicProfileInbound": "none" },
+  "formalDataWritableChildren": ["meta", "knowledge", "vibe-product", "component-spec", "standard-sop", "skill-center", "font-library", "prompt-library", "training", "test-environments", "uploads"]
+}

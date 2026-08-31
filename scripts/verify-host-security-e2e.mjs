@@ -129,7 +129,8 @@ async function main() {
       AGENT_GATEWAY_TOKEN: `${randomBytes(32).toString("base64url")}-${sentinel}`,
       ADMIN_PASSWORD: password,
       ADMIN_SESSION_SECRET: sessionSecret,
-      ADMIN_SESSION_SECURE: "false",
+      ADMIN_SESSION_SECURE: "true",
+      PUBLIC_ORIGIN: "https://asset-hub.test",
       DEEPSEEK_API_KEY: "",
       OPENAI_API_KEY: "",
       TEST_ENV_ENCRYPTION_KEY: ""

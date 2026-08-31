@@ -25,6 +25,9 @@ for (const field of ["ADMIN_PASSWORD", "ADMIN_SESSION_SECRET"]) {
 }
 for (const password of ["admin123", "example-password", "<password>", "请设置密码"]) assertRejected({ ...valid, ADMIN_PASSWORD: password }, "host_security_config_invalid", "ADMIN_PASSWORD");
 for (const sessionSecret of ["short", valid.ADMIN_USERNAME, valid.ADMIN_PASSWORD, `${valid.ADMIN_USERNAME}:${valid.ADMIN_PASSWORD}:ued-asset-hub`]) assertRejected({ ...valid, ADMIN_SESSION_SECRET: sessionSecret }, "host_security_config_invalid", "ADMIN_SESSION_SECRET");
+assertRejected({ ...valid, NODE_ENV: "production", ADMIN_SESSION_SECURE: "false", PUBLIC_ORIGIN: "https://asset-hub.test" }, "host_security_config_invalid", "ADMIN_SESSION_SECURE");
+assertRejected({ ...valid, NODE_ENV: "production", ADMIN_SESSION_SECURE: "true", PUBLIC_ORIGIN: "http://asset-hub.test" }, "host_security_config_invalid", "PUBLIC_ORIGIN");
+assert.deepEqual(resolveHostSecurityConfig({ ...valid, NODE_ENV: "production", ADMIN_SESSION_SECURE: "true", PUBLIC_ORIGIN: "https://asset-hub.test" }), { username: valid.ADMIN_USERNAME, password: valid.ADMIN_PASSWORD, sessionSecret: valid.ADMIN_SESSION_SECRET });
 
 const marker = "host-security-redaction-marker";
 const isolatedCwd = await mkdtemp(path.join(os.tmpdir(), "ued-host-security-"));

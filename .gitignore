@@ -22,3 +22,4 @@ data/
 
 # Windows Pipe Security Adapter build artifacts are produced only on the target host.
 /native/windows-pipe-security-adapter/bin/
+/native/windows-dpapi-credential-helper/bin/

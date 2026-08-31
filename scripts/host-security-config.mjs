@@ -1,3 +1,5 @@
+import { validateProductionSessionSecurity } from "./windows-security-foundation.mjs";
+
 const invalidPasswordPatterns = [/(?:example|sample|placeholder|changeme)/i, /^<.*>$/u, /请设置/u];
 const knownDefaultPasswords = new Set(["admin123", "password", "password123", "123456", "12345678"]);
 
@@ -27,6 +29,8 @@ function isPlaceholder(value) {
 }
 
 export function resolveHostSecurityConfig(environment = process.env) {
+  const productionSession = validateProductionSessionSecurity(environment);
+  if (!productionSession.ok) invalid(productionSession.field);
   const { username, sessionSecret } = resolveProxySessionConfig(environment);
   const password = readRequired(environment, "ADMIN_PASSWORD");
   const normalizedPassword = password.trim();
