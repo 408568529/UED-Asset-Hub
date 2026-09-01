@@ -19,6 +19,7 @@
     "verify:dsh-source-policy": "node scripts/verify-dsh-source-policy.mjs",
     "verify:runtime-supervisor": "node scripts/verify-runtime-supervisor.mjs",
     "verify:windows-managed-process-native": "node scripts/verify-windows-managed-process-native.mjs",
+    "verify:native-artifact-contract": "node scripts/verify-native-artifact-contract.mjs",
     "build:windows-job-helper": "node scripts/build-windows-job-helper.mjs",
     "build:windows-pipe-security-adapter": "node scripts/build-windows-pipe-security-adapter.mjs",
     "build:windows-dpapi-credential-helper": "node scripts/build-windows-dpapi-credential-helper.mjs",

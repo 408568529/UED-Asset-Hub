@@ -1,13 +1,12 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { prepareReleaseNativeDirectories, resolveNativeBuildPlan } from "./native-build-path-contract.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const source = path.join(root, "native", "windows-job-helper", "ued_windows_job_helper.cpp");
-const outputDir = path.join(root, "native", "windows-job-helper", "bin");
-const output = path.join(outputDir, "ued-windows-job-helper.exe");
-const manifest = path.join(outputDir, "ued-windows-job-helper.manifest.json");
+const plan = resolveNativeBuildPlan({ argv: process.argv.slice(2), projectRoot: root, componentDirectory: "windows-job-helper", executableName: "ued-windows-job-helper.exe", protectedRoots: [root] });
 
 if (process.platform !== "win32") {
   console.log("[UED Agent] Windows Job Helper build: NOT RUN (requires Windows x64 MSVC).");
@@ -15,10 +14,10 @@ if (process.platform !== "win32") {
 }
 
 await access(source);
-await mkdir(outputDir, { recursive: true });
-const compiler = spawn("cl.exe", ["/nologo", "/std:c++17", "/EHsc", "/O2", `/Fe:${output}`, source], { cwd: root, stdio: "inherit", shell: false });
+if (plan.mode === "release-native") await prepareReleaseNativeDirectories({ ...plan, expectedCreationRunId: process.env.UED_STAGING_CREATION_RUN_ID, protectedRoots: [root] }); else await mkdir(plan.outputDir, { recursive: true });
+await mkdir(plan.tempDir, { recursive: true });
+const compiler = spawn("cl.exe", ["/nologo", "/std:c++17", "/EHsc", "/O2", `/Fo${path.join(plan.tempDir, "job-helper.obj")}`, `/Fd${path.join(plan.tempDir, "job-helper.pdb")}`, `/Fe:${plan.executable}`, source], { cwd: plan.tempDir, stdio: "inherit", shell: false, env: { ...process.env, TMP: plan.tempDir, TEMP: plan.tempDir } });
 const code = await new Promise((resolve) => compiler.once("exit", resolve));
 if (code !== 0) throw new Error("Windows Job Helper build failed. Run from an x64 Native Tools command prompt.");
-const sha256 = createHash("sha256").update(await readFile(output)).digest("hex");
-await writeFile(manifest, JSON.stringify({ version: 1, architecture: "x64", sha256, binary: path.basename(output) }, null, 2) + "\n", { mode: 0o600 });
-console.log(`[UED Agent] Windows Job Helper built: ${output}`);
+if (plan.mode === "developer-source-output") { const sha256 = createHash("sha256").update(await readFile(plan.executable)).digest("hex"); await writeFile(path.join(plan.outputDir, "ued-windows-job-helper.manifest.json"), JSON.stringify({ version: 1, architecture: "x64", sha256, binary: path.basename(plan.executable) }, null, 2) + "\n"); await rm(plan.tempDir, { recursive: true, force: true }); }
+console.log(`[UED Agent] Windows Job Helper built: ${plan.executable}`);
