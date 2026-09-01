@@ -30,6 +30,7 @@
     "verify:windows-credential-boundary": "node scripts/verify-windows-security-foundation.mjs",
     "verify:windows-deployment-security": "node scripts/verify-windows-security-foundation.mjs",
     "verify:windows-deployment-contract": "node scripts/verify-windows-deployment-contract.mjs",
+    "verify:release-identity-contract": "node scripts/verify-windows-deployment-contract.mjs",
     "verify:runtime-diagnostics-contract": "node scripts/verify-runtime-diagnostics-contract.mjs",
     "verify:readonly-admin-diagnostics": "node scripts/verify-readonly-admin-diagnostics.mjs && tsx scripts/verify-readonly-admin-diagnostics.tsx",
     "verify:host-security-config": "node scripts/verify-host-security-config.mjs",
