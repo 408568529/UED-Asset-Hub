@@ -22,8 +22,26 @@ bool allowedComponent(const std::wstring& component) {
   return component == L"assetHub" || component == L"gateway" || component == L"dsh" || component == L"proxy";
 }
 
-std::wstring quote(const std::wstring& value) {
-  return L"\"" + value + L"\"";
+std::wstring encodeArgument(const std::wstring& value) {
+  std::wstring encoded = L"\"";
+  size_t backslashes = 0;
+  for (wchar_t character : value) {
+    if (character == L'\\') {
+      backslashes++;
+      continue;
+    }
+    if (character == L'\"') {
+      encoded.append(backslashes * 2 + 1, L'\\');
+      encoded.push_back(L'\"');
+    } else {
+      encoded.append(backslashes, L'\\');
+      encoded.push_back(character);
+    }
+    backslashes = 0;
+  }
+  encoded.append(backslashes * 2, L'\\');
+  encoded.push_back(L'\"');
+  return encoded;
 }
 
 void emit(const char* event, DWORD value = 0) {
@@ -49,8 +67,8 @@ int wmain(int argc, wchar_t* argv[]) {
   JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
   limits.BasicLimitInformation.LimitFlags = kKillOnJobClose;
   if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits))) { CloseHandle(job); CloseHandle(supervisor); return 67; }
-  std::wstring command = quote(*(separator + 1));
-  for (auto item = separator + 2; item != values.end(); ++item) command += L" " + quote(*item);
+  std::wstring command = encodeArgument(*(separator + 1));
+  for (auto item = separator + 2; item != values.end(); ++item) command += L" " + encodeArgument(*item);
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
   PROCESS_INFORMATION process{};

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
 import { WindowsJobHelperClient } from "./windows-job-helper-client.mjs";
 import { requestGracefulCapability } from "./windows-graceful-pipe.mjs";
@@ -33,12 +34,12 @@ function waitForChildExit(child, timeoutMs) {
 
 async function inspectWindowsProcess(pid, { spawnImpl = spawn } = {}) {
   if (!Number.isInteger(pid) || pid <= 0) return null;
-  const script = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); $p=Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $args[0]); if ($null -ne $p) { [pscustomobject]@{ pid=$p.ProcessId; creationTime=$p.CreationDate; executablePath=$p.ExecutablePath; commandLine=$p.CommandLine; parentPid=$p.ParentProcessId } | ConvertTo-Json -Compress }";
+  const script = `[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); $p=Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}'; if ($null -ne $p) { [pscustomobject]@{ pid=$p.ProcessId; creationTime=$p.CreationDate; executablePath=$p.ExecutablePath; commandLine=$p.CommandLine; parentPid=$p.ParentProcessId } | ConvertTo-Json -Compress }`;
   return new Promise((resolve) => {
     let output = "";
     let child;
     try {
-      child = spawnImpl("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script, String(pid)], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true, shell: false });
+      child = spawnImpl("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true, shell: false });
     } catch {
       resolve(null);
       return;
@@ -50,7 +51,9 @@ async function inspectWindowsProcess(pid, { spawnImpl = spawn } = {}) {
       if (code !== 0 || !output.trim()) { resolve(null); return; }
       try {
         const value = JSON.parse(output);
-        resolve({ pid: Number(value.pid), processCreationTime: String(value.creationTime), executablePath: value.executablePath || null, commandLine: value.commandLine || "", parentPid: Number.isInteger(value.parentPid) ? value.parentPid : null });
+        const pid = Number(value?.pid);
+        if (!Number.isInteger(pid) || pid <= 0 || typeof value?.creationTime !== "string" || !value.creationTime) { resolve(null); return; }
+        resolve({ pid, processCreationTime: value.creationTime, executablePath: value.executablePath || null, commandLine: value.commandLine || "", parentPid: Number.isInteger(value.parentPid) ? value.parentPid : null });
       } catch { resolve(null); }
     });
   });
@@ -148,7 +151,7 @@ export class WindowsProcessAdapter extends ManagedProcessPlatformAdapter {
   async spawn(specification, ownership = {}) {
     const endpoint = `\\\\.\\pipe\\ued-asset-hub-graceful-${randomBytes(18).toString("hex")}`;
     const token = randomBytes(32).toString("base64url");
-    const nodeArguments = ["--import", this.bootstrapPath, ...(specification.args ?? [])];
+    const nodeArguments = ["--import", pathToFileURL(this.bootstrapPath).href, ...(specification.args ?? [])];
     const child = await this.jobHelper.spawn({ ...specification, args: nodeArguments, env: { ...specification.env, UED_GRACEFUL_ENDPOINT: endpoint, UED_GRACEFUL_TOKEN: token, UED_RUNTIME_INSTANCE_ID: ownership.runtimeInstanceId, UED_MANAGED_COMPONENT: ownership.component, UED_MANAGED_GENERATION: String(ownership.generation) } }, ownership);
     this.gracefulCapabilities.set(child, { endpoint, token });
     return child;

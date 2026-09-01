@@ -3,8 +3,10 @@ import { EventEmitter } from "node:events";
 import { mkdtemp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { ManagedProcessController, assertNoLiveManagedOrphans } from "./managed-process-controller.mjs";
 import { WindowsProcessAdapter } from "./managed-process-platform-adapter.mjs";
+import { WindowsJobHelperClient } from "./windows-job-helper-client.mjs";
 import { createGracefulCapability, requestGracefulCapability } from "./windows-graceful-pipe.mjs";
 import { RuntimeLifecycleCore } from "./runtime-lifecycle-core.mjs";
 import { ensureRuntimePaths, inspectRuntimePaths } from "./runtime-path-safety.mjs";
@@ -363,6 +365,62 @@ async function testWindowsAdapterOwnershipAndForcedStop() {
   await rm(root, { recursive: true, force: true });
 }
 
+async function testWindowsBootstrapSpecifierContract() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ued-windows-bootstrap-"));
+  const bootstrapPath = path.join(root, "中文 bootstrap path", "windows-graceful-bootstrap.mjs");
+  const calls = [];
+  const helperProcess = new EventEmitter();
+  helperProcess.pid = 77000;
+  helperProcess.stdout = new EventEmitter();
+  helperProcess.stdin = { writable: true, write: () => true };
+  const client = new WindowsJobHelperClient({
+    verifyHelper: async () => ({ version: 1, architecture: "x64", sha256: "a".repeat(64) }),
+    spawnImpl: (command, args, options) => {
+      calls.push({ command, args, options });
+      queueMicrotask(() => helperProcess.stdout.emit("data", Buffer.from('{"event":"spawned","pid":77001}\n')));
+      return helperProcess;
+    }
+  });
+  const adapter = new WindowsProcessAdapter({ bootstrapPath, jobHelper: client, inspectProcess: async () => null });
+  await adapter.spawn({
+    command: "C:\\Program Files\\nodejs\\node.exe",
+    args: ["fixture.mjs", "argument with spaces"],
+    cwd: root,
+    env: {},
+    windowsJobHelper: { path: "C:\\helpers\\ued-windows-job-helper.exe", sha256: "a".repeat(64) }
+  }, { component: "dsh", supervisorInstanceId: "supervisor-a", runtimeInstanceId: "runtime-a", generation: 1 });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.shell, false, "Windows Job Helper client remains shell-free");
+  const separator = calls[0].args.indexOf("--");
+  assert.notEqual(separator, -1);
+  assert.deepEqual(calls[0].args.slice(separator + 1), ["C:\\Program Files\\nodejs\\node.exe", "--import", pathToFileURL(bootstrapPath).href, "fixture.mjs", "argument with spaces"], "bootstrap uses a file URL while child argv remains structured");
+  assert.notEqual(calls[0].args[separator + 3], bootstrapPath, "raw filesystem bootstrap path is never passed to --import");
+  await rm(root, { recursive: true, force: true });
+}
+
+async function testWindowsProcessIdentityProbeBindsPid() {
+  const calls = [];
+  const process = new EventEmitter();
+  process.stdout = new EventEmitter();
+  const adapter = new WindowsProcessAdapter({
+    spawnImpl: (command, args, options) => {
+      calls.push({ command, args, options });
+      queueMicrotask(() => {
+        process.stdout.emit("data", Buffer.from('{"pid":78001,"creationTime":"creation-a","executablePath":"C:\\\\node.exe","commandLine":"node fixture.mjs","parentPid":1}\n'));
+        process.emit("exit", 0);
+      });
+      return process;
+    }
+  });
+  const observed = await adapter.inspectProcess(78001);
+  assert.deepEqual(observed, { pid: 78001, processCreationTime: "creation-a", executablePath: "C:\\node.exe", commandLine: "node fixture.mjs", parentPid: 1 });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].command, "powershell.exe");
+  assert.equal(calls[0].args.at(-1).includes("ProcessId = 78001"), true, "CIM filter receives the validated PID inside its command");
+  assert.equal(calls[0].args.includes("78001"), false, "CIM probe does not pass an unbound trailing PID argument");
+  assert.equal(calls[0].options.shell, false, "identity probe remains shell-free");
+}
+
 async function testWindowsIdentityMismatchFailsClosed() {
   const root = await mkdtemp(path.join(os.tmpdir(), "ued-windows-identity-"));
   const child = new EventEmitter();
@@ -443,6 +501,8 @@ await testRuntimePathSafety();
 await testSupervisorLock();
 await testOrphanMetadataFailsClosed();
 await testWindowsAdapterOwnershipAndForcedStop();
+await testWindowsBootstrapSpecifierContract();
+await testWindowsProcessIdentityProbeBindsPid();
 await testWindowsIdentityMismatchFailsClosed();
 await testWindowsStoredPidReuseFailsClosed();
 await testWindowsJobOwnershipFailsClosed();
