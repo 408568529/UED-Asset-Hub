@@ -54,6 +54,8 @@ async function testNativeAdapterScope() {
   assert.match(source, /GetNamedPipeClientProcessId/, "adapter obtains OS-connected client PID");
   assert.match(source, /LookupAccountNameW/, "adapter resolves the service SID");
   assert.match(source, /FILE_READ_DATA \| FILE_WRITE_DATA/, "adapter uses precise pipe rights");
+  assert.match(source, /EXPLICIT_ACCESSW entries\[2\]/, "adapter has exactly SYSTEM and named-Service-SID ACE slots");
+  assert.doesNotMatch(source, /Everyone|Authenticated Users|BUILTIN\\Administrators|\bUsers\b|HDUED/i, "adapter has no broad interactive pipe principal");
   assert.doesNotMatch(source, /TerminateJobObject|CreateJobObject|taskkill|CreateProcessW|PowerShell|cmd\.exe/i, "adapter is not a process/runtime manager");
 }
 
@@ -74,8 +76,19 @@ async function testServiceShutdownBoundary() {
   assert.equal(routes.includes("shutdown"), false, "no public Runtime shutdown API exists");
 }
 
+async function testB4aB4bBoundary() {
+  const [readme, harness] = await Promise.all([
+    readFile(path.join(root, "native", "windows-pipe-security-adapter", "README.md"), "utf8"),
+    readFile(path.join(root, "scripts", "windows-service-runtime-control-harness.ps1"), "utf8")
+  ]);
+  assert.match(readme, /B4A PASS != real service topology PASS/, "B4A does not overclaim real service topology");
+  assert.match(readme, /AUTHORIZED SERVICE-SID PIPE CONNECTION: DEFERRED TO E2-B4B/, "authorized Service-SID positive access is deferred");
+  assert.match(harness, /B4B ONLY: authorized Service-SID pipe connection/, "native service harness preserves the B4B positive-access boundary");
+}
+
 await testWinSwTemplate();
 testDiscoveryProtocolAndIdentity();
 await testNativeAdapterScope();
 await testServiceShutdownBoundary();
+await testB4aB4bBoundary();
 console.log("[UED Agent] Windows service runtime-control static checks passed.");
