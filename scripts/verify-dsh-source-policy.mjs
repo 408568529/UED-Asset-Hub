@@ -85,7 +85,8 @@ try {
 
   const wrongOriginSource = path.join(root, "wrong-origin");
   const wrongOriginExpected = await createDshSource(wrongOriginSource, { origin: "https://example.invalid/deepseek-harness.git" });
-  await expectFailure(() => validateDshSource(wrongOriginSource, wrongOriginExpected));
+  const classifiedOrigin = await validateDshSource(wrongOriginSource, wrongOriginExpected, { readOnly: true });
+  assert.equal(classifiedOrigin.originClassification, "other");
 
   await expectFailure(() => validateDshSource(externalSource, { ...expected, sourceCommit: "0".repeat(40) }));
   await expectFailure(() => validateDshSource(externalSource, { ...expected, version: "0.0.0" }));
@@ -101,7 +102,7 @@ try {
   const symlinkPath = path.join(projectDir, "vendor", "symlink-source");
   await symlink(externalSource, symlinkPath);
   await expectFailure(() => resolveAllowedDshSourcePath(projectDir, symlinkPath));
-  console.log("[DSH Source] reject non-independent, origin, commit, version, fingerprint, dirty, untracked, and symlink paths: PASS");
+  console.log("[DSH Source] reject non-independent, commit, version, fingerprint, dirty, untracked, and symlink paths; classify non-official origin without weakening identity: PASS");
 } finally {
   await rm(root, { recursive: true, force: true });
 }

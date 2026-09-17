@@ -7,7 +7,7 @@ const manifestFile = "deployment.manifest.json";
 const manifestSidecar = "deployment.manifest.sha256";
 const releaseIdPattern = /^v\d+\.\d+\.\d+(?:[-.][a-z0-9]+)*-r2-[0-9a-f]{12}-[0-9a-f]{32}$/;
 const secretPattern = /(api.?key|password|secret|token|private.?key|pfx)/i;
-const requiredComponents = ["node", "winsw", "windowsJobHelper", "windowsPipeSecurityAdapter", "windowsDpapiHelper", "reverseProxy", "productionConfig"];
+const requiredComponents = ["dshOverlay", "dshVersion", "edgeTemplate", "hostSupervisor", "managedShutdownClient", "nodeArtifact", "releaseProvenance", "restrictedAgentPreset", "restrictedPreset", "serviceTemplate", "standaloneServer", "windowsDpapiHelper", "windowsJobHelper", "windowsPipeSecurityAdapter", "winswArtifact"];
 const manifestKeys = ["artifactSet", "assetHub", "build", "components", "dsh", "formalData", "manifestSchemaVersion", "operationalStorage", "releaseId", "releaseIdentitySchemaVersion", "requiredEvidenceTypes", "runtime"];
 
 export function createReleaseId({ version, commit, artifactDigest }) {

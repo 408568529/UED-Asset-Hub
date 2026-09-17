@@ -10,9 +10,10 @@ const root = await mkdtemp(path.join(os.tmpdir(), "ued-release-identity-v2-"));
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const dsh = { version: "0.1.1-rc.2", commit: "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e", sourceFingerprint: "a".repeat(64) };
 const componentPaths = {
-  node: "runtime/node.exe", winsw: "runtime/winsw.exe", windowsJobHelper: "runtime/windows-job-helper.exe",
-  windowsPipeSecurityAdapter: "runtime/windows-pipe-security-adapter.exe", windowsDpapiHelper: "runtime/windows-dpapi-helper.exe",
-  reverseProxy: "config/reverse-proxy.xml", productionConfig: "config/production.json",
+  standaloneServer: "server.js", hostSupervisor: "scripts/host-supervisor.mjs", managedShutdownClient: "scripts/windows-managed-shutdown-client.mjs",
+  windowsJobHelper: "native/windows-job-helper/bin/ued-windows-job-helper.exe", windowsPipeSecurityAdapter: "native/windows-pipe-security-adapter/bin/ued-windows-pipe-security-adapter.exe", windowsDpapiHelper: "native/windows-dpapi-credential-helper/bin/ued-windows-dpapi-credential-helper.exe",
+  serviceTemplate: "service/windows/UEDAssetHub.xml.template", edgeTemplate: "service/windows/UEDAssetHubEdge.web.config.template", nodeArtifact: "service/windows/node-22.23.2-x64.artifact.json", winswArtifact: "service/windows/winsw-2.12.0-x64.artifact.json",
+  dshVersion: "agent-integration/dsh/version.json", dshOverlay: "agent-integration/dsh/asset-hub-agent.overlay.yml", restrictedAgentPreset: "agent-integration/dsh/agent-presets/asset-hub-restricted/agent.cordis.yml", restrictedPreset: "agent-integration/dsh/agent-presets/asset-hub-restricted/preset.yml", releaseProvenance: "release.provenance.json",
 };
 const checkpoint = { checkpointId: "checkpoint-fixture", formalDataRootIdentity: "fixture-data", timestamp: "2026-09-01T00:00:00Z", backupTarget: "fixture-backup", verificationStatus: "verified" };
 
@@ -23,7 +24,7 @@ function componentForPath(filePath) {
 async function stage(name, { seed = "stable", sourceCommit = "1".repeat(40), sourceArchiveSha256 = hash("source-a") } = {}) {
   const directory = path.join(root, "staging", name);
   await mkdir(directory, { recursive: true });
-  const contents = { ".next/BUILD_ID": `build-${seed}`, "runtime/host-supervisor.mjs": "host-supervisor" };
+  const contents = { ".next/BUILD_ID": `build-${seed}`, "scripts/host-supervisor.mjs": "host-supervisor" };
   for (const [component, filePath] of Object.entries(componentPaths)) contents[filePath] = `${component}:${seed}`;
   for (const [filePath, content] of Object.entries(contents)) {
     const destination = path.join(directory, filePath); await mkdir(path.dirname(destination), { recursive: true }); await writeFile(destination, content);
@@ -54,10 +55,10 @@ try {
   const duplicate = await stage("duplicate");
   assert.equal(first.manifest.artifactSet.digest, duplicate.manifest.artifactSet.digest);
   assert.equal(first.manifest.releaseId, duplicate.manifest.releaseId);
-  await utimes(path.join(first.directory, "runtime", "node.exe"), new Date(0), new Date());
+  await utimes(path.join(first.directory, componentPaths.nodeArtifact), new Date(0), new Date());
   assert.equal((await calculateReleaseArtifactSet(first.directory)).digest, first.manifest.artifactSet.digest);
   const byteMutated = await stage("byte-mutated");
-  await writeFile(path.join(byteMutated.directory, componentPaths.node), "one-byte-change");
+  await writeFile(path.join(byteMutated.directory, componentPaths.nodeArtifact), "one-byte-change");
   const mutatedTree = await calculateReleaseArtifactSet(byteMutated.directory);
   assert.notEqual(mutatedTree.digest, first.manifest.artifactSet.digest);
   assert.notEqual(createReleaseId({ version: "0.1.0", commit: "1".repeat(40), artifactDigest: mutatedTree.digest }), first.manifest.releaseId);
@@ -97,7 +98,7 @@ try {
   await assert.rejects(evaluateRollbackCandidate({ failedReleasePath: promotedSecond.releasePath, candidateReleasePath: promoted.releasePath, expectedDsh: dsh, transaction: { ...plan.transaction, rollbackCandidateReleaseId: promotedSecond.manifest.releaseId }, checkpoint, formalDataIdentity: "fixture-data" }));
 
   const forged = await stage("forged", { seed: "forged" }); forged.manifest.releaseId = `v0.1.0-r2-${"1".repeat(12)}-${"0".repeat(32)}`; const forgedDigest = manifestDigest(forged.manifest); await writeFile(path.join(forged.directory, "deployment.manifest.json"), `${JSON.stringify(forged.manifest)}\n`); await writeFile(path.join(forged.directory, "deployment.manifest.sha256"), `${forgedDigest}  deployment.manifest.json\n`); await assert.rejects(verifyRelease(forged.directory, dsh));
-  const missing = await stage("missing", { seed: "missing" }); await rm(path.join(missing.directory, componentPaths.node)); await assert.rejects(verifyRelease(missing.directory, dsh));
+  const missing = await stage("missing", { seed: "missing" }); await rm(path.join(missing.directory, componentPaths.nodeArtifact)); await assert.rejects(verifyRelease(missing.directory, dsh));
   const altered = await stage("altered", { seed: "altered" }); altered.manifest.build.buildId = "different"; await writeFile(path.join(altered.directory, "deployment.manifest.json"), `${JSON.stringify(altered.manifest)}\n`); await assert.rejects(verifyRelease(altered.directory, dsh));
   const symlinkRoot = path.join(root, "symlink-hazard"); await mkdir(symlinkRoot); await writeFile(path.join(symlinkRoot, "target"), "x"); await symlink("target", path.join(symlinkRoot, "linked")); await assert.rejects(calculateReleaseArtifactSet(symlinkRoot));
   const hardlinkRoot = path.join(root, "hardlink-hazard"); await mkdir(hardlinkRoot); await writeFile(path.join(hardlinkRoot, "a"), "x"); await link(path.join(hardlinkRoot, "a"), path.join(hardlinkRoot, "b")); await assert.rejects(calculateReleaseArtifactSet(hardlinkRoot));

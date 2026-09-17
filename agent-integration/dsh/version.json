@@ -1,7 +1,11 @@
 {
+  "provenanceContractVersion": "ued-asset-hub-dsh-provenance-v1",
   "sourceRepository": "https://github.com/deepseek-ai/deepseek-harness.git",
+  "sourceRef": "refs/tags/dsh-v0.1.1-rc.2",
   "version": "0.1.1-rc.2",
   "sourceCommit": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+  "sourceTree": "53915efe4e2126cc7779b73dfc8a3bcec5318c44",
+  "sourceFingerprint": "1e6c2e8009679997ee5de23d4976f6060bea53e6670a3e6b07f022251bf43584",
   "compatibilityBaseline": "v2.1.0.4",
   "bindHost": "127.0.0.1",
   "port": 3080

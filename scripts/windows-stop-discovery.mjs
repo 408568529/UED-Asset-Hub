@@ -1,13 +1,20 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { createConnection } from "node:net";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { runtimeControlTransport } from "./runtime-control-transport.mjs";
 
 export const stopDiscoveryProtocolVersion = 1;
 export const defaultWindowsServiceName = "UEDAssetHub";
 const maximumMessageBytes = 4 * 1024;
 const maximumAdapterLineBytes = 16 * 1024;
+const transport = runtimeControlTransport({ platform: "win32" });
+
+function normalizeIdentityExecutable(value) {
+  if (typeof value !== "string" || !value) return "";
+  const normalized = /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\") ? path.win32.resolve(value) : path.resolve(value);
+  return normalized.toLocaleLowerCase("en-US");
+}
 
 export function windowsServiceMode({ platform = process.platform, environment = process.env } = {}) {
   return platform === "win32" && environment.UED_WINDOWS_SERVICE_MODE === "true";
@@ -19,7 +26,7 @@ export function stopDiscoveryEndpoint(serviceName = defaultWindowsServiceName) {
 }
 
 export function commandFingerprint({ executable, script }) {
-  return createHash("sha256").update(`${path.resolve(executable).toLowerCase()}\n${path.resolve(script).toLowerCase()}`).digest("hex");
+  return createHash("sha256").update(`${normalizeIdentityExecutable(executable)}\n${normalizeIdentityExecutable(script)}`).digest("hex");
 }
 
 export function validateStopDiscoveryRequest(request) {
@@ -30,9 +37,9 @@ export function validateStopDiscoveryRequest(request) {
 
 export function verifyStopClientIdentity(identity, expected) {
   if (!identity || !expected || identity.authenticated !== true || !Number.isInteger(identity.pid) || identity.pid < 1 || typeof identity.creationTime !== "string" || typeof identity.executable !== "string" || typeof identity.commandFingerprint !== "string") return { ok: false, reasonCode: "discovery_client_identity_invalid" };
-  if (identity.executable.toLowerCase() !== path.resolve(expected.executable).toLowerCase()) return { ok: false, reasonCode: "discovery_client_executable_mismatch" };
+  if (normalizeIdentityExecutable(identity.executable) !== normalizeIdentityExecutable(expected.executable)) return { ok: false, reasonCode: "discovery_client_executable_mismatch" };
   if (identity.commandFingerprint !== expected.commandFingerprint) return { ok: false, reasonCode: "discovery_client_command_mismatch" };
-  if (!Number.isInteger(identity.parentPid) || identity.parentPid !== expected.parentPid || identity.parentExecutable?.toLowerCase() !== path.resolve(expected.parentExecutable).toLowerCase()) return { ok: false, reasonCode: "discovery_client_parent_mismatch" };
+  if (!Number.isInteger(identity.parentPid) || identity.parentPid !== expected.parentPid || normalizeIdentityExecutable(identity.parentExecutable) !== normalizeIdentityExecutable(expected.parentExecutable)) return { ok: false, reasonCode: "discovery_client_parent_mismatch" };
   return { ok: true };
 }
 
@@ -99,7 +106,7 @@ export function createWindowsStopDiscoveryBridge({ adapterPath, serviceName = de
       child.stdin.end();
       await new Promise((resolve) => {
         child.once("exit", resolve);
-        const socket = createConnection(endpoint);
+        const socket = transport.connect(endpoint);
         socket.once("connect", () => socket.end("{}\n"));
         socket.once("error", () => resolve());
       });
@@ -113,7 +120,7 @@ export async function discoverShutdownCapability({ endpoint, clientNonce, timeou
   return new Promise((resolve, reject) => {
     let output = "";
     let settled = false;
-    const socket = createConnection(endpoint);
+    const socket = transport.connect(endpoint);
     const finish = (callback, value) => { if (settled) return; settled = true; clearTimeout(timeout); callback(value); };
     const timeout = setTimeout(() => { socket.destroy(); finish(reject, new Error("Stop discovery timed out.")); }, timeoutMs);
     socket.setEncoding("utf8");

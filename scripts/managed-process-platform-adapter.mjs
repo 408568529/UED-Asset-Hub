@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
 import { WindowsJobHelperClient } from "./windows-job-helper-client.mjs";
 import { requestGracefulCapability } from "./windows-graceful-pipe.mjs";
+import { runtimeControlEndpoint } from "./runtime-control-transport.mjs";
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -149,7 +150,7 @@ export class WindowsProcessAdapter extends ManagedProcessPlatformAdapter {
   }
 
   async spawn(specification, ownership = {}) {
-    const endpoint = `\\\\.\\pipe\\ued-asset-hub-graceful-${randomBytes(18).toString("hex")}`;
+    const endpoint = runtimeControlEndpoint({ scope: "graceful", instanceId: randomBytes(18).toString("hex"), platform: "win32" });
     const token = randomBytes(32).toString("base64url");
     const nodeArguments = ["--import", pathToFileURL(this.bootstrapPath).href, ...(specification.args ?? [])];
     const child = await this.jobHelper.spawn({ ...specification, args: nodeArguments, env: { ...specification.env, UED_GRACEFUL_ENDPOINT: endpoint, UED_GRACEFUL_TOKEN: token, UED_RUNTIME_INSTANCE_ID: ownership.runtimeInstanceId, UED_MANAGED_COMPONENT: ownership.component, UED_MANAGED_GENERATION: String(ownership.generation) } }, ownership);

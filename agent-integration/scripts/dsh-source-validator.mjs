@@ -1,9 +1,14 @@
 import { createHash } from "node:crypto";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { access, lstat, readFile, realpath } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 const fingerprintFiles = ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", "apps/cli/package.json", "apps/cli/src/bin.ts", "packages/bundle/base/cordis.patch.yml", "packages/bundle/web-app/cordis.patch.yml", "packages/mcp/mcp-client/src/index.ts"];
+const provenanceContractVersion = "ued-asset-hub-dsh-provenance-v1";
+const hashPattern = /^[a-f0-9]{64}$/;
+const commitPattern = /^[a-f0-9]{40}$/;
 
 function runGit(sourceDir, args, message, { readOnly = false } = {}) {
   const result = spawnSync("git", ["-C", sourceDir, ...args], {
@@ -14,58 +19,146 @@ function runGit(sourceDir, args, message, { readOnly = false } = {}) {
   return result.stdout.trim();
 }
 
-export async function validateDshSource(sourceDir, expected, { readOnly = false } = {}) {
-  const configuredSourceDir = path.resolve(sourceDir);
-  const canonicalSourceDir = await realpath(configuredSourceDir);
-  if (configuredSourceDir !== canonicalSourceDir) throw new Error("DSH Source 不允许使用符号链接或路径别名。");
+function optionalOrigin(sourceDir, { readOnly = false } = {}) {
+  const result = spawnSync("git", ["-C", sourceDir, "remote", "get-url", "origin"], {
+    encoding: "utf8",
+    env: readOnly ? { ...process.env, GIT_OPTIONAL_LOCKS: "0" } : process.env
+  });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
 
-  const gitDir = path.join(canonicalSourceDir, ".git");
-  let gitDirectory;
-  try {
-    gitDirectory = await lstat(gitDir);
-  } catch {
-    throw new Error("DSH Source 必须包含独立的 .git 目录。");
+function classifyOrigin(origin, upstream) {
+  if (!origin) return "absent";
+  if (origin === upstream) return "official-upstream";
+  if (origin.startsWith("file:") || origin.startsWith("/") || /^[a-z]:[\\/]/i.test(origin) || /\.bundle$/i.test(origin)) return "local-bundle";
+  return "other";
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  return JSON.stringify(value);
+}
+
+function assertExactKeys(value, keys, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} is invalid.`);
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) throw new Error(`${label} has unexpected fields.`);
+}
+
+function assertIdentity(identity, expected, label) {
+  for (const [key, pattern] of [["sourceCommit", commitPattern], ["sourceTree", commitPattern], ["sourceVersion", /^\S+$/], ["sourceFingerprint", hashPattern]]) {
+    if (typeof identity[key] !== "string" || !pattern.test(identity[key])) throw new Error(`${label}.${key} is invalid.`);
+    const expectedKey = key === "sourceFingerprint" ? "fingerprint" : key === "sourceVersion" ? "version" : key;
+    const expectedValue = expected[key] ?? expected[expectedKey];
+    if (expectedValue && identity[key] !== expectedValue) throw new Error(`${label}.${key} does not match the frozen contract.`);
   }
-  if (!gitDirectory.isDirectory() || gitDirectory.isSymbolicLink()) throw new Error("DSH Source 必须包含独立的 .git 目录。");
+}
 
-  if (runGit(canonicalSourceDir, ["rev-parse", "--is-inside-work-tree"], "无法验证 DSH Git Repository。", { readOnly }) !== "true") {
-    throw new Error("DSH Source 不是有效 Git Repository。");
-  }
-  const topLevel = await realpath(runGit(canonicalSourceDir, ["rev-parse", "--show-toplevel"], "无法读取 DSH Git 根目录。", { readOnly }));
-  if (topLevel !== canonicalSourceDir) throw new Error("DSH Source 必须是独立 Git Repository 根目录。");
-
-  const origin = runGit(canonicalSourceDir, ["remote", "get-url", "origin"], "DSH Source 缺少 origin。", { readOnly });
-  if (origin !== expected.sourceRepository) throw new Error("DSH Git origin 不符合官方仓库锁定。");
-
-  const commit = runGit(canonicalSourceDir, ["rev-parse", "HEAD"], "无法读取 DSH Git HEAD。", { readOnly });
-  if (commit !== expected.sourceCommit) throw new Error("DSH Git HEAD 不符合兼容性基线。");
-
-  if (runGit(canonicalSourceDir, ["status", "--porcelain=v1", "--untracked-files=all"], "无法读取 DSH Git working tree 状态。", { readOnly })) {
-    throw new Error("DSH Git working tree 必须保持 clean，且不得包含 untracked 文件。");
-  }
-
-  const manifestPath = path.join(canonicalSourceDir, "package.json");
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  if (manifest.version !== expected.version) throw new Error(`DSH 版本不兼容。期望 ${expected.version}，实际 ${manifest.version ?? "未知"}。`);
-  for (const required of ["pnpm-workspace.yaml", "apps/cli/package.json", "apps/cli/src/bin.ts", "packages/mcp/mcp-client/src/index.ts"]) {
-    try {
-      await access(path.join(canonicalSourceDir, required));
-    } catch {
-      throw new Error(`DSH Source 缺少必要结构：${required}`);
-    }
-  }
-
+async function calculateFingerprint(sourceDir) {
   const hash = createHash("sha256");
   for (const relative of fingerprintFiles) {
     try {
       hash.update(relative);
-      hash.update(await readFile(path.join(canonicalSourceDir, relative)));
+      hash.update(await readFile(path.join(sourceDir, relative)));
     } catch (error) {
       if (relative !== "pnpm-lock.yaml") throw error;
     }
   }
-  const fingerprint = hash.digest("hex");
-  if (expected.fingerprint && fingerprint !== expected.fingerprint) throw new Error("DSH Source fingerprint 不符合锁定值。");
+  return hash.digest("hex");
+}
 
-  return { sourceType: "git", version: manifest.version, commit, fingerprint, compatibilityBaseline: expected.compatibilityBaseline };
+export async function validateDshSourceIdentity(sourceDir, expected, { readOnly = false } = {}) {
+  const configuredSourceDir = path.resolve(sourceDir);
+  const canonicalSourceDir = await realpath(configuredSourceDir);
+  if (configuredSourceDir !== canonicalSourceDir) throw new Error("DSH Source 不允许使用符号链接或路径别名。");
+  const gitDir = path.join(canonicalSourceDir, ".git");
+  let gitDirectory;
+  try { gitDirectory = await lstat(gitDir); } catch { throw new Error("DSH Source 必须包含独立的 .git 目录。"); }
+  if (!gitDirectory.isDirectory() || gitDirectory.isSymbolicLink()) throw new Error("DSH Source 必须包含独立的 .git 目录。");
+  if (runGit(canonicalSourceDir, ["rev-parse", "--is-inside-work-tree"], "无法验证 DSH Git Repository。", { readOnly }) !== "true") throw new Error("DSH Source 不是有效 Git Repository。");
+  const topLevel = await realpath(runGit(canonicalSourceDir, ["rev-parse", "--show-toplevel"], "无法读取 DSH Git 根目录。", { readOnly }));
+  if (topLevel !== canonicalSourceDir) throw new Error("DSH Source 必须是独立 Git Repository 根目录。");
+  const identity = {
+    sourceCommit: runGit(canonicalSourceDir, ["rev-parse", "HEAD"], "无法读取 DSH Git HEAD。", { readOnly }),
+    sourceTree: runGit(canonicalSourceDir, ["rev-parse", "HEAD^{tree}"], "无法读取 DSH Git tree。", { readOnly }),
+    sourceVersion: JSON.parse(await readFile(path.join(canonicalSourceDir, "package.json"), "utf8")).version,
+    sourceFingerprint: await calculateFingerprint(canonicalSourceDir)
+  };
+  assertIdentity(identity, expected, "DSH identity");
+  if (runGit(canonicalSourceDir, ["status", "--porcelain=v1", "--untracked-files=all"], "无法读取 DSH Git working tree 状态。", { readOnly })) throw new Error("DSH Git working tree 必须保持 clean，且不得包含 untracked 文件。");
+  for (const required of ["pnpm-workspace.yaml", "apps/cli/package.json", "apps/cli/src/bin.ts", "packages/mcp/mcp-client/src/index.ts"]) {
+    try { await access(path.join(canonicalSourceDir, required)); } catch { throw new Error(`DSH Source 缺少必要结构：${required}`); }
+  }
+  const origin = optionalOrigin(canonicalSourceDir, { readOnly });
+  return { sourceType: "git", version: identity.sourceVersion, commit: identity.sourceCommit, tree: identity.sourceTree, fingerprint: identity.sourceFingerprint, compatibilityBaseline: expected.compatibilityBaseline, originClassification: classifyOrigin(origin, expected.sourceRepository) };
+}
+
+async function verifyEvidenceSidecar(evidencePath) {
+  const evidenceBytes = await readFile(evidencePath);
+  const digest = createHash("sha256").update(evidenceBytes).digest("hex");
+  const sidecar = await readFile(`${evidencePath}.sha256`, "utf8");
+  if (sidecar !== `${digest}  ${path.basename(evidencePath)}\n`) throw new Error("DSH provenance evidence sidecar does not match.");
+  return { digest, evidence: JSON.parse(evidenceBytes.toString("utf8")) };
+}
+
+function assertEvidenceCommon(evidence, expected) {
+  assertExactKeys(evidence, ["method", "provenanceContractVersion", "sourceCommit", "sourceFingerprint", "sourceRef", "sourceTree", "sourceVersion", "stagedSource", "upstreamCanonicalUrl", "verification"], "DSH provenance evidence");
+  if (evidence.provenanceContractVersion !== provenanceContractVersion) throw new Error("DSH provenance contract version is invalid.");
+  if (evidence.upstreamCanonicalUrl !== expected.sourceRepository || evidence.sourceRef !== expected.sourceRef) throw new Error("DSH provenance upstream binding is invalid.");
+  assertIdentity(evidence, expected, "DSH provenance evidence");
+  assertExactKeys(evidence.stagedSource, ["commit", "fingerprint", "tree", "version"], "DSH provenance stagedSource");
+  if (canonicalJson(evidence.stagedSource) !== canonicalJson({ commit: evidence.sourceCommit, tree: evidence.sourceTree, version: evidence.sourceVersion, fingerprint: evidence.sourceFingerprint })) throw new Error("DSH provenance staged identity does not match evidence identity.");
+}
+
+function assertMethodEvidence(evidence) {
+  if (evidence.method === "bundle") {
+    assertExactKeys(evidence.verification, ["advertisedCommit", "advertisedRef", "advertisedTree", "artifactRetained", "bundleSha256"], "DSH bundle provenance");
+    if (!hashPattern.test(evidence.verification.bundleSha256) || evidence.verification.advertisedRef !== evidence.sourceRef || evidence.verification.advertisedCommit !== evidence.sourceCommit || evidence.verification.advertisedTree !== evidence.sourceTree || evidence.verification.artifactRetained !== true) throw new Error("DSH bundle provenance is invalid.");
+    return;
+  }
+  if (evidence.method === "upstream-https") {
+    assertExactKeys(evidence.verification, ["resolvedCommit", "resolvedRef", "resolvedTree", "transport"], "DSH HTTPS provenance");
+    if (evidence.verification.transport !== "git-https" || evidence.verification.resolvedRef !== evidence.sourceRef || evidence.verification.resolvedCommit !== evidence.sourceCommit || evidence.verification.resolvedTree !== evidence.sourceTree) throw new Error("DSH HTTPS provenance is invalid.");
+    return;
+  }
+  throw new Error("DSH provenance method is invalid.");
+}
+
+function verifyBundle(bundlePath, evidence) {
+  if (!bundlePath) throw new Error("DSH bundle provenance requires an acquisition artifact.");
+  const absoluteBundle = path.resolve(bundlePath);
+  if (createHash("sha256").update(readFileSync(absoluteBundle)).digest("hex") !== evidence.verification.bundleSha256) throw new Error("DSH bundle SHA-256 does not match evidence.");
+  const temporaryRepo = mkdtempSync(path.join(os.tmpdir(), "ued-dsh-bundle-verify-"));
+  try {
+    runGit(temporaryRepo, ["init", "--bare", "-q"], "无法创建隔离 DSH bundle 验证仓库。");
+    runGit(temporaryRepo, ["bundle", "verify", absoluteBundle], "DSH bundle verify failed.");
+    const listed = runGit(temporaryRepo, ["bundle", "list-heads", absoluteBundle], "DSH bundle list-heads failed.");
+    if (!listed.split("\n").some((line) => line === `${evidence.sourceCommit} ${evidence.sourceRef}`)) throw new Error("DSH bundle advertised ref does not match evidence.");
+    runGit(temporaryRepo, ["bundle", "unbundle", absoluteBundle], "DSH bundle could not be inspected in an isolated repository.");
+    if (runGit(temporaryRepo, ["rev-parse", `${evidence.sourceCommit}^{tree}`], "DSH bundle tree could not be verified.") !== evidence.sourceTree) throw new Error("DSH bundle tree does not match evidence.");
+  } finally {
+    rmSync(temporaryRepo, { recursive: true, force: true });
+  }
+}
+
+export async function validateDshAcquisitionEvidence({ evidencePath, bundlePath = null, stagedSourceDir, expected }) {
+  const { digest, evidence } = await verifyEvidenceSidecar(path.resolve(evidencePath));
+  assertEvidenceCommon(evidence, expected);
+  assertMethodEvidence(evidence);
+  const staged = await validateDshSourceIdentity(stagedSourceDir, expected, { readOnly: true });
+  if (canonicalJson(evidence.stagedSource) !== canonicalJson({ commit: staged.commit, tree: staged.tree, version: staged.version, fingerprint: staged.fingerprint })) throw new Error("DSH provenance evidence does not match staged source identity.");
+  if (evidence.method === "bundle") verifyBundle(bundlePath, evidence);
+  return { ...staged, evidenceDigest: digest, method: evidence.method };
+}
+
+export function serializeDshProvenanceEvidence(evidence) {
+  return `${canonicalJson(evidence)}\n`;
+}
+
+export const dshProvenanceContractVersion = provenanceContractVersion;
+
+export async function validateDshSource(sourceDir, expected, options = {}) {
+  return validateDshSourceIdentity(sourceDir, expected, options);
 }

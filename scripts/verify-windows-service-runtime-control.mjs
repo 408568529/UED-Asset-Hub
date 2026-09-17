@@ -38,7 +38,7 @@ function testDiscoveryProtocolAndIdentity() {
   assert.equal(validateStopDiscoveryRequest({ ...request, operation: "exec" }).ok, false, "discovery has no arbitrary command dispatch");
   assert.equal(stopDiscoveryEndpoint(defaultWindowsServiceName), "\\\\.\\pipe\\ued-asset-hub-stop-discovery-uedassethub");
   assert.equal(windowsServiceMode({ platform: "darwin", environment: { UED_WINDOWS_SERVICE_MODE: "true" } }), false, "POSIX never enables Windows service mode");
-  const expected = { executable: "/service/node.exe", parentExecutable: "/service/UEDAssetHub.exe", parentPid: 77 };
+  const expected = { executable: "C:\\service\\node.exe", parentExecutable: "C:\\service\\UEDAssetHub.exe", parentPid: 77 };
   expected.commandFingerprint = commandFingerprint({ executable: expected.executable, script: "/service/shutdown.mjs" });
   const identity = { authenticated: true, pid: 88, creationTime: "1", executable: expected.executable, commandFingerprint: expected.commandFingerprint, parentPid: 77, parentExecutable: expected.parentExecutable };
   assert.deepEqual(verifyStopClientIdentity(identity, expected), { ok: true });
