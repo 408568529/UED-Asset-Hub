@@ -3,9 +3,10 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { archiveMembers, materializeArchive, validateSourceSnapshotManifest } from "./windows-release-constructor.mjs";
+import { archiveMembers, materializeArchive, validateArchiveMemberPath, validateSourceSnapshotManifest } from "./windows-release-constructor.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+const canonicalFilesystemRelativePath = (relativePath) => validateArchiveMemberPath(relativePath.replaceAll("\\", "/"));
 const fixtures = ["ascii.txt", "中文/文件.txt", "日本語/資料.txt", "café.txt", "e\u0301.txt", "docs/Windows主机发布更新流程.html", "docs/Windows主机发布更新流程.md", "scripts/启动 UED Asset Hub Host Runner.bat", "scripts/启动 UED Asset Hub.bat"];
 const block = (value, length) => { const result = Buffer.alloc(length); Buffer.from(value, "utf8").copy(result); return result; };
 function archive(entries) {
@@ -23,7 +24,9 @@ try {
   const entries = fixtures.map((name) => ({ name, body: Buffer.from(`payload:${name}`, "utf8") })); await writeFile(input, archive(entries));
   await materializeArchive({ archive: input, sourceRoot: source, workspace });
   assert.deepEqual(await archiveMembers(input), [...fixtures].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b))));
-  for (const name of fixtures) { const absolute = path.join(source, ...name.split("/")); assert.equal((await readFile(absolute, "utf8")), `payload:${name}`); assert.deepEqual([...path.relative(source, absolute)], [...name]); }
+  for (const name of fixtures) { const absolute = path.join(source, ...name.split("/")); assert.equal((await readFile(absolute, "utf8")), `payload:${name}`); assert.deepEqual([...canonicalFilesystemRelativePath(path.relative(source, absolute))], [...name]); }
+  for (const name of fixtures) assert.equal(canonicalFilesystemRelativePath(name.replaceAll("/", "\\")), name);
+  for (const unsafe of ["..\\escape", "foo\\..\\escape", "C:\\escape", "\\\\server\\share", "\\\\?\\device", "CON\\file", "trailing.\\file"]) assert.throws(() => canonicalFilesystemRelativePath(unsafe));
   for (const bad of ["/absolute", "C:/drive", "//server/share", "../escape", "CON/file", "trailing./file", "bad\\slash", "duplicate.txt"]) {
     const target = path.join(root, `${sha(bad)}.tar`); const items = bad === "duplicate.txt" ? [{ name: bad }, { name: bad }] : [{ name: bad }]; await writeFile(target, archive(items)); await assert.rejects(materializeArchive({ archive: target, sourceRoot: path.join(root, `${sha(bad)}-source`), workspace: path.join(root, `${sha(bad)}-workspace`) }));
   }
