@@ -83,6 +83,28 @@ export function validateDeploymentManifest(manifest, expectedDsh) {
   return manifest;
 }
 
+export function createDeploymentManifest({ version, commit, sourceArchiveSha256, artifactSet, dsh, components, buildId, runtimeMetadataSchemaVersion, operationalStorageSchemaVersion, formalDataContractVersion, requiredEvidenceTypes }) {
+  const manifest = {
+    manifestSchemaVersion: 2,
+    releaseIdentitySchemaVersion: 2,
+    releaseId: createReleaseId({ version, commit, artifactDigest: artifactSet.digest }),
+    assetHub: { version, commit, sourceArchiveSha256 },
+    artifactSet,
+    dsh,
+    components,
+    build: { buildId },
+    runtime: { metadataSchemaVersion: runtimeMetadataSchemaVersion },
+    operationalStorage: { schemaVersion: operationalStorageSchemaVersion },
+    formalData: { contractVersion: formalDataContractVersion },
+    requiredEvidenceTypes,
+  };
+  return validateDeploymentManifest(manifest, dsh);
+}
+
+export function preflightDeploymentManifest(manifest, expectedDsh) {
+  return validateDeploymentManifest(manifest, expectedDsh);
+}
+
 export function assertWindowsProductionPath(value, root) {
   if (typeof value !== "string" || !/^[A-Za-z]:\\(?!$)/.test(value) || value.startsWith("\\\\") || value.startsWith("\\\\?\\") || /^[A-Za-z]:[^\\]/.test(value)) throw new Error("Deployment path must be an absolute local drive path.");
   const normalized = path.win32.normalize(value);

@@ -4,7 +4,7 @@ import { link, mkdtemp, mkdir, readFile, rm, symlink, utimes, writeFile } from "
 import os from "node:os";
 import path from "node:path";
 import { calculateReleaseArtifactSet, normalizeArtifactPath, windowsFilesystemEvidenceStatus } from "./release-artifact-tree.mjs";
-import { assertWindowsProductionPath, boundedCurrentSwitch, createReleaseId, evaluateRollbackCandidate, manifestDigest, planDeploymentUpgrade, promoteVerifiedStage, validateCheckpoint, validateDeploymentManifest, verifyCurrentTarget, verifyRelease, writeDeploymentManifest } from "./windows-deployment-contract.mjs";
+import { assertWindowsProductionPath, boundedCurrentSwitch, createDeploymentManifest, createReleaseId, evaluateRollbackCandidate, manifestDigest, planDeploymentUpgrade, promoteVerifiedStage, validateCheckpoint, validateDeploymentManifest, verifyCurrentTarget, verifyRelease, writeDeploymentManifest } from "./windows-deployment-contract.mjs";
 
 const root = await mkdtemp(path.join(os.tmpdir(), "ued-release-identity-v2-"));
 const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -35,13 +35,7 @@ async function stage(name, { seed = "stable", sourceCommit = "1".repeat(40), sou
     const file = artifactSet.files.find((item) => item.path === filePath);
     return [component, { path: filePath, sha256: file.sha256, version: "fixture" }];
   }));
-  const manifest = {
-    manifestSchemaVersion: 2, releaseIdentitySchemaVersion: 2,
-    releaseId: createReleaseId({ version: "0.1.0", commit: sourceCommit, artifactDigest: artifactSet.digest }),
-    assetHub: { version: "0.1.0", commit: sourceCommit, sourceArchiveSha256 }, artifactSet, dsh, components,
-    build: { buildId: "fixture-build" }, runtime: { metadataSchemaVersion: "3" }, operationalStorage: { schemaVersion: "1" }, formalData: { contractVersion: "1" },
-    requiredEvidenceTypes: ["windows-native-staging", "formal-data-hash"],
-  };
+  const manifest = createDeploymentManifest({ version: "0.1.0", commit: sourceCommit, sourceArchiveSha256, artifactSet, dsh, components, buildId: "fixture-build", runtimeMetadataSchemaVersion: "3", operationalStorageSchemaVersion: "1", formalDataContractVersion: "1", requiredEvidenceTypes: ["windows-native-staging", "formal-data-hash"] });
   await writeDeploymentManifest(directory, manifest);
   return { directory, manifest };
 }
@@ -73,6 +67,14 @@ try {
   assert.throws(() => validateDeploymentManifest({ ...first.manifest, compatiblePreviousRelease: first.manifest.releaseId }, dsh));
   const malformed = structuredClone(first.manifest); malformed.artifactSet.files.push({ ...malformed.artifactSet.files[0], path: malformed.artifactSet.files[0].path.toUpperCase() }); malformed.artifactSet.fileCount += 1; malformed.artifactSet.totalBytes += malformed.artifactSet.files[0].size;
   assert.throws(() => validateDeploymentManifest(malformed, dsh));
+  const historicalG026 = structuredClone(first.manifest); historicalG026.assetHub.sourceClassification = "COMMITTED_CLEAN_SOURCE"; historicalG026.assetHub.productionEligible = true;
+  assert.throws(() => validateDeploymentManifest(historicalG026, dsh), /assetHub has unknown or missing fields/);
+  assert.deepEqual(Object.keys(first.manifest.assetHub).sort(), ["commit", "sourceArchiveSha256", "version"]);
+  for (const missingField of ["version", "commit", "sourceArchiveSha256"]) { const invalid = structuredClone(first.manifest); delete invalid.assetHub[missingField]; assert.throws(() => validateDeploymentManifest(invalid, dsh)); }
+  for (const unknownField of ["sourceClassification", "productionEligible", "unexpected"]) { const invalid = structuredClone(first.manifest); invalid.assetHub[unknownField] = unknownField === "productionEligible"; assert.throws(() => validateDeploymentManifest(invalid, dsh)); }
+  for (const [field, value] of [["version", 1], ["commit", 1], ["sourceArchiveSha256", "bad"]]) { const invalid = structuredClone(first.manifest); invalid.assetHub[field] = value; assert.throws(() => validateDeploymentManifest(invalid, dsh)); }
+  const roundTrip = JSON.parse(JSON.stringify(createDeploymentManifest({ version: first.manifest.assetHub.version, commit: first.manifest.assetHub.commit, sourceArchiveSha256: first.manifest.assetHub.sourceArchiveSha256, artifactSet: first.manifest.artifactSet, dsh: first.manifest.dsh, components: first.manifest.components, buildId: first.manifest.build.buildId, runtimeMetadataSchemaVersion: first.manifest.runtime.metadataSchemaVersion, operationalStorageSchemaVersion: first.manifest.operationalStorage.schemaVersion, formalDataContractVersion: first.manifest.formalData.contractVersion, requiredEvidenceTypes: first.manifest.requiredEvidenceTypes })));
+  assert.deepEqual(validateDeploymentManifest(roundTrip, dsh), roundTrip);
 
   const releases = path.join(root, "releases");
   assert.equal((await promoteVerifiedStage({ stagingPath: first.directory, releasesPath: releases, expectedDsh: dsh, dryRun: true })).status, "planned");

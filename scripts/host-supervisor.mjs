@@ -41,6 +41,9 @@ export function createSharedShutdown(run) {
     return shutdownPromise;
   };
 }
+export function withRuntimeControlEnvironment(environment, { endpoint, token }) {
+  return { ...environment, RUNTIME_CONTROL_ENDPOINT: endpoint, RUNTIME_CONTROL_TOKEN: token };
+}
 function value(name) { return process.env[name]?.trim() || ""; }
 function requiredPath(name) { const raw = value(name); if (!raw) fail(`缺少 ${name}。`); return path.resolve(raw); }
 function optionalPath(name) { const raw = value(name); return raw ? path.resolve(raw) : null; }
@@ -397,7 +400,7 @@ export async function main() {
   diagnostics.recordInProcessLifecycle("runtimeControl", { status: "starting" });
   await runtimeControl.start();
   diagnostics.recordInProcessLifecycle("runtimeControl", { status: "running", health: "healthy" });
-  specifications.assetHub.env = runtimeEnvironmentProfiles.assetHub(securityEnvironment, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, RUNTIME_CONTROL_ENDPOINT: endpoint, RUNTIME_CONTROL_TOKEN: token });
+  specifications.assetHub.env = withRuntimeControlEnvironment(specifications.assetHub.env, { endpoint, token });
   await assertPortAvailable(publicPort, "公开 Asset Hub");
   await assertPortAvailable(internalPort, "内部 Asset Hub");
   await controller.start("assetHub", specifications.assetHub, { operation: "initial_start" });

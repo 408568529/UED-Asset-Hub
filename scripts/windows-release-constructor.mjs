@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { verifyFrozenNativeSet } from "./native-artifact-contract.mjs";
 import { calculateReleaseArtifactSet, canonicalJson } from "./release-artifact-tree.mjs";
-import { createReleaseId, writeDeploymentManifest } from "./windows-deployment-contract.mjs";
+import { createDeploymentManifest, preflightDeploymentManifest, writeDeploymentManifest } from "./windows-deployment-contract.mjs";
 import { componentPaths, dshPayloadFiles, nativePayloadMap, releasePayloadSchemaVersion, runtimeScripts, servicePayloadFiles } from "./windows-release-payload.mjs";
 
 export const buildContract = Object.freeze({
@@ -581,13 +581,13 @@ export async function finalizeWindowsRelease(prepared) {
   const calculatedArtifactSet = await calculateReleaseArtifactSet(destination);
   const artifactSet = { ...calculatedArtifactSet, files: calculatedArtifactSet.files.map((file) => ({ ...file, component: Object.entries(componentPaths).find(([, relative]) => relative === file.path)?.[0] ?? "assetHub" })) };
   const version = JSON.parse(await readFile(path.join(workspace, "package.json"), "utf8")).version;
-  const releaseId = createReleaseId({ version, commit: values["source-commit"], artifactDigest: artifactSet.digest });
   const components = Object.fromEntries(Object.entries(componentPaths).map(([name, relative]) => {
     const file = artifactSet.files.find((item) => item.path === relative);
     if (!file) throw new Error(`required release component missing: ${name}`);
     return [name, { path: relative, sha256: file.sha256, version: name.startsWith("windows") ? "frozen-native" : "release" }];
   }));
-  const manifest = { manifestSchemaVersion: 2, releaseIdentitySchemaVersion: 2, releaseId, assetHub: { version, commit: values["source-commit"], sourceArchiveSha256: values["source-archive-sha256"], sourceClassification: values["source-classification"], productionEligible: prepared.sourceProvenance.policy.productionEligible }, artifactSet, dsh: { version: dsh.version, commit: dsh.commit, sourceFingerprint: dsh.fingerprint }, components, build: { buildId: prepared.buildId }, runtime: { metadataSchemaVersion: "3" }, operationalStorage: { schemaVersion: "1" }, formalData: { contractVersion: "1" }, requiredEvidenceTypes: ["windows-native-staging", "formal-data-hash"] };
+  const manifest = createDeploymentManifest({ version, commit: values["source-commit"], sourceArchiveSha256: values["source-archive-sha256"], artifactSet, dsh: { version: dsh.version, commit: dsh.commit, sourceFingerprint: dsh.fingerprint }, components, buildId: prepared.buildId, runtimeMetadataSchemaVersion: "3", operationalStorageSchemaVersion: "1", formalDataContractVersion: "1", requiredEvidenceTypes: ["windows-native-staging", "formal-data-hash"] });
+  preflightDeploymentManifest(manifest, dsh);
   await writeDeploymentManifest(destination, manifest);
   if (await hashFile(prepared.archive) !== values["source-archive-sha256"]) throw new Error("constructor changed source archive.");
   return { destination, manifest, provenance, postPruneDependencyDigest };
