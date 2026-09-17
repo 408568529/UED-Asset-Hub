@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { dshPayloadFiles, runtimeScripts, servicePayloadFiles, assertPayloadPath } from "./windows-release-payload.mjs";
+import { isReleaseSourceExcluded } from "./create-controlled-source-snapshot.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const compareUtf8 = (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b));
@@ -35,7 +36,7 @@ export async function collectBaselineRecords(root) {
     ...list(root, ["--cached"], "git-cached"),
     ...list(root, ["--modified"], "git-modified"),
     ...list(root, ["--others", "--exclude-standard"], "git-untracked"),
-  ];
+  ].filter((occurrence) => !isReleaseSourceExcluded(occurrence.relativePath));
   const groups = new Map();
   for (const occurrence of raw) {
     const relativePath = canonicalPath(occurrence.relativePath);

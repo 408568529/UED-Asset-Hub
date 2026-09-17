@@ -8,7 +8,8 @@ import { canonicalJson } from "./release-artifact-tree.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const compareUtf8 = (left, right) => Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
-const excluded = [/^(?:\.git|\.next|node_modules|data|logs|evidence|runtime|tmp|temp)(?:\/|$)/i, /(?:^|\/)\.env(?!\.example$)/i, /(?:^|\/)(?:.*\.(?:pem|key)|id_rsa)$/i];
+export const releaseSourceExclusions = [/^(?:\.git|\.next|node_modules|data|logs|evidence|runtime|tmp|temp|cache|staging)(?:\/|$)/i, /^tsconfig\.tsbuildinfo$/i, /(?:^|\/)\.env(?!\.example$)/i, /(?:^|\/)(?:.*\.(?:pem|key)|id_rsa)$/i];
+export const isReleaseSourceExcluded = (relativePath) => releaseSourceExclusions.some((rule) => rule.test(relativePath));
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -44,14 +45,14 @@ export async function createControlledSourceSnapshot({ sourceRoot, outputDir, cr
   if (cleanSource) {
     await git(root, ["diff", "--quiet"]);
     await git(root, ["diff", "--cached", "--quiet"]);
-    const untracked = (await git(root, ["ls-files", "--others", "--exclude-standard", "-z"])).toString("utf8").split("\0").filter(Boolean).filter((relativePath) => !excluded.some((rule) => rule.test(relativePath)));
+    const untracked = (await git(root, ["ls-files", "--others", "--exclude-standard", "-z"])).toString("utf8").split("\0").filter(Boolean).filter((relativePath) => !isReleaseSourceExcluded(relativePath));
     if (untracked.length) throw new Error("COMMITTED_CLEAN_SOURCE generation denied: untracked release source exists.");
   }
   const candidateArgs = cleanSource ? ["ls-files", "--cached", "-z"] : ["ls-files", "--cached", "--modified", "--others", "--exclude-standard", "-z"];
   const candidates = [...new Set((await git(root, candidateArgs)).toString("utf8").split("\0").filter(Boolean))].sort(compareUtf8);
   const included = []; const exclusions = [];
   for (const relativePath of candidates) {
-    if (excluded.some((rule) => rule.test(relativePath))) { exclusions.push({ relativePath, reason: "policy-excluded" }); continue; }
+    if (isReleaseSourceExcluded(relativePath)) { exclusions.push({ relativePath, reason: "policy-excluded" }); continue; }
     const absolute = path.join(root, ...relativePath.split("/")); const info = await lstat(absolute);
     if (!info.isFile() || info.isSymbolicLink() || info.nlink > 1) throw new Error(`snapshot input must be a regular file: ${relativePath}`);
     const tracked = (await git(root, ["ls-files", "--error-unmatch", "--", relativePath]).then(() => true, () => false));

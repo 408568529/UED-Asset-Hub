@@ -184,7 +184,7 @@ async function treeManifest(root, relative = "") {
   return { files, digest: sha256(Buffer.from(canonicalJson(files), "utf8")) };
 }
 
-export async function archiveMembers(archive) {
+export async function archiveEntries(archive) {
   const bytes = await readFile(archive);
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const entries = [];
@@ -214,12 +214,16 @@ export async function archiveMembers(archive) {
       if (!member || !["0", "5"].includes(type)) throw new Error(`source archive entry type is prohibited: ${type}`);
       const normalized = type === "5" && member.endsWith("/") ? member.slice(0, -1) : member;
       validateArchiveMemberPath(normalized);
-      entries.push({ path: normalized, type });
+      entries.push({ path: normalized, type, bytes: bytes.subarray(bodyStart, bodyStart + size) });
     }
     offset = nextOffset;
   }
   if (!entries.length || new Set(entries.map((entry) => entry.path)).size !== entries.length) throw new Error("source archive member set is empty or duplicated.");
-  return entries.filter((entry) => entry.type === "0").map((entry) => entry.path).sort(compareUtf8);
+  return entries;
+}
+
+export async function archiveMembers(archive) {
+  return (await archiveEntries(archive)).filter((entry) => entry.type === "0").map((entry) => entry.path).sort(compareUtf8);
 }
 
 export function validateArchiveMemberPath(member) {
@@ -244,10 +248,37 @@ export async function findDotenvFiles(root) {
   return matches.sort(compareUtf8);
 }
 
-async function materializeArchive({ archive, sourceRoot, workspace, tarExecutable, osEnv, checkpoint = async () => {} }) {
-  const members = await archiveMembers(archive);
-  await mkdir(sourceRoot, { recursive: true });
-  await run(tarExecutable, ["--options", "hdrcharset=UTF-8", "-xf", archive, "-C", sourceRoot], { env: osEnv });
+async function safeMaterializeDirectory(root, relative = "") {
+  const rootPath = path.resolve(root); const target = path.resolve(rootPath, ...relative.split("/").filter(Boolean));
+  const relativeToRoot = path.relative(rootPath, target);
+  if (relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)) throw new Error("source archive target escapes materialization root.");
+  await mkdir(rootPath, { recursive: true });
+  let cursor = rootPath;
+  for (const part of relativeToRoot ? relativeToRoot.split(path.sep) : []) {
+    cursor = path.join(cursor, part);
+    try { await mkdir(cursor); } catch (error) { if (error?.code !== "EEXIST") throw error; }
+    const details = await lstat(cursor);
+    if (!details.isDirectory() || details.isSymbolicLink()) throw new Error("source archive materialization encountered a reparse-point or conflicting target.");
+  }
+  const details = await lstat(target);
+  if (!details.isDirectory() || details.isSymbolicLink()) throw new Error("source archive materialization encountered a reparse-point or conflicting target.");
+  return target;
+}
+
+export async function materializeArchive({ archive, sourceRoot, workspace, checkpoint = async () => {} }) {
+  const entries = await archiveEntries(archive); const members = entries.filter((entry) => entry.type === "0").map((entry) => entry.path).sort(compareUtf8);
+  await safeMaterializeDirectory(sourceRoot);
+  for (const entry of entries.sort((left, right) => compareUtf8(left.path, right.path))) {
+    const target = path.resolve(sourceRoot, ...entry.path.split("/"));
+    const relative = path.relative(sourceRoot, target);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("source archive target escapes materialization root.");
+    await safeMaterializeDirectory(sourceRoot, path.posix.dirname(entry.path) === "." ? "" : path.posix.dirname(entry.path));
+    if (entry.type === "5") await safeMaterializeDirectory(sourceRoot, entry.path);
+    else {
+      try { await lstat(target); throw new Error("source archive materialization encountered an existing conflicting target."); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+      await writeFile(target, entry.bytes, { flag: "wx" });
+    }
+  }
   await assertRegularTree(sourceRoot);
   const extracted = await treeManifest(sourceRoot);
   if (canonicalJson(extracted.files.map((file) => file.path)) !== canonicalJson(members)) throw new Error("source archive member set does not match extracted source.");
@@ -438,7 +469,7 @@ export async function prepareWindowsRelease(values, diagnostic = {}) {
   const sourceRoot = path.join(tempRoot, "source");
   const workspace = path.join(tempRoot, "workspace");
   await checkpoint("ARCHIVE_MATERIALIZE_BEGIN");
-  const source = await materializeArchive({ archive, sourceRoot, workspace, tarExecutable: path.join(osEnv.SystemRoot, "System32", "tar.exe"), osEnv, checkpoint });
+  const source = await materializeArchive({ archive, sourceRoot, workspace, checkpoint });
   await checkpoint("ARCHIVE_MATERIALIZE_COMPLETE");
   const sourceProvenance = await validateSourceSnapshotManifest(values, source);
   await checkpoint("LOCKFILE_VALIDATE_BEGIN");
