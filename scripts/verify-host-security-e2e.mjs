@@ -2,17 +2,19 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:net";
-import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { runtimeEnvironmentProfiles, blockedFromAgentProxyEnvironment } from "../agent-integration/scripts/runtime-boundary.mjs";
+import { probeKnowledgeGatewayMcp } from "../agent-integration/scripts/runtime-readiness.mjs";
 
 const projectDir = process.cwd();
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require("@next/env");
 const outputLimit = 1_000_000;
 const diagnostic = { stage: "preflight", reasonCode: "preflight_failed" };
+let latestHostOutput = () => "";
 
 function mark(stage, reasonCode) {
   diagnostic.stage = stage;
@@ -80,11 +82,11 @@ async function waitForExit(child, timeoutMs = 15_000) {
   ]);
 }
 
-function configuredDshSource() {
+async function configuredDshSource() {
   loadEnvConfig(projectDir);
   const source = process.env.DSH_SOURCE_DIR?.trim();
   if (!source) throw new Error("DSH Source is not configured for E2E.");
-  return path.resolve(source);
+  return realpath(path.resolve(source));
 }
 
 async function runDshProbe(environment) {
@@ -95,10 +97,27 @@ async function runDshProbe(environment) {
   return output();
 }
 
+async function materializeIsolatedRuntimeWorkspace(testRoot) {
+  const workspace = path.join(testRoot, "candidate-runtime");
+  await access(path.join(projectDir, ".next", "standalone", "server.js"));
+  await access(path.join(projectDir, ".next", "static"));
+  await mkdir(workspace);
+  await Promise.all([
+    cp(path.join(projectDir, ".next", "standalone"), workspace, { recursive: true }),
+    cp(path.join(projectDir, ".next", "static"), path.join(workspace, ".next", "static"), { recursive: true }),
+    cp(path.join(projectDir, "scripts"), path.join(workspace, "scripts"), { recursive: true }),
+    cp(path.join(projectDir, "agent-integration"), path.join(workspace, "agent-integration"), { recursive: true }),
+    cp(path.join(projectDir, "native"), path.join(workspace, "native"), { recursive: true }),
+    cp(path.join(projectDir, "node_modules"), path.join(workspace, "node_modules"), { recursive: true, force: true }),
+    cp(path.join(projectDir, "package.json"), path.join(workspace, "package.json"))
+  ]);
+  return workspace;
+}
+
 async function main() {
   mark("preflight", "preflight_failed");
   await access(path.join(projectDir, ".next", "BUILD_ID"));
-  const sourceDir = configuredDshSource();
+  const sourceDir = await configuredDshSource();
   await assertPortAvailable(3080);
   const testRoot = await mkdtemp(path.join(os.tmpdir(), "ued-host-security-e2e-"));
   let host = null;
@@ -108,6 +127,7 @@ async function main() {
   const sessionSecret = `${randomBytes(48).toString("base64url")}-${sentinel}`;
   const password = `${randomBytes(24).toString("base64url")}-${sentinel}`;
   try {
+    const runtimeWorkspace = await materializeIsolatedRuntimeWorkspace(testRoot);
     const [publicPort, internalPort, proxyPort, gatewayPort] = await Promise.all([freePort(), freePort(), freePort(), freePort()]);
     const dataDir = path.join(testRoot, "data");
     const agentRuntimeDir = path.join(testRoot, "agent-runtime");
@@ -139,8 +159,9 @@ async function main() {
     for (const key of blockedFromAgentProxyEnvironment) assert.equal(key in proxyEnvironment, false, `${key} must not reach Agent Proxy`);
 
     mark("host-startup", "host_startup_failed");
-    host = spawn(process.execPath, ["scripts/start-host.mjs"], { cwd: projectDir, env: environment, stdio: ["ignore", "pipe", "pipe"] });
+    host = spawn(process.execPath, ["scripts/start-host.mjs"], { cwd: runtimeWorkspace, env: environment, stdio: ["ignore", "pipe", "pipe"] });
     hostOutput = capture(host);
+    latestHostOutput = hostOutput;
     const publicBaseUrl = `http://127.0.0.1:${publicPort}`;
     const internalBaseUrl = `http://127.0.0.1:${internalPort}`;
     await waitFor(async () => {
@@ -217,13 +238,8 @@ async function main() {
     const dshProbeOutput = await runDshProbe(environment);
 
     mark("gateway", "gateway_health_failed");
-    const mcp = await requestJson(`http://127.0.0.1:${gatewayPort}/mcp`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: "health", method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "host-security-e2e", version: "2.1.0.11" } } })
-    });
-    assert.equal(mcp.response.status, 200);
-    assert.equal(mcp.text.includes(sentinel), false);
+    const mcp = await probeKnowledgeGatewayMcp({ endpoint: `http://127.0.0.1:${gatewayPort}/mcp` });
+    assert.deepEqual(mcp.tools, ["get_knowledge_asset", "search_knowledge", "search_micro_specs"]);
 
     mark("runtime-status", "runtime_metadata_unexpected");
     const [lifecycle, metadata] = await Promise.all([
@@ -249,15 +265,18 @@ async function main() {
       host.kill("SIGTERM");
       await waitForExit(host);
     }
-    if (host?.exitCode === null) {
+    if (host?.exitCode === null && host?.signalCode === null) {
       mark("shutdown", "shutdown_failed");
-      throw new Error("Host Runner shutdown failed.");
+      throw new Error(`Host Runner shutdown failed. Output: ${hostOutput().slice(-4_000)}`);
     }
     await rm(testRoot, { recursive: true, force: true });
   }
 }
 
-main().catch(() => {
+main().catch((error) => {
   console.error(`[Host Security E2E] FAIL stage=${diagnostic.stage} reasonCode=${diagnostic.reasonCode}`);
+  console.error(error instanceof Error ? error.message : error);
+  const output = latestHostOutput();
+  if (output) console.error(`[Host Security E2E] Host output:\n${output.slice(-4_000)}`);
   process.exit(1);
 });

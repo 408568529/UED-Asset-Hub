@@ -17,6 +17,7 @@ import { credentialHelperPath, loadWindowsCredentialBundle } from "./windows-cre
 import { resolveHostSecurityConfig } from "./host-security-config.mjs";
 import { createRuntimeDiagnosticsState } from "./runtime-diagnostics-state.mjs";
 import { createBoundedNdjsonWriter } from "./bounded-ndjson-writer.mjs";
+import { probeDshSessionList, probeKnowledgeGatewayMcp } from "../agent-integration/scripts/runtime-readiness.mjs";
 
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require("@next/env");
@@ -280,9 +281,11 @@ export async function main() {
     assetHub: { command: process.execPath, args: ["server.js"], cwd: projectDir, env: runtimeEnvironmentProfiles.assetHub(securityEnvironment, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, HOSTNAME: "127.0.0.1", PORT: String(internalPort) }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(internalPort, "内部 Asset Hub") } }
   };
   const rpc = async (method, payload) => {
-    const response = await request(new URL(`/api/${method}`, runtimeUrl), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "client-request", rpcId: `host-supervisor-${method}`, method, payload }) });
+    if (method === "session.list") return probeDshSessionList({ baseUrl: runtimeUrl });
+    const rpcId = `host-supervisor-${method}`;
+    const response = await request(new URL(`/api/${method}`, runtimeUrl), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "client-request", rpcId, method, payload }) });
     const body = await response.json();
-    if (body?.result?.ok !== true) throw new Error("DSH rejected read-only health RPC.");
+    if (body?.type !== "server-response" || body?.rpcId !== rpcId || body?.result?.ok !== true) throw new Error("DSH rejected read-only health RPC.");
     return body.result.value;
   };
   const observeHealth = async (component, check, { reasonCode = "health_check_failed", operation = "health_check", operationId = null } = {}) => {
@@ -311,6 +314,7 @@ export async function main() {
       return { ok: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
+      console.error(`[Host Supervisor] Agent Runtime static preflight failed: ${message || "unknown error"}`);
       return { ok: false, reasonCode: /DSH|Git|版本|fingerprint/.test(message) ? "source_invalid" : "runtime_configuration_invalid" };
     }
   };
@@ -338,7 +342,7 @@ export async function main() {
       agentConfigurationStatus = settingsResult.status === "fulfilled" && catalogResult.status === "fulfilled" && hasValidAgentModelConfiguration(settingsResult.value, catalogResult.value) ? "valid" : "invalid";
     } catch {}
     const [gateway, proxy] = await Promise.all([
-      observeHealth("gateway", () => request(`http://127.0.0.1:${gatewayPort}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "health", method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "host-supervisor", version: "2.1.0.9" } } }) }), { reasonCode: "gateway_health_failed" }).then(() => true).catch(() => false),
+      observeHealth("gateway", () => probeKnowledgeGatewayMcp({ endpoint: `http://127.0.0.1:${gatewayPort}/mcp` }), { reasonCode: "gateway_health_failed" }).then(() => true).catch(() => false),
       observeHealth("proxy", () => request(`http://127.0.0.1:${proxyPort}/healthz`), { reasonCode: "proxy_health_failed" }).then(() => true).catch(() => false)
     ]);
     return { dsh, gateway, proxy, mcp: gateway, credentialStatus, agentConfigurationStatus, reasonCode: !dsh ? "dsh_unavailable" : gateway && proxy ? undefined : "runtime_health_failed" };
@@ -366,7 +370,7 @@ export async function main() {
       if (controller.isRunning(component)) return;
       await assertPortAvailable(componentPort[component], component, { reasonCode: "port_conflict" });
       await controller.start(component, specifications[component], { operation: operation.trigger, operationId: operation.operationId });
-      if (component === "gateway") await observeHealth("gateway", () => waitFor("Knowledge Gateway MCP", () => request(`http://127.0.0.1:${gatewayPort}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "health", method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "host-supervisor", version: "2.1.0.9" } } }) })), { reasonCode: "gateway_health_failed", operation: operation.trigger, operationId: operation.operationId });
+      if (component === "gateway") await observeHealth("gateway", () => waitFor("Knowledge Gateway MCP", () => probeKnowledgeGatewayMcp({ endpoint: `http://127.0.0.1:${gatewayPort}/mcp` })), { reasonCode: "gateway_health_failed", operation: operation.trigger, operationId: operation.operationId });
       if (component === "dsh") await observeHealth("dsh", () => waitFor("DSH Runtime", () => rpc("session.list", {})), { reasonCode: "dsh_unavailable", operation: operation.trigger, operationId: operation.operationId });
       if (component === "proxy") await observeHealth("proxy", () => waitFor("Agent Proxy", () => request(`http://127.0.0.1:${proxyPort}/healthz`)), { reasonCode: "proxy_health_failed", operation: operation.trigger, operationId: operation.operationId });
     },

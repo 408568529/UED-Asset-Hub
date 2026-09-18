@@ -123,6 +123,11 @@ function assertMethodEvidence(evidence) {
     if (evidence.verification.transport !== "git-https" || evidence.verification.resolvedRef !== evidence.sourceRef || evidence.verification.resolvedCommit !== evidence.sourceCommit || evidence.verification.resolvedTree !== evidence.sourceTree) throw new Error("DSH HTTPS provenance is invalid.");
     return;
   }
+  if (evidence.method === "offline-package") {
+    assertExactKeys(evidence.verification, ["archiveSha256", "manifestSha256", "materializationMode", "packageSchemaVersion", "runBindingSha256", "sourceMemberCount"], "DSH offline package provenance");
+    if (!hashPattern.test(evidence.verification.archiveSha256) || !hashPattern.test(evidence.verification.manifestSha256) || !hashPattern.test(evidence.verification.runBindingSha256) || evidence.verification.materializationMode !== "validated-dereference" || evidence.verification.packageSchemaVersion !== 1 || !Number.isInteger(evidence.verification.sourceMemberCount) || evidence.verification.sourceMemberCount < 1) throw new Error("DSH offline package provenance is invalid.");
+    return;
+  }
   throw new Error("DSH provenance method is invalid.");
 }
 
@@ -143,10 +148,20 @@ function verifyBundle(bundlePath, evidence) {
   }
 }
 
-export async function validateDshAcquisitionEvidence({ evidencePath, bundlePath = null, stagedSourceDir, expected }) {
+export async function validateDshAcquisitionEvidence({ evidencePath, bundlePath = null, offlinePackage = null, stagedSourceDir, expected }) {
   const { digest, evidence } = await verifyEvidenceSidecar(path.resolve(evidencePath));
   assertEvidenceCommon(evidence, expected);
   assertMethodEvidence(evidence);
+  if (evidence.method === "offline-package") {
+    if (!offlinePackage?.archivePath || !offlinePackage.manifestPath || !offlinePackage.provenancePath || !offlinePackage.runBindingPath || !offlinePackage.targetRunId) throw new Error("DSH offline package provenance requires package and run binding inputs.");
+    const { validateOfflineDshMaterialization, validateOfflineDshPackage, validateOfflineDshRunBinding } = await import("./dsh-offline-package.mjs");
+    const verified = await validateOfflineDshPackage({ archivePath: offlinePackage.archivePath, manifestPath: offlinePackage.manifestPath, provenancePath: offlinePackage.provenancePath, expected });
+    const materialized = await validateOfflineDshMaterialization({ packageResult: verified, outputDir: stagedSourceDir });
+    const binding = await validateOfflineDshRunBinding({ bindingPath: offlinePackage.runBindingPath, packageResult: verified, targetRunId: offlinePackage.targetRunId, materializedRootIdentity: materialized.materializedRootIdentity });
+    const identity = { version: verified.sourceVersion, commit: verified.sourceCommit, tree: verified.sourceTree, fingerprint: verified.sourceFingerprint };
+    if (canonicalJson(evidence.stagedSource) !== canonicalJson({ commit: identity.commit, tree: identity.tree, version: identity.version, fingerprint: identity.fingerprint }) || evidence.verification.archiveSha256 !== verified.archiveSha256 || evidence.verification.manifestSha256 !== verified.manifestSha256 || evidence.verification.sourceMemberCount !== verified.sourceMemberCount || evidence.verification.runBindingSha256 !== binding.bindingSha256) throw new Error("DSH offline package evidence does not match verified package identity.");
+    return { ...identity, evidenceDigest: digest, method: evidence.method, materializationMode: materialized.materializationMode, materializedRootIdentity: materialized.materializedRootIdentity, packageArchiveSha256: verified.archiveSha256, packageManifestSha256: verified.manifestSha256, repository: verified.provenance.repository, sourceRef: verified.provenance.tag, runBindingSha256: binding.bindingSha256 };
+  }
   const staged = await validateDshSourceIdentity(stagedSourceDir, expected, { readOnly: true });
   if (canonicalJson(evidence.stagedSource) !== canonicalJson({ commit: staged.commit, tree: staged.tree, version: staged.version, fingerprint: staged.fingerprint })) throw new Error("DSH provenance evidence does not match staged source identity.");
   if (evidence.method === "bundle") verifyBundle(bundlePath, evidence);

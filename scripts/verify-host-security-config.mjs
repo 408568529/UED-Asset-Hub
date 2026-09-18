@@ -32,7 +32,8 @@ assert.deepEqual(resolveHostSecurityConfig({ ...valid, NODE_ENV: "production", A
 const marker = "host-security-redaction-marker";
 const isolatedCwd = await mkdtemp(path.join(os.tmpdir(), "ued-host-security-"));
 try {
-  const inherited = { ...process.env, ...valid, ADMIN_PASSWORD: `example-${marker}` };
+  const { ADMIN_SESSION_SECURE: _inheritedSecure, PUBLIC_ORIGIN: _inheritedOrigin, NODE_ENV: _inheritedNodeEnv, ...platformEnvironment } = process.env;
+  const inherited = { ...platformEnvironment, ...valid, NODE_ENV: "test", ADMIN_PASSWORD: `example-${marker}` };
   const started = spawnSync(process.execPath, [path.join(projectDir, "scripts/start-host.mjs")], { cwd: isolatedCwd, env: inherited, encoding: "utf8" });
   const output = `${started.stdout}${started.stderr}`;
   assert.notEqual(started.status, 0, "invalid Host security config must reject Host startup before side effects");
