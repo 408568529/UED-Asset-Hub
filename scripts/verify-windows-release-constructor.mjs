@@ -7,15 +7,12 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { verifyFrozenNativeSet } from "./native-artifact-contract.mjs";
+import { calculateNativeSourceInputs, createNativeBuildId, nativeSourceIdentity, verifyFrozenNativeSet } from "./native-artifact-contract.mjs";
 import { calculateReleaseArtifactSet, canonicalJson } from "./release-artifact-tree.mjs";
 import { verifyRelease } from "./windows-deployment-contract.mjs";
 import { assertFrozenNativeSetBinding, assertNpmTreeHasNoSecrets, bindWindowsReleaseInputs, buildContract, assertBuildPlatform, assertPinnedIdentity, compareDependencyEvidence, compareNpmLsGraphs, deterministicBuildId, finalizeWindowsRelease, findDotenvFiles, npmTreeDigest, prepareWindowsRelease, resolveFrozenNativeSetPath, runWindowsNextBuild } from "./windows-release-constructor.mjs";
 
-const sourceCommit = "5932a1dff20b00fb8ee5ba76af08616709e50367";
 const dshCommit = "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e";
-const nativeBuildId = "nb1-5932a1dff20b-c9f4e7ea1bc84836ae7f87ebb3640324";
-const nativeSetDigest = "c9f4e7ea1bc84836ae7f87ebb36403243a25b0ffe68a75e079b9f99ce671ab2e";
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 const compareUtf8 = (left, right) => Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
 const runtimeRelevantNextPrefixes = Object.freeze([".next/standalone/", ".next/static/"]);
@@ -39,7 +36,7 @@ function parseArgs(argv) {
     values[key.slice(2)] = value;
     index += 2;
   }
-  for (const key of ["staging-root", "source-archive", "source-archive-sha256", "node-root", "dsh-source-root", "dsh-provenance-evidence", "run-root", "evidence-dir"]) if (!values[key]) throw new Error(`missing --${key}`);
+  for (const key of ["staging-root", "source-archive", "source-archive-sha256", "source-commit", "native-set-root", "native-build-id", "native-set-digest", "native-set-run-binding-a", "native-set-run-binding-b", "node-root", "dsh-source-root", "dsh-provenance-evidence", "run-root", "evidence-dir"]) if (!values[key]) throw new Error(`missing --${key}`);
   if (!/^[a-f0-9]{64}$/.test(values["source-archive-sha256"])) throw new Error("source archive SHA-256 argument is invalid.");
   return { values, focused };
 }
@@ -345,16 +342,14 @@ async function negativeGates(root, identity) {
 }
 
 async function focusedNativeBinding() {
-  const root = path.join(os.tmpdir(), "ued-r3-native-binding");
-  const exact = resolveFrozenNativeSetPath(root, nativeBuildId);
-  assert.equal(path.basename(exact), nativeBuildId);
-  const native = { set: { digest: nativeSetDigest }, manifest: { assetHubCommit: sourceCommit, sourceArchiveSha256: "01e40784790345e2e8942475802007963faf68b2aa59f6b9a39bbddf9ced7ece" } };
-  assert.equal(assertFrozenNativeSetBinding({ stagingRoot: root, nativeBuildId, nativeSetDigest, nativeSetRoot: exact, native }), exact);
-  assert.throws(() => assertFrozenNativeSetBinding({ stagingRoot: root, nativeBuildId, nativeSetDigest, nativeSetRoot: exact.replace(/nb1-/, "b1-"), native }), /exactly match/);
-  assert.throws(() => assertFrozenNativeSetBinding({ stagingRoot: root, nativeBuildId, nativeSetDigest: "0".repeat(64), nativeSetRoot: exact, native }), /identity/);
-  const similar = path.join(root, "frozen", "native-components", "nb1-000000000000-00000000000000000000000000000000");
-  assert.throws(() => assertFrozenNativeSetBinding({ stagingRoot: root, nativeBuildId, nativeSetDigest, nativeSetRoot: similar, native }), /exactly match/);
-  await assert.rejects(verifyFrozenNativeSet(exact), /ENOENT/);
+  const root = await mkdtemp(path.join(os.tmpdir(), "ued-g032-native-binding-")); const sourceRoot = path.join(root, "source");
+  try {
+    for (const relative of ["native/windows-job-helper/ued_windows_job_helper.cpp", "native/windows-pipe-security-adapter/ued_windows_pipe_security_adapter.cpp", "native/windows-dpapi-credential-helper/ued_windows_dpapi_credential_helper.cpp", "scripts/build-windows-job-helper.mjs", "scripts/build-windows-pipe-security-adapter.mjs", "scripts/build-windows-dpapi-credential-helper.mjs", "scripts/native-build-path-contract.mjs"]) { const file = path.join(sourceRoot, ...relative.split("/")); await mkdir(path.dirname(file), { recursive: true }); await writeFile(file, relative); }
+    const currentCommit = "67121a41dee60b4a44978b6977967e1f1e39f50b"; const inputs = await calculateNativeSourceInputs(sourceRoot); const identity = nativeSourceIdentity(inputs); const toolchain = { buildToolsVersion: "fixture", compilerVersion: "fixture", linkerVersion: "fixture", windowsSdkVersion: "fixture" }; const buildId = createNativeBuildId(identity, toolchain); const exact = resolveFrozenNativeSetPath(root, buildId); const native = { set: { digest: "a".repeat(64) }, manifest: { sourceCommit: currentCommit, sourceArchiveSha256: "b".repeat(64), nativeSourceInputs: inputs, nativeSourceIdentity: identity, nativeBuildId: buildId, toolchain } };
+    assert.equal(await assertFrozenNativeSetBinding({ stagingRoot: root, nativeBuildId: buildId, nativeSetDigest: native.set.digest, nativeSetRoot: exact, native, sourceRoot, sourceCommit: currentCommit, sourceArchiveSha256: "b".repeat(64) }), exact);
+    await assert.rejects(() => assertFrozenNativeSetBinding({ stagingRoot: root, nativeBuildId: buildId, nativeSetDigest: native.set.digest, nativeSetRoot: exact, native, sourceRoot, sourceCommit: "5932a1dff20b00fb8ee5ba76af08616709e50367", sourceArchiveSha256: "b".repeat(64) }));
+    await assert.rejects(() => assertFrozenNativeSetBinding({ stagingRoot: root, nativeBuildId: "nb1-5932a1dff20b-c9f4e7ea1bc84836ae7f87ebb3640324", nativeSetDigest: native.set.digest, nativeSetRoot: exact, native, sourceRoot, sourceCommit: currentCommit, sourceArchiveSha256: "b".repeat(64) }));
+  } finally { await rm(root, { recursive: true, force: true }); }
   process.stdout.write("[UED Release Constructor] focused native path binding: PASS\n");
 }
 
@@ -561,6 +556,7 @@ async function runtimeSmoke(prepared, result) {
 
 async function main() {
   const { values: args, focused } = parseArgs(process.argv.slice(2));
+  const sourceCommit = args["source-commit"];
   assertBuildPlatform();
   const runRoot = path.resolve(args["run-root"]);
   const evidenceDir = path.resolve(args["evidence-dir"]);
@@ -580,7 +576,7 @@ async function main() {
     for (const key of ["ADMIN_PASSWORD", "ADMIN_SESSION_SECRET", "DEEPSEEK_API_KEY", "AGENT_GATEWAY_TOKEN", "DATA_DIR", "AGENT_RUNTIME_DIR", "ASSET_HUB_RUNTIME_DIR", "TRAINING_MEDIA_DIR", "NEXT_PUBLIC_R3_SENTINEL", "NODE_OPTIONS", "HTTPS_PROXY", "NPM_TOKEN", "NODE_AUTH_TOKEN"]) process.env[key] = "DO_NOT_INHERIT";
     await checkpoint("BEFORE_COMMON_INPUTS");
     if (focused.fail === "common-inputs") throw new Error("synthetic focused common-input failure");
-    common = { "staging-root": stagingRoot, "source-archive": path.resolve(args["source-archive"]), "source-commit": sourceCommit, "source-archive-sha256": args["source-archive-sha256"], "source-classification": buildContract.sourceClassification, "dsh-source-root": path.resolve(args["dsh-source-root"]), "dsh-version": "0.1.1-rc.2", "dsh-commit": dshCommit, "dsh-provenance-evidence": path.resolve(args["dsh-provenance-evidence"]), ...(args["dsh-acquisition-artifact"] ? { "dsh-acquisition-artifact": path.resolve(args["dsh-acquisition-artifact"]) } : {}), "native-set-root": resolveFrozenNativeSetPath(stagingRoot, nativeBuildId), "native-build-id": nativeBuildId, "native-set-digest": nativeSetDigest, "node-root": path.resolve(args["node-root"]) };
+    common = { "staging-root": stagingRoot, "source-archive": path.resolve(args["source-archive"]), "source-commit": sourceCommit, "source-archive-sha256": args["source-archive-sha256"], "source-classification": buildContract.sourceClassification, "dsh-source-root": path.resolve(args["dsh-source-root"]), "dsh-version": "0.1.1-rc.2", "dsh-commit": dshCommit, "dsh-provenance-evidence": path.resolve(args["dsh-provenance-evidence"]), ...(args["dsh-acquisition-artifact"] ? { "dsh-acquisition-artifact": path.resolve(args["dsh-acquisition-artifact"]) } : {}), "native-set-root": path.resolve(args["native-set-root"]), "native-build-id": args["native-build-id"], "native-set-digest": args["native-set-digest"], "node-root": path.resolve(args["node-root"]) };
     await checkpoint("AFTER_COMMON_INPUTS");
     await checkpoint("BEFORE_EVIDENCE_OBJECT");
     if (focused.fail === "evidence-object") throw new Error("synthetic focused evidence-object failure");
@@ -606,9 +602,9 @@ async function main() {
     };
     const captureA = focused.dependencyStop ? { onNpmTree: (graph) => captureGraph("a", graph) } : {};
     const captureB = focused.dependencyStop ? { onNpmTree: (graph) => captureGraph("b", graph) } : {};
-    buildA = await prepareWindowsRelease({ ...common, "creation-run-id": "build-a", "temp-dir": path.join(runRoot, "build-a", "temp"), "output-dir": path.join(runRoot, "build-a", "output") }, captureA);
+    buildA = await prepareWindowsRelease({ ...common, "creation-run-id": "build-a", "native-set-run-binding": path.resolve(args["native-set-run-binding-a"]), "temp-dir": path.join(runRoot, "build-a", "temp"), "output-dir": path.join(runRoot, "build-a", "output") }, captureA);
     await bindWindowsReleaseInputs(buildA);
-    buildB = await prepareWindowsRelease({ ...common, "creation-run-id": "build-b", "temp-dir": path.join(runRoot, "build-b", "temp"), "output-dir": path.join(runRoot, "build-b", "output") }, captureB);
+    buildB = await prepareWindowsRelease({ ...common, "creation-run-id": "build-b", "native-set-run-binding": path.resolve(args["native-set-run-binding-b"]), "temp-dir": path.join(runRoot, "build-b", "temp"), "output-dir": path.join(runRoot, "build-b", "output") }, captureB);
     await bindWindowsReleaseInputs(buildB);
     same(buildA.source, buildB.source, "source member manifest");
     same(buildA.toolchain, buildB.toolchain, "toolchain identity");

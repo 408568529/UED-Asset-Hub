@@ -4,7 +4,7 @@ import { access, cp, lstat, mkdir, readFile, readdir, rm, writeFile } from "node
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { verifyFrozenNativeSet } from "./native-artifact-contract.mjs";
+import { calculateNativeSourceInputs, createNativeBuildId, nativeSourceIdentity, validateNativeSetRunBindingFile, verifyFrozenNativeSet } from "./native-artifact-contract.mjs";
 import { calculateReleaseArtifactSet, canonicalJson } from "./release-artifact-tree.mjs";
 import { createDeploymentManifest, preflightDeploymentManifest, writeDeploymentManifest } from "./windows-deployment-contract.mjs";
 import { componentPaths, dshPayloadFiles, nativePayloadMap, releasePayloadSchemaVersion, runtimeScripts, servicePayloadFiles } from "./windows-release-payload.mjs";
@@ -32,14 +32,8 @@ export const sourceClassificationPolicy = Object.freeze({
   COMMITTED_CLEAN_SOURCE: Object.freeze({ productionEligible: true, purpose: "clean-release", requiresSnapshotManifest: true }),
 });
 
-const frozenNativeBinding = Object.freeze({
-  buildId: "nb1-5932a1dff20b-c9f4e7ea1bc84836ae7f87ebb3640324",
-  setDigest: "c9f4e7ea1bc84836ae7f87ebb36403243a25b0ffe68a75e079b9f99ce671ab2e",
-  assetHubCommit: "5932a1dff20b00fb8ee5ba76af08616709e50367",
-  sourceArchiveSha256: "01e40784790345e2e8942475802007963faf68b2aa59f6b9a39bbddf9ced7ece",
-});
 
-const required = ["staging-root", "creation-run-id", "source-archive", "source-commit", "source-archive-sha256", "source-classification", "dsh-source-root", "dsh-version", "dsh-commit", "dsh-provenance-evidence", "native-set-root", "native-build-id", "native-set-digest", "node-root", "output-dir", "temp-dir"];
+const required = ["staging-root", "creation-run-id", "source-archive", "source-commit", "source-archive-sha256", "source-classification", "dsh-source-root", "dsh-version", "dsh-commit", "dsh-provenance-evidence", "native-set-root", "native-build-id", "native-set-digest", "native-set-run-binding", "node-root", "output-dir", "temp-dir"];
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const hashFile = async (file) => sha256(await readFile(file));
 const compareUtf8 = (left, right) => Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
@@ -124,7 +118,7 @@ function assertContained(root, candidate, label) {
 }
 
 export function resolveFrozenNativeSetPath(stagingRoot, nativeBuildId) {
-  if (nativeBuildId !== frozenNativeBinding.buildId) throw new Error("native build ID does not match the frozen binding.");
+  if (!/^nb2-[a-f0-9]{16}-[a-f0-9]{16}-[a-f0-9]{16}$/.test(nativeBuildId)) throw new Error("native build ID is invalid.");
   const root = path.resolve(stagingRoot);
   const directory = path.resolve(root, "frozen", "native-components", nativeBuildId);
   assertContained(root, directory, "Native Set");
@@ -132,10 +126,12 @@ export function resolveFrozenNativeSetPath(stagingRoot, nativeBuildId) {
   return directory;
 }
 
-export function assertFrozenNativeSetBinding({ stagingRoot, nativeBuildId, nativeSetDigest, nativeSetRoot, native = null, sourceClassification = buildContract.sourceClassification }) {
+export async function assertFrozenNativeSetBinding({ stagingRoot, nativeBuildId, nativeSetDigest, nativeSetRoot, native, sourceRoot, sourceCommit, sourceArchiveSha256 }) {
   const directory = resolveFrozenNativeSetPath(stagingRoot, nativeBuildId);
   if (path.resolve(nativeSetRoot) !== directory) throw new Error("native set root does not exactly match the frozen native build ID binding.");
-  if (nativeSetDigest !== frozenNativeBinding.setDigest || (native && (native.set.digest !== frozenNativeBinding.setDigest || native.manifest.assetHubCommit !== frozenNativeBinding.assetHubCommit || (sourceClassification === buildContract.sourceClassification && native.manifest.sourceArchiveSha256 !== frozenNativeBinding.sourceArchiveSha256)))) throw new Error("frozen native set identity or authoritative binding mismatch.");
+  if (!native || !sourceRoot || !sourceCommit || !sourceArchiveSha256) throw new Error("native set provenance inputs are incomplete.");
+  const inputs = await calculateNativeSourceInputs(sourceRoot); const identity = nativeSourceIdentity(inputs);
+  if (nativeSetDigest !== native.set.digest || native.manifest.sourceCommit !== sourceCommit || native.manifest.sourceArchiveSha256 !== sourceArchiveSha256 || native.manifest.nativeSourceIdentity !== identity || canonicalJson(native.manifest.nativeSourceInputs) !== canonicalJson(inputs) || native.manifest.nativeBuildId !== nativeBuildId || nativeBuildId !== createNativeBuildId(identity, native.manifest.toolchain)) throw new Error("native set identity or authoritative binding mismatch.");
   return directory;
 }
 
@@ -426,7 +422,7 @@ async function copyRequired(source, destination, files) {
 
 function validateValues(values) {
   for (const key of required) if (!values[key]) throw new Error(`missing --${key}`);
-  if (!/^[a-f0-9]{40}$/.test(values["source-commit"]) || !/^[a-f0-9]{64}$/.test(values["source-archive-sha256"]) || !/^[a-f0-9]{40}$/.test(values["dsh-commit"]) || !/^[a-f0-9]{64}$/.test(values["native-set-digest"]) || !/^nb1-[a-f0-9]{12}-[a-f0-9]{32}$/.test(values["native-build-id"])) throw new Error("constructor identity argument is invalid.");
+  if (!/^[a-f0-9]{40}$/.test(values["source-commit"]) || !/^[a-f0-9]{64}$/.test(values["source-archive-sha256"]) || !/^[a-f0-9]{40}$/.test(values["dsh-commit"]) || !/^[a-f0-9]{64}$/.test(values["native-set-digest"]) || !/^nb2-[a-f0-9]{16}-[a-f0-9]{16}-[a-f0-9]{16}$/.test(values["native-build-id"])) throw new Error("constructor identity argument is invalid.");
   validateSourceClassificationInput(values);
 }
 
@@ -597,9 +593,10 @@ export async function finalizeWindowsRelease(prepared) {
 
 export async function bindWindowsReleaseInputs(prepared) {
   const { values } = prepared;
-  const nativeRoot = assertFrozenNativeSetBinding({ stagingRoot: values["staging-root"], nativeBuildId: values["native-build-id"], nativeSetDigest: values["native-set-digest"], nativeSetRoot: values["native-set-root"], sourceClassification: values["source-classification"] });
+  const nativeRoot = resolveFrozenNativeSetPath(values["staging-root"], values["native-build-id"]);
   const native = await verifyFrozenNativeSet(nativeRoot);
-  assertFrozenNativeSetBinding({ stagingRoot: values["staging-root"], nativeBuildId: values["native-build-id"], nativeSetDigest: values["native-set-digest"], nativeSetRoot: nativeRoot, native, sourceClassification: values["source-classification"] });
+  await assertFrozenNativeSetBinding({ stagingRoot: values["staging-root"], nativeBuildId: values["native-build-id"], nativeSetDigest: values["native-set-digest"], nativeSetRoot: nativeRoot, native, sourceRoot: prepared.sourceRoot, sourceCommit: values["source-commit"], sourceArchiveSha256: values["source-archive-sha256"] });
+  await validateNativeSetRunBindingFile({ bindingPath: values["native-set-run-binding"], runId: values["creation-run-id"], sourceCommit: values["source-commit"], sourceArchiveSha256: values["source-archive-sha256"], nativeSetManifestSha256: await hashFile(path.join(nativeRoot, "native-components.manifest.json")), nativeSourceIdentity: native.manifest.nativeSourceIdentity, nativeBuildId: values["native-build-id"] });
   const dshRoot = path.resolve(values["dsh-source-root"]);
   const dshVersion = JSON.parse(await readFile(path.join(dshRoot, "package.json"), "utf8")).version;
   const dshContract = JSON.parse(await readFile(path.join(prepared.workspace, "agent-integration", "dsh", "version.json"), "utf8"));
