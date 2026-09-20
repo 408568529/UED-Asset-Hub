@@ -10,9 +10,9 @@ export const nativeSetMembers = [
   "dpapi-helper/ued-windows-dpapi-credential-helper.exe", "dpapi-helper/ued-windows-dpapi-credential-helper.manifest.json",
 ];
 export const nativeComponentDefinitions = Object.freeze([
-  { componentName: "job-helper", executableRelativePath: "job-helper/ued-windows-job-helper.exe", integrityManifestRelativePath: "job-helper/ued-windows-job-helper.manifest.json" },
-  { componentName: "pipe-security-adapter", executableRelativePath: "pipe-security-adapter/ued-windows-pipe-security-adapter.exe", integrityManifestRelativePath: "pipe-security-adapter/ued-windows-pipe-security-adapter.manifest.json" },
-  { componentName: "dpapi-helper", executableRelativePath: "dpapi-helper/ued-windows-dpapi-credential-helper.exe", integrityManifestRelativePath: "dpapi-helper/ued-windows-dpapi-credential-helper.manifest.json" },
+  { componentName: "job-helper", developerOutputDirectory: "windows-job-helper", executableRelativePath: "job-helper/ued-windows-job-helper.exe", integrityManifestRelativePath: "job-helper/ued-windows-job-helper.manifest.json", sourceRelativePath: "native/windows-job-helper/ued_windows_job_helper.cpp", buildScriptRelativePath: "scripts/build-windows-job-helper.mjs" },
+  { componentName: "pipe-security-adapter", developerOutputDirectory: "windows-pipe-security-adapter", executableRelativePath: "pipe-security-adapter/ued-windows-pipe-security-adapter.exe", integrityManifestRelativePath: "pipe-security-adapter/ued-windows-pipe-security-adapter.manifest.json", sourceRelativePath: "native/windows-pipe-security-adapter/ued_windows_pipe_security_adapter.cpp", buildScriptRelativePath: "scripts/build-windows-pipe-security-adapter.mjs" },
+  { componentName: "dpapi-helper", developerOutputDirectory: "windows-dpapi-credential-helper", executableRelativePath: "dpapi-helper/ued-windows-dpapi-credential-helper.exe", integrityManifestRelativePath: "dpapi-helper/ued-windows-dpapi-credential-helper.manifest.json", sourceRelativePath: "native/windows-dpapi-credential-helper/ued_windows_dpapi_credential_helper.cpp", buildScriptRelativePath: "scripts/build-windows-dpapi-credential-helper.mjs" },
 ]);
 const componentNames = nativeComponentDefinitions.map(({ componentName }) => componentName);
 export const nativeSourceInputs = Object.freeze({
@@ -42,6 +42,12 @@ function canonicalToolchain(toolchain) {
   return toolchain;
 }
 
+export function getNativeComponentDefinition(componentName) {
+  const definition = nativeComponentDefinitions.find((candidate) => candidate.componentName === componentName);
+  if (!definition) throw new Error("native component identity is invalid.");
+  return definition;
+}
+
 export function canonicalManifestBytes(manifest) { return Buffer.from(`${canonicalJson(manifest)}\n`, "utf8"); }
 export function commandFingerprint(model) { return digest(canonicalJson(model)); }
 export function validateComponentManifest(manifest) {
@@ -53,6 +59,63 @@ export function validateComponentManifest(manifest) {
   exactKeys(manifest.binary, ["fileName", "imports", "peMachine", "runtimeDependencyClassification", "sha256", "size"], "component binary"); if (typeof manifest.binary.fileName !== "string" || !Number.isSafeInteger(manifest.binary.size) || manifest.binary.size < 0 || manifest.binary.peMachine !== "AMD64" || !["A", "B", "C"].includes(manifest.binary.runtimeDependencyClassification)) throw new Error("component binary is invalid."); sortedStrings(manifest.binary.imports, "component binary imports"); hash(manifest.binary.sha256, "binary sha256"); if (manifest.sha256 !== manifest.binary.sha256) throw new Error("component top-level sha256 must equal binary sha256.");
   exactKeys(manifest.verification, ["componentLocalGateVersion", "deferredChecks", "passedChecks"], "component verification"); for (const key of ["passedChecks", "deferredChecks"]) { if (!Array.isArray(manifest.verification[key]) || [...manifest.verification[key]].sort(compareUtf8).some((value, index) => value !== manifest.verification[key][index]) || manifest.verification[key].some((value) => typeof value !== "string" || !/^[a-z0-9.-]+$/u.test(value))) throw new Error(`component ${key} is invalid.`); }
   return manifest;
+}
+
+function componentOutputDirectory(outputDir, definition) {
+  if (typeof outputDir !== "string" || !outputDir || path.basename(path.resolve(outputDir)) !== definition.componentName) throw new Error("native component output directory is not canonical.");
+  return path.resolve(outputDir);
+}
+
+export async function createNativeComponentManifest({ definition, outputDir, sourceRoot, assetHubCommit, toolchain }) {
+  if (!nativeComponentDefinitions.includes(definition)) throw new Error("native component definition is not canonical.");
+  commit(assetHubCommit);
+  exactKeys(toolchain, ["compilerVersion", "linkerVersion", "windowsSdkVersion"], "component toolchain input");
+  for (const key of Object.keys(toolchain)) string(toolchain[key], `component toolchain input ${key}`);
+  const directory = componentOutputDirectory(outputDir, definition);
+  const executablePath = path.join(directory, path.basename(definition.executableRelativePath));
+  const executable = await readFile(executablePath);
+  const details = await lstat(executablePath);
+  if (!details.isFile() || details.isSymbolicLink()) throw new Error("native component executable is not a regular file.");
+  const sourcePath = path.join(sourceRoot, ...definition.sourceRelativePath.split("/"));
+  const buildScriptPath = path.join(sourceRoot, ...definition.buildScriptRelativePath.split("/"));
+  const [source, buildScript] = await Promise.all([readFile(sourcePath), readFile(buildScriptPath)]);
+  const binary = { fileName: path.basename(definition.executableRelativePath), imports: [], peMachine: "AMD64", runtimeDependencyClassification: "A", sha256: digest(executable), size: details.size };
+  return validateComponentManifest({
+    manifestSchemaVersion: 1,
+    version: 1,
+    componentName: definition.componentName,
+    componentType: "windows-native-helper",
+    assetHubCommit,
+    architecture: "x64",
+    sha256: binary.sha256,
+    source: { relativePath: definition.sourceRelativePath, sha256: digest(source) },
+    buildScript: { relativePath: definition.buildScriptRelativePath, sha256: digest(buildScript) },
+    toolchain: { compilerName: "cl.exe", compilerVersion: toolchain.compilerVersion, linkerVersion: toolchain.linkerVersion, windowsSdkVersion: toolchain.windowsSdkVersion },
+    build: { commandFingerprint: commandFingerprint({ componentName: definition.componentName, configuration: "release-native", executableRelativePath: definition.executableRelativePath }), configuration: "release-native" },
+    binary,
+    verification: { componentLocalGateVersion: "native-release-v1", passedChecks: ["binary.identity", "canonical.output"], deferredChecks: ["service-context"] },
+  });
+}
+
+export async function writeNativeComponentManifest({ definition, outputDir, sourceRoot, assetHubCommit, toolchain }) {
+  const directory = componentOutputDirectory(outputDir, definition);
+  const manifest = await createNativeComponentManifest({ definition, outputDir: directory, sourceRoot, assetHubCommit, toolchain });
+  const target = path.join(directory, path.basename(definition.integrityManifestRelativePath));
+  await writeCanonicalManifest(target, manifest);
+  return { manifest, manifestPath: target, manifestSha256: digest(await readFile(target)) };
+}
+
+export async function validateNativeComponentOutput({ definition, outputDir }) {
+  const directory = componentOutputDirectory(outputDir, definition);
+  const names = (await readdir(directory, { withFileTypes: true })).map((entry) => entry.isFile() ? entry.name : `${entry.name}::<unsupported>`).sort(compareUtf8);
+  const expected = [path.basename(definition.executableRelativePath), path.basename(definition.integrityManifestRelativePath)].sort(compareUtf8);
+  if (canonicalJson(names) !== canonicalJson(expected)) throw new Error("native component output exact set is invalid.");
+  const executablePath = path.join(directory, expected.find((name) => name.endsWith(".exe")));
+  const details = await lstat(executablePath);
+  if (!details.isFile() || details.isSymbolicLink() || details.nlink > 1) throw new Error("native component executable is not a regular unlinked file.");
+  const manifest = validateComponentManifest(JSON.parse(await readFile(path.join(directory, path.basename(definition.integrityManifestRelativePath)), "utf8")));
+  if (manifest.componentName !== definition.componentName || manifest.binary.fileName !== path.basename(definition.executableRelativePath) || manifest.binary.size !== details.size || manifest.binary.sha256 !== digest(await readFile(executablePath))) throw new Error("native component output binding is invalid.");
+  return { definition, manifest };
 }
 
 export async function calculateNativeSourceInputs(sourceRoot) {

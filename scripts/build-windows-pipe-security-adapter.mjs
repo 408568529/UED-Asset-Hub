@@ -4,10 +4,12 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { prepareReleaseNativeDirectories, resolveNativeBuildPlan } from "./native-build-path-contract.mjs";
+import { getNativeComponentDefinition, writeNativeComponentManifest } from "./native-artifact-contract.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const source = path.join(root, "native", "windows-pipe-security-adapter", "ued_windows_pipe_security_adapter.cpp");
-const plan = resolveNativeBuildPlan({ argv: process.argv.slice(2), projectRoot: root, componentDirectory: "windows-pipe-security-adapter", executableName: "ued-windows-pipe-security-adapter.exe", protectedRoots: [root] });
+const component = getNativeComponentDefinition("pipe-security-adapter");
+const source = path.join(root, ...component.sourceRelativePath.split("/"));
+const plan = resolveNativeBuildPlan({ argv: process.argv.slice(2), projectRoot: root, componentDefinition: component, protectedRoots: [root] });
 
 if (process.platform !== "win32" || process.arch !== "x64") {
   console.log("[UED Agent] Windows Pipe Security Adapter build: NOT RUN (requires Windows x64 MSVC).");
@@ -21,5 +23,6 @@ const result = spawnSync(compiler, ["/nologo", "/std:c++17", "/EHsc", "/O2", "/W
 if (result.status !== 0) process.exit(result.status || 1);
 const executable = await readFile(plan.executable);
 const sha256 = createHash("sha256").update(executable).digest("hex");
-if (plan.mode === "developer-source-output") { await writeFile(path.join(plan.outputDir, "ued-windows-pipe-security-adapter.manifest.json"), `${JSON.stringify({ version: 1, architecture: "x64", sha256 }, null, 2)}\n`, "utf8"); await rm(plan.tempDir, { recursive: true, force: true }); }
+if (plan.mode === "release-native") await writeNativeComponentManifest({ definition: component, outputDir: plan.outputDir, sourceRoot: root, assetHubCommit: plan.assetHubCommit, toolchain: plan.componentToolchain });
+else { await writeFile(path.join(plan.outputDir, "ued-windows-pipe-security-adapter.manifest.json"), `${JSON.stringify({ version: 1, architecture: "x64", sha256 }, null, 2)}\n`, "utf8"); await rm(plan.tempDir, { recursive: true, force: true }); }
 console.log(`[UED Agent] Built Windows Pipe Security Adapter: ${plan.executable}`);
