@@ -9,7 +9,12 @@ export const nativeSetMembers = [
   "pipe-security-adapter/ued-windows-pipe-security-adapter.exe", "pipe-security-adapter/ued-windows-pipe-security-adapter.manifest.json",
   "dpapi-helper/ued-windows-dpapi-credential-helper.exe", "dpapi-helper/ued-windows-dpapi-credential-helper.manifest.json",
 ];
-const componentNames = ["job-helper", "pipe-security-adapter", "dpapi-helper"];
+export const nativeComponentDefinitions = Object.freeze([
+  { componentName: "job-helper", executableRelativePath: "job-helper/ued-windows-job-helper.exe", integrityManifestRelativePath: "job-helper/ued-windows-job-helper.manifest.json" },
+  { componentName: "pipe-security-adapter", executableRelativePath: "pipe-security-adapter/ued-windows-pipe-security-adapter.exe", integrityManifestRelativePath: "pipe-security-adapter/ued-windows-pipe-security-adapter.manifest.json" },
+  { componentName: "dpapi-helper", executableRelativePath: "dpapi-helper/ued-windows-dpapi-credential-helper.exe", integrityManifestRelativePath: "dpapi-helper/ued-windows-dpapi-credential-helper.manifest.json" },
+]);
+const componentNames = nativeComponentDefinitions.map(({ componentName }) => componentName);
 export const nativeSourceInputs = Object.freeze({
   "job-helper": ["native/windows-job-helper/ued_windows_job_helper.cpp", "scripts/build-windows-job-helper.mjs", "scripts/native-build-path-contract.mjs"],
   "pipe-security-adapter": ["native/windows-pipe-security-adapter/ued_windows_pipe_security_adapter.cpp", "scripts/build-windows-pipe-security-adapter.mjs", "scripts/native-build-path-contract.mjs"],
@@ -20,11 +25,22 @@ const utf8 = (value) => Buffer.from(value, "utf8");
 const compareUtf8 = (left, right) => Buffer.compare(utf8(left), utf8(right));
 
 function exactKeys(value, keys, label) { const actual = Object.keys(value || {}).sort(); if (actual.length !== keys.length || actual.some((key, index) => key !== [...keys].sort()[index])) throw new Error(`${label} has unknown or missing fields.`); }
+function onlyKeys(value, keys, label) { if (!value || typeof value !== "object" || Object.keys(value).some((key) => !keys.includes(key))) throw new Error(`${label} has unknown fields.`); }
 function hash(value, label) { if (!/^[a-f0-9]{64}$/.test(value || "")) throw new Error(`${label} must be a lowercase SHA-256.`); }
 function commit(value) { if (!/^[a-f0-9]{40}$/.test(value || "")) throw new Error("assetHubCommit must be a lowercase full commit."); }
 function logicalPath(value, label) { const normalized = normalizeArtifactPath(value); if (normalized !== value || value !== value.normalize("NFC")) throw new Error(`${label} must be normalized NFC slash path.`); return value; }
 function string(value, label) { if (typeof value !== "string" || !value) throw new Error(`${label} must be a non-empty string.`); }
 function sortedStrings(values, label) { if (!Array.isArray(values) || values.some((value) => typeof value !== "string") || [...values].sort(compareUtf8).some((value, index) => value !== values[index])) throw new Error(`${label} must be sorted strings.`); }
+function exactNativeSourceInputs(files) {
+  const expected = [...new Set(Object.values(nativeSourceInputs).flat())].sort(compareUtf8);
+  const actual = (files || []).map((file) => file?.relativePath).sort(compareUtf8);
+  if (canonicalJson(actual) !== canonicalJson(expected)) throw new Error("native source input set does not match the formal native source contract.");
+}
+function canonicalToolchain(toolchain) {
+  exactKeys(toolchain, ["buildToolsVersion", "compilerVersion", "linkerVersion", "windowsSdkVersion"], "native set toolchain");
+  for (const key of Object.keys(toolchain)) string(toolchain[key], `native set toolchain ${key}`);
+  return toolchain;
+}
 
 export function canonicalManifestBytes(manifest) { return Buffer.from(`${canonicalJson(manifest)}\n`, "utf8"); }
 export function commandFingerprint(model) { return digest(canonicalJson(model)); }
@@ -94,19 +110,76 @@ export async function inspectNativeMemberSet(root) {
   entries.sort((left, right) => compareUtf8(left.path, right.path));
   return entries;
 }
+export async function inspectNativeOutputSet(root) {
+  const names = [];
+  async function visit(relative = "") {
+    for (const entry of await readdir(path.join(root, relative), { withFileTypes: true })) {
+      const next = relative ? `${relative}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) await visit(next);
+      else if (entry.isFile()) names.push(next);
+      else throw new Error("native output set contains an unsupported entry.");
+    }
+  }
+  await visit();
+  if (canonicalJson(names.sort(compareUtf8)) !== canonicalJson([...nativeSetMembers].sort(compareUtf8))) throw new Error("native output set is missing, extra, or contains duplicate members.");
+  const files = await inspectNativeMemberSet(root);
+  const bindings = [];
+  for (const definition of nativeComponentDefinitions) {
+    const executable = files.find((file) => file.path === definition.executableRelativePath);
+    const integrity = files.find((file) => file.path === definition.integrityManifestRelativePath);
+    if (!executable || !integrity) throw new Error("native output exact set is incomplete.");
+    const helper = validateComponentManifest(JSON.parse(await readFile(path.join(root, ...definition.integrityManifestRelativePath.split("/")), "utf8")));
+    if (helper.componentName !== definition.componentName || helper.architecture !== "x64" || helper.binary.fileName !== path.basename(definition.executableRelativePath) || helper.binary.sha256 !== executable.sha256 || helper.binary.size !== executable.size) throw new Error("native output component binding is invalid.");
+    bindings.push({ componentName: definition.componentName, executableRelativePath: definition.executableRelativePath, executableSha256: executable.sha256, executableSize: executable.size, integrityManifestRelativePath: definition.integrityManifestRelativePath, integrityManifestSha256: integrity.sha256 });
+  }
+  return { files, components: bindings.sort((left, right) => compareUtf8(left.componentName, right.componentName)) };
+}
 export async function calculateNativeSet(root) {
   const files = await inspectNativeMemberSet(root);
   const bytes = Buffer.concat([Buffer.from("UED-ASSET-HUB-NATIVE-SET-V1\n", "utf8"), ...files.map((file) => Buffer.from(`${Buffer.byteLength(file.path, "utf8")}\t${file.size}\t${file.sha256}\t${file.path}\n`, "utf8"))]);
   return { algorithm: nativeSetDigestAlgorithm, digest: digest(bytes), files };
 }
+export async function createNativeSetManifestV2({ sourceCommit, sourceArchiveSha256, nativeSourceInputs: inputFiles, sourceRoot, toolchain, configuration = "release-native", nativeOutputRoot }) {
+  onlyKeys(arguments[0], ["configuration", "nativeOutputRoot", "nativeSourceInputs", "sourceArchiveSha256", "sourceCommit", "sourceRoot", "toolchain"], "native set generator input");
+  if ((inputFiles == null) === (sourceRoot == null)) throw new Error("native set generator requires exactly one native source authority.");
+  commit(sourceCommit); hash(sourceArchiveSha256, "native set generator source archive SHA-256");
+  string(configuration, "native set generator build configuration");
+  if (configuration !== "release-native") throw new Error("native set generator build configuration is invalid.");
+  canonicalToolchain(toolchain);
+  if (typeof nativeOutputRoot !== "string" || !nativeOutputRoot) throw new Error("native set generator native output root is invalid.");
+  const files = inputFiles == null ? await calculateNativeSourceInputs(sourceRoot) : structuredClone(inputFiles);
+  const identity = nativeSourceIdentity(files);
+  exactNativeSourceInputs(files);
+  const outputs = await inspectNativeOutputSet(nativeOutputRoot);
+  for (const binding of outputs.components) {
+    const helper = validateComponentManifest(JSON.parse(await readFile(path.join(nativeOutputRoot, ...binding.integrityManifestRelativePath.split("/")), "utf8")));
+    if (helper.assetHubCommit !== sourceCommit || helper.build.configuration !== configuration || helper.toolchain.compilerVersion !== toolchain.compilerVersion || helper.toolchain.linkerVersion !== toolchain.linkerVersion || helper.toolchain.windowsSdkVersion !== toolchain.windowsSdkVersion) throw new Error("native output provenance does not match formal generator inputs.");
+  }
+  const bytes = Buffer.concat([Buffer.from("UED-ASSET-HUB-NATIVE-SET-V1\n", "utf8"), ...outputs.files.map((file) => Buffer.from(`${Buffer.byteLength(file.path, "utf8")}\t${file.size}\t${file.sha256}\t${file.path}\n`, "utf8"))]);
+  const manifest = {
+    manifestSchemaVersion: 2,
+    nativeArtifactSetSchemaVersion: 2,
+    sourceCommit,
+    sourceArchiveSha256,
+    nativeSourceInputs: files.sort((left, right) => compareUtf8(left.relativePath, right.relativePath)),
+    nativeSourceIdentity: identity,
+    architecture: "x64",
+    toolchain: structuredClone(toolchain),
+    nativeBuildId: createNativeBuildId(identity, toolchain, configuration),
+    components: outputs.components,
+    nativeSetDigestAlgorithm,
+    nativeSetDigest: digest(bytes),
+  };
+  return validateNativeSetManifest(manifest);
+}
 export function validateNativeSetManifest(manifest) {
   exactKeys(manifest, ["architecture", "components", "manifestSchemaVersion", "nativeArtifactSetSchemaVersion", "nativeBuildId", "nativeSetDigest", "nativeSetDigestAlgorithm", "nativeSourceIdentity", "nativeSourceInputs", "sourceArchiveSha256", "sourceCommit", "toolchain"], "native set manifest");
   if (manifest.manifestSchemaVersion !== 2 || manifest.nativeArtifactSetSchemaVersion !== 2 || manifest.architecture !== "x64" || manifest.nativeSetDigestAlgorithm !== nativeSetDigestAlgorithm) throw new Error("native set manifest identity is invalid."); commit(manifest.sourceCommit); hash(manifest.sourceArchiveSha256, "source archive sha256"); hash(manifest.nativeSetDigest, "native set digest"); hash(manifest.nativeSourceIdentity, "native source identity");
   if (nativeSourceIdentity(manifest.nativeSourceInputs) !== manifest.nativeSourceIdentity) throw new Error("native source identity mismatch.");
-  exactKeys(manifest.toolchain, ["buildToolsVersion", "compilerVersion", "linkerVersion", "windowsSdkVersion"], "native set toolchain"); for (const key of Object.keys(manifest.toolchain)) string(manifest.toolchain[key], `native set toolchain ${key}`);
+  exactNativeSourceInputs(manifest.nativeSourceInputs); canonicalToolchain(manifest.toolchain);
   if (manifest.nativeBuildId !== createNativeBuildId(manifest.nativeSourceIdentity, manifest.toolchain)) throw new Error("native build ID does not match native source and toolchain identity.");
   if (!Array.isArray(manifest.components) || manifest.components.length !== 3) throw new Error("native components must contain exactly three entries."); const names = manifest.components.map((component) => component.componentName); if (canonicalJson(names) !== canonicalJson([...componentNames].sort(compareUtf8))) throw new Error("native components are invalid.");
-  for (const component of manifest.components) { exactKeys(component, ["componentName", "executableRelativePath", "executableSha256", "executableSize", "integrityManifestRelativePath", "integrityManifestSha256"], "native component binding"); logicalPath(component.executableRelativePath, "native executable path"); logicalPath(component.integrityManifestRelativePath, "native manifest path"); hash(component.executableSha256, "native executable sha256"); hash(component.integrityManifestSha256, "native manifest sha256"); if (!Number.isSafeInteger(component.executableSize) || component.executableSize < 0) throw new Error("native executable size is invalid."); }
+  for (const component of manifest.components) { exactKeys(component, ["componentName", "executableRelativePath", "executableSha256", "executableSize", "integrityManifestRelativePath", "integrityManifestSha256"], "native component binding"); const definition = nativeComponentDefinitions.find((item) => item.componentName === component.componentName); if (!definition || component.executableRelativePath !== definition.executableRelativePath || component.integrityManifestRelativePath !== definition.integrityManifestRelativePath) throw new Error("native component role binding is invalid."); logicalPath(component.executableRelativePath, "native executable path"); logicalPath(component.integrityManifestRelativePath, "native manifest path"); hash(component.executableSha256, "native executable sha256"); hash(component.integrityManifestSha256, "native manifest sha256"); if (!Number.isSafeInteger(component.executableSize) || component.executableSize < 0) throw new Error("native executable size is invalid."); }
   return manifest;
 }
 export async function writeCanonicalManifest(file, manifest) { const bytes = canonicalManifestBytes(manifest); await writeFile(file, bytes); return digest(bytes); }
