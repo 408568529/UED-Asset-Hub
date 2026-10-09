@@ -17,7 +17,7 @@ async function testWinSwTemplate() {
   assert.match(template, /<startarguments>/, "WinSW start uses startarguments");
   assert.match(template, /<stoparguments>/, "WinSW stop uses stoparguments");
   assert.doesNotMatch(template, /<arguments>/, "WinSW does not share start and stop arguments");
-  assert.match(template, /node\\22\.23\.2\\node\.exe/, "WinSW pins Node 22.23.2");
+  assert.match(template, /node\\22\.23\.3\\node\.exe/, "WinSW pins Node 22.23.3");
   assert.match(template, /scripts\\start-host\.mjs/, "WinSW starts the Host directly");
   assert.match(template, /windows-managed-shutdown-client\.mjs 90000/, "WinSW uses the managed shutdown client");
   assert.match(template, /<workingdirectory>\{\{UED_ROOT\}\}\\current<\/workingdirectory>/, "WinSW working directory is current");
@@ -25,7 +25,10 @@ async function testWinSwTemplate() {
   assert.match(template, /restart" delay="30 sec"[\s\S]*restart" delay="60 sec"[\s\S]*restart" delay="5 min"[\s\S]*none/, "restart exhaustion stops after three failures");
   assert.match(template, /<resetfailure>1 hour<\/resetfailure>/, "stable runtime resets failure count");
   assert.match(template, /UED_WINDOWS_SERVICE_MODE" value="true"/, "service mode is explicit");
-  assert.match(template, /UED_WINSW_EXECUTABLE" value="\{\{UED_ROOT\}\}\\service\\UEDAssetHub\.exe"/, "Host verifies the expected wrapper executable");
+  assert.match(template, /<id>\{\{UED_SERVICE_NAME\}\}<\/id>/, "WinSW service identity comes from the single rendered authority");
+  assert.match(template, /UED_WINDOWS_SERVICE_NAME" value="\{\{UED_SERVICE_NAME\}\}"/, "Host receives the rendered service identity");
+  assert.match(template, /UED_B4B_RUN_ID" value="\{\{UED_B4B_RUN_ID\}\}"/, "B4B run identity is rendered explicitly");
+  assert.match(template, /UED_WINSW_EXECUTABLE" value="\{\{UED_ROOT\}\}\\service\\\{\{UED_SERVICE_NAME\}\}\.exe"/, "Host verifies the expected wrapper executable");
   assert.match(template, /HOST_BIND_HOST" value="127\.0\.0\.1"/, "service edge remains loopback only");
   assert.doesNotMatch(template, /ADMIN_PASSWORD|DEEPSEEK_API_KEY|ADMIN_SESSION_SECRET|AGENT_GATEWAY_TOKEN|RUNTIME_CONTROL_TOKEN|PRIVATE KEY/i, "template has no secrets");
   assert.doesNotMatch(template, /npm\.cmd|pnpm\.cmd|cmd\.exe|powershell/i, "template never wraps production commands in a shell");
@@ -68,9 +71,14 @@ async function testServiceShutdownBoundary() {
     readdir(path.join(root, "src", "app", "api", "runtime"))
   ]);
   assert.match(host, /serviceMode \? "127\.0\.0\.1"/, "Windows service edge cannot bind LAN");
+  assert.match(host, /resolveWindowsServiceIdentity/, "Host resolves one service identity authority");
+  assert.match(client, /resolveWindowsServiceIdentity/, "shutdown client resolves the same service identity authority");
   assert.match(host, /core\.stopForShutdown\(\)/, "Host keeps RuntimeLifecycleCore shutdown ordering");
   assert.match(control, /shutdownBinding/, "Runtime Control binds shutdown to the current generation");
   assert.match(client, /discoverShutdownCapability/, "stop client only discovers an in-memory capability");
+  assert.match(client, /status=exited exitCode=\$\{code\}/, "stop client exposes its phase and exit code without error contents");
+  assert.match(host, /child_exit_code_nonzero/, "Host lifecycle records a stable child exit reason code");
+  assert.match(host, /stderrRef/, "Host lifecycle records the inherited child stderr reference");
   assert.doesNotMatch(client, /taskkill|TerminateJob|exec\(|spawn\(|readFile|writeFile/i, "shutdown client cannot manage processes or persist data");
   assert.doesNotMatch(discovery, /writeFile|readFile|exec\(|spawnSync|child\.kill/i, "discovery never persists capability or kills a process");
   assert.equal(routes.includes("shutdown"), false, "no public Runtime shutdown API exists");

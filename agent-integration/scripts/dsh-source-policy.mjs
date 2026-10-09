@@ -3,7 +3,7 @@ import path from "node:path";
 
 function isInside(parentPath, candidatePath) {
   const relative = path.relative(parentPath, candidatePath);
-  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
+  return relative === "" || (!path.isAbsolute(relative) && !relative.startsWith(`..${path.sep}`) && relative !== "..");
 }
 
 export async function resolveAllowedDshSourcePath(projectDir, sourceDir) {

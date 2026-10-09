@@ -4,6 +4,7 @@ import { link, mkdtemp, mkdir, readFile, rm, symlink, utimes, writeFile } from "
 import os from "node:os";
 import path from "node:path";
 import { calculateReleaseArtifactSet, normalizeArtifactPath, windowsFilesystemEvidenceStatus } from "./release-artifact-tree.mjs";
+import { createHostRuntimeClosureBinding } from "./release-runtime-closure-contract.mjs";
 import { assertWindowsProductionPath, boundedCurrentSwitch, createDeploymentManifest, createReleaseId, evaluateRollbackCandidate, manifestDigest, planDeploymentUpgrade, promoteVerifiedStage, validateCheckpoint, validateDeploymentManifest, verifyCurrentTarget, verifyRelease, writeDeploymentManifest } from "./windows-deployment-contract.mjs";
 
 const root = await mkdtemp(path.join(os.tmpdir(), "ued-release-identity-v2-"));
@@ -12,7 +13,7 @@ const dsh = { version: "0.1.1-rc.2", commit: "b150a551b8d465e31e418e1b2eaf5e79bb
 const componentPaths = {
   standaloneServer: "server.js", hostSupervisor: "scripts/host-supervisor.mjs", managedShutdownClient: "scripts/windows-managed-shutdown-client.mjs",
   windowsJobHelper: "native/windows-job-helper/bin/ued-windows-job-helper.exe", windowsPipeSecurityAdapter: "native/windows-pipe-security-adapter/bin/ued-windows-pipe-security-adapter.exe", windowsDpapiHelper: "native/windows-dpapi-credential-helper/bin/ued-windows-dpapi-credential-helper.exe",
-  serviceTemplate: "service/windows/UEDAssetHub.xml.template", edgeTemplate: "service/windows/UEDAssetHubEdge.web.config.template", nodeArtifact: "service/windows/node-22.23.2-x64.artifact.json", winswArtifact: "service/windows/winsw-2.12.0-x64.artifact.json",
+  serviceTemplate: "service/windows/UEDAssetHub.xml.template", edgeTemplate: "service/windows/UEDAssetHubEdge.web.config.template", nodeArtifact: "service/windows/node-22.23.3-x64.artifact.json", winswArtifact: "service/windows/winsw-2.12.0-x64.artifact.json",
   dshVersion: "agent-integration/dsh/version.json", dshOverlay: "agent-integration/dsh/asset-hub-agent.overlay.yml", restrictedAgentPreset: "agent-integration/dsh/agent-presets/asset-hub-restricted/agent.cordis.yml", restrictedPreset: "agent-integration/dsh/agent-presets/asset-hub-restricted/preset.yml", releaseProvenance: "release.provenance.json",
 };
 const checkpoint = { checkpointId: "checkpoint-fixture", formalDataRootIdentity: "fixture-data", timestamp: "2026-09-01T00:00:00Z", backupTarget: "fixture-backup", verificationStatus: "verified" };
@@ -24,8 +25,11 @@ function componentForPath(filePath) {
 async function stage(name, { seed = "stable", sourceCommit = "1".repeat(40), sourceArchiveSha256 = hash("source-a") } = {}) {
   const directory = path.join(root, "staging", name);
   await mkdir(directory, { recursive: true });
-  const contents = { ".next/BUILD_ID": `build-${seed}`, "scripts/host-supervisor.mjs": "host-supervisor" };
+  const entrypointBytes = Buffer.from(`start-host:${seed}`);
+  const runtimeClosure = createHostRuntimeClosureBinding({ entrypoint: "scripts/start-host.mjs", modules: [{ path: "scripts/start-host.mjs", sha256: hash(entrypointBytes), size: entrypointBytes.length }], edges: [], sourceCommit, sourceArchiveSha256 });
+  const contents = { ".next/BUILD_ID": `build-${seed}`, "scripts/host-supervisor.mjs": "host-supervisor", "scripts/start-host.mjs": entrypointBytes, "release.provenance.json": JSON.stringify({ payloadSchemaVersion: 2, runtimeClosure }) };
   for (const [component, filePath] of Object.entries(componentPaths)) contents[filePath] = `${component}:${seed}`;
+  contents["release.provenance.json"] = JSON.stringify({ payloadSchemaVersion: 2, runtimeClosure });
   for (const [filePath, content] of Object.entries(contents)) {
     const destination = path.join(directory, filePath); await mkdir(path.dirname(destination), { recursive: true }); await writeFile(destination, content);
   }
@@ -59,7 +63,7 @@ try {
   await assert.doesNotReject(verifyRelease(first.directory, dsh));
   await assert.rejects(verifyRelease(first.directory, { ...dsh, commit: "b".repeat(40) }));
   const sameBytesDifferentSource = await stage("source-b", { sourceCommit: "2".repeat(40), sourceArchiveSha256: hash("source-b") });
-  assert.equal(sameBytesDifferentSource.manifest.artifactSet.digest, first.manifest.artifactSet.digest);
+  assert.notEqual(sameBytesDifferentSource.manifest.artifactSet.digest, first.manifest.artifactSet.digest);
   assert.notEqual(sameBytesDifferentSource.manifest.releaseId, first.manifest.releaseId);
 
   const legacy = { manifestSchemaVersion: 1, releaseId: "v0.1.0-111111111111-2222222222222222" };

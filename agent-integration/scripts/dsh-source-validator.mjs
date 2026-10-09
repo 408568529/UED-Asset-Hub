@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
-import { access, lstat, readFile, realpath } from "node:fs/promises";
+import { access, lstat, readFile, readlink, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -38,6 +38,11 @@ function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
   return JSON.stringify(value);
+}
+
+function isInside(parentPath, candidatePath) {
+  const relative = path.relative(parentPath, candidatePath);
+  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
 }
 
 function assertExactKeys(value, keys, label) {
@@ -95,6 +100,39 @@ export async function validateDshSourceIdentity(sourceDir, expected, { readOnly 
   return { sourceType: "git", version: identity.sourceVersion, commit: identity.sourceCommit, tree: identity.sourceTree, fingerprint: identity.sourceFingerprint, compatibilityBaseline: expected.compatibilityBaseline, originClassification: classifyOrigin(origin, expected.sourceRepository) };
 }
 
+async function trackedSourceFiles(sourceDir) {
+  const listed = runGit(sourceDir, ["ls-files", "--stage", "-z"], "无法读取 DSH Git tracked source。", { readOnly: true });
+  return listed.split("\0").filter(Boolean).map((record) => {
+    const match = /^(100644|100755|120000) [a-f0-9]{40} \d\t(.+)$/u.exec(record);
+    if (!match) throw new Error("DSH Git tracked source contains an unsupported entry.");
+    return { mode: match[1], relativePath: match[2] };
+  });
+}
+
+export async function validateDshRuntimeSource(authoritySourceDir, runtimeSourceDir) {
+  const [authorityRoot, runtimeRoot] = await Promise.all([realpath(path.resolve(authoritySourceDir)), realpath(path.resolve(runtimeSourceDir))]);
+  if (authorityRoot === runtimeRoot || isInside(authorityRoot, runtimeRoot) || isInside(runtimeRoot, authorityRoot)) throw new Error("DSH runtime source must be isolated from the authoritative DSH checkout.");
+  if (path.resolve(runtimeSourceDir) !== runtimeRoot) throw new Error("DSH runtime source does not allow a symbolic link or path alias.");
+  try {
+    await lstat(path.join(runtimeRoot, ".git"));
+    throw new Error("DSH runtime source must not contain .git.");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  const tracked = await trackedSourceFiles(authorityRoot);
+  for (const entry of tracked) {
+    const authoritativePath = path.join(authorityRoot, entry.relativePath);
+    const runtimePath = path.join(runtimeRoot, entry.relativePath);
+    const [authoritative, runtime] = await Promise.all([lstat(authoritativePath), lstat(runtimePath)]);
+    if (entry.mode === "120000") {
+      if (!authoritative.isSymbolicLink() || !runtime.isSymbolicLink() || await readlink(authoritativePath) !== await readlink(runtimePath)) throw new Error(`DSH runtime source symlink does not match authority: ${entry.relativePath}`);
+    } else if (!authoritative.isFile() || !runtime.isFile() || !Buffer.from(await readFile(authoritativePath)).equals(await readFile(runtimePath))) {
+      throw new Error(`DSH runtime source file does not match authority: ${entry.relativePath}`);
+    }
+  }
+  return { runtimeSourceDir: runtimeRoot, trackedSourceFileCount: tracked.length };
+}
+
 async function verifyEvidenceSidecar(evidencePath) {
   const evidenceBytes = await readFile(evidencePath);
   const digest = createHash("sha256").update(evidenceBytes).digest("hex");
@@ -124,8 +162,8 @@ function assertMethodEvidence(evidence) {
     return;
   }
   if (evidence.method === "offline-package") {
-    assertExactKeys(evidence.verification, ["archiveSha256", "manifestSha256", "materializationMode", "packageSchemaVersion", "runBindingSha256", "sourceMemberCount"], "DSH offline package provenance");
-    if (!hashPattern.test(evidence.verification.archiveSha256) || !hashPattern.test(evidence.verification.manifestSha256) || !hashPattern.test(evidence.verification.runBindingSha256) || evidence.verification.materializationMode !== "validated-dereference" || evidence.verification.packageSchemaVersion !== 1 || !Number.isInteger(evidence.verification.sourceMemberCount) || evidence.verification.sourceMemberCount < 1) throw new Error("DSH offline package provenance is invalid.");
+    assertExactKeys(evidence.verification, ["archiveSha256", "bundleSha256", "bundleSize", "materializationMode", "manifestSha256", "packageSchemaVersion", "requiredCommit", "runBindingSha256", "sourceMemberCount"], "DSH offline package provenance");
+    if (!hashPattern.test(evidence.verification.archiveSha256) || !hashPattern.test(evidence.verification.bundleSha256) || !Number.isSafeInteger(evidence.verification.bundleSize) || evidence.verification.bundleSize < 1 || evidence.verification.requiredCommit !== evidence.sourceCommit || !hashPattern.test(evidence.verification.manifestSha256) || !hashPattern.test(evidence.verification.runBindingSha256) || evidence.verification.materializationMode !== "validated-dereference" || evidence.verification.packageSchemaVersion !== 2 || !Number.isInteger(evidence.verification.sourceMemberCount) || evidence.verification.sourceMemberCount < 1) throw new Error("DSH offline package provenance is invalid.");
     return;
   }
   throw new Error("DSH provenance method is invalid.");
@@ -153,14 +191,14 @@ export async function validateDshAcquisitionEvidence({ evidencePath, bundlePath 
   assertEvidenceCommon(evidence, expected);
   assertMethodEvidence(evidence);
   if (evidence.method === "offline-package") {
-    if (!offlinePackage?.archivePath || !offlinePackage.manifestPath || !offlinePackage.provenancePath || !offlinePackage.runBindingPath || !offlinePackage.targetRunId) throw new Error("DSH offline package provenance requires package and run binding inputs.");
+    if (!offlinePackage?.archivePath || !offlinePackage.manifestPath || !offlinePackage.provenancePath || !offlinePackage.bundlePath || !offlinePackage.runBindingPath || !offlinePackage.targetRunId) throw new Error("DSH offline package provenance requires package, Git authority, and run binding inputs.");
     const { validateOfflineDshMaterialization, validateOfflineDshPackage, validateOfflineDshRunBinding } = await import("./dsh-offline-package.mjs");
-    const verified = await validateOfflineDshPackage({ archivePath: offlinePackage.archivePath, manifestPath: offlinePackage.manifestPath, provenancePath: offlinePackage.provenancePath, expected });
+    const verified = await validateOfflineDshPackage({ archivePath: offlinePackage.archivePath, manifestPath: offlinePackage.manifestPath, provenancePath: offlinePackage.provenancePath, bundlePath: offlinePackage.bundlePath, expected });
     const materialized = await validateOfflineDshMaterialization({ packageResult: verified, outputDir: stagedSourceDir });
     const binding = await validateOfflineDshRunBinding({ bindingPath: offlinePackage.runBindingPath, packageResult: verified, targetRunId: offlinePackage.targetRunId, materializedRootIdentity: materialized.materializedRootIdentity });
     const identity = { version: verified.sourceVersion, commit: verified.sourceCommit, tree: verified.sourceTree, fingerprint: verified.sourceFingerprint };
-    if (canonicalJson(evidence.stagedSource) !== canonicalJson({ commit: identity.commit, tree: identity.tree, version: identity.version, fingerprint: identity.fingerprint }) || evidence.verification.archiveSha256 !== verified.archiveSha256 || evidence.verification.manifestSha256 !== verified.manifestSha256 || evidence.verification.sourceMemberCount !== verified.sourceMemberCount || evidence.verification.runBindingSha256 !== binding.bindingSha256) throw new Error("DSH offline package evidence does not match verified package identity.");
-    return { ...identity, evidenceDigest: digest, method: evidence.method, materializationMode: materialized.materializationMode, materializedRootIdentity: materialized.materializedRootIdentity, packageArchiveSha256: verified.archiveSha256, packageManifestSha256: verified.manifestSha256, repository: verified.provenance.repository, sourceRef: verified.provenance.tag, runBindingSha256: binding.bindingSha256 };
+    if (canonicalJson(evidence.stagedSource) !== canonicalJson({ commit: identity.commit, tree: identity.tree, version: identity.version, fingerprint: identity.fingerprint }) || evidence.verification.archiveSha256 !== verified.archiveSha256 || evidence.verification.bundleSha256 !== verified.bundleSha256 || evidence.verification.bundleSize !== verified.bundleSize || evidence.verification.requiredCommit !== verified.sourceCommit || evidence.verification.manifestSha256 !== verified.manifestSha256 || evidence.verification.sourceMemberCount !== verified.sourceMemberCount || evidence.verification.runBindingSha256 !== binding.bindingSha256) throw new Error("DSH offline package evidence does not match verified package identity.");
+    return { ...identity, evidenceDigest: digest, method: evidence.method, materializationMode: materialized.materializationMode, materializedRootIdentity: materialized.materializedRootIdentity, packageArchiveSha256: verified.archiveSha256, packageBundleSha256: verified.bundleSha256, packageBundleSize: verified.bundleSize, packageManifestSha256: verified.manifestSha256, repository: verified.provenance.repository, sourceRef: verified.provenance.tag, runBindingSha256: binding.bindingSha256 };
   }
   const staged = await validateDshSourceIdentity(stagedSourceDir, expected, { readOnly: true });
   if (canonicalJson(evidence.stagedSource) !== canonicalJson({ commit: staged.commit, tree: staged.tree, version: staged.version, fingerprint: staged.fingerprint })) throw new Error("DSH provenance evidence does not match staged source identity.");

@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 import { lstat, mkdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { artifactDigestAlgorithm, artifactFilesMatch, assertArtifactPathSet, calculateReleaseArtifactSet, canonicalJson } from "./release-artifact-tree.mjs";
+import { assertHostRuntimeClosureBinding } from "./release-runtime-closure-contract.mjs";
+import { assertCandidateRuntimeClosureManifest } from "./candidate-runtime-closure-manifest.mjs";
+import { assertCandidateProvenance, assertHistoricalCandidateProvenance, serializeCandidateProvenance } from "./release-provenance.mjs";
+import { nativeSetMembers } from "./native-artifact-contract.mjs";
+import { nativePayloadMap } from "./windows-release-payload.mjs";
+import { assertTrustedAdmission } from "./release-approval-store.mjs";
 
 const manifestFile = "deployment.manifest.json";
 const manifestSidecar = "deployment.manifest.sha256";
@@ -121,13 +127,72 @@ async function readManifest(releasePath, expectedDsh) {
   return { manifest, digest };
 }
 
-export async function verifyRelease(releasePath, expectedDsh, { requireDirectoryIdentity = false } = {}) {
+async function assertAuthorityBoundProvenance(provenance, manifest, actual, authority, canonicalRelease, admissionContext) {
+  assertTrustedAdmission(admissionContext, authority);
+  assertCandidateProvenance(provenance, {
+    inputAuthorityIdentity: authority.inputAuthorityIdentity,
+    sourceCommit: authority.source.sourceCommit,
+    sourceArchiveSha256: authority.source.sourceArchiveSha256,
+    dshCommit: authority.dsh.commit,
+    dshVersion: authority.dsh.version,
+    dshFingerprint: authority.dsh.fingerprint,
+    securitySetId: authority.security.securitySetId,
+    authorizationId: authority.security.authorizationId,
+    nativeSetDigest: authority.native.setDigest,
+    nativeManifestSha256: authority.native.manifestSha256,
+    buildId: manifest.build.buildId,
+  });
+  if (manifest.assetHub.commit !== authority.source.sourceCommit || manifest.assetHub.sourceArchiveSha256 !== authority.source.sourceArchiveSha256 || provenance.source.classification !== authority.source.sourceClassification || provenance.source.productionEligible !== authority.source.productionEligible || provenance.source.commit !== authority.source.sourceCommit || provenance.source.archiveSha256 !== authority.source.sourceArchiveSha256 || provenance.source.lockfileSha256 !== authority.source.lockfileSha256) throw new Error("Candidate source claims do not match the approved authority.");
+  if (manifest.dsh.version !== authority.dsh.version || manifest.dsh.commit !== authority.dsh.commit || manifest.dsh.sourceFingerprint !== authority.dsh.fingerprint || provenance.dsh.commit !== manifest.dsh.commit || provenance.dsh.version !== manifest.dsh.version || provenance.dsh.sourceFingerprint !== manifest.dsh.sourceFingerprint) throw new Error("Candidate DSH claims do not match the approved authority.");
+  if (manifest.build.buildId !== provenance.build.deterministicBuildId || provenance.candidateRuntimeClosure.closures.assetHubChild.generatedServer.buildId !== manifest.build.buildId) throw new Error("Candidate build identity claims do not agree.");
+  if ((await readFile(path.join(canonicalRelease, ".next", "BUILD_ID"), "utf8")).trim() !== manifest.build.buildId) throw new Error("Candidate .next/BUILD_ID does not match the deployment build identity.");
+  const derive = (value) => createHash("sha256").update(value).digest("hex");
+  if (manifest.build.buildId !== "rb1-" + derive(`ued-asset-hub-next-build-v1\n${authority.source.sourceCommit}\n${authority.source.sourceArchiveSha256}\n`)) throw new Error("Candidate build identity derivation mismatch");
+  const sourceManifest = admissionContext.selectedReceipts.sourceManifestSha256;
+  if (!provenance.source.snapshot || provenance.source.snapshot.workingTreeManifestSha256 !== sourceManifest.workingTreeManifestSha256 || provenance.source.snapshot.trackedDiffSha256 !== sourceManifest.trackedDiffSha256 || provenance.source.snapshot.untrackedInventorySha256 !== sourceManifest.untrackedInventorySha256) throw new Error("Candidate approved source snapshot projection mismatch");
+  for (const module of provenance.runtimeClosure.modules) {
+    const source = sourceManifest.files.find((file) => file.relativePath === module.path);
+    if (!source || source.sha256 !== module.sha256 || source.size !== module.size) throw new Error("Candidate runtime closure differs from approved source bytes");
+  }
+  const dependency = admissionContext.selectedReceipts.dependencyReceiptSha256;
+  if (provenance.build.runtimeDependencyArtifact.nodeModulesManifestSha256 !== authority.dependency.byteTreeIdentity || provenance.build.runtimeDependencyArtifact.npmTreeDigest !== dependency.postPruneGraphIdentity || provenance.build.nodeArtifactSha256 !== authority.toolchain.nodeSha256 || provenance.build.nodeVersion !== authority.toolchain.nodeVersion || provenance.build.npmVersion !== authority.toolchain.npmVersion) throw new Error("Candidate approved dependency/toolchain mismatch");
+  const nativeManifest = admissionContext.selectedReceipts.nativeManifestSha256;
+  const originalMembers = nativeManifest.components.flatMap((component) => [{ path: component.executableRelativePath, sha256: component.executableSha256, size: component.executableSize }, { path: component.integrityManifestRelativePath, sha256: component.integrityManifestSha256 }]);
+  const approvedMembers = [...nativeSetMembers].sort();
+  const claimedMembers = provenance.native.members.map(({ path: memberPath }) => memberPath).sort();
+  if (canonicalJson(claimedMembers) !== canonicalJson(approvedMembers)) throw new Error("Candidate Native member roles do not match the approved six-member set.");
+  for (const member of provenance.native.members) {
+    const releasePath = nativePayloadMap[member.path];
+    if (member.releasePath !== releasePath) throw new Error("Candidate Native role path is invalid.");
+    const file = actual.files.find((candidate) => candidate.path === releasePath);
+    const original = originalMembers.find((entry) => entry.path === member.path);
+    if (!original || original.sha256 !== member.sha256 || (original.size !== undefined && original.size !== member.size)) throw new Error("Candidate Native member differs from approved original bytes");
+    if (!file || file.sha256 !== member.sha256 || file.size !== member.size) throw new Error("Candidate Native bytes do not match the approved set.");
+  }
+}
+
+export async function verifyRelease(releasePath, expectedDsh, { requireDirectoryIdentity = false, authority = null, admissionContext = null, requireLiveAuthority = false } = {}) {
   const canonicalRelease = await realpath(releasePath);
   const { manifest, digest } = await readManifest(canonicalRelease, expectedDsh);
   if (requireDirectoryIdentity && path.basename(canonicalRelease) !== manifest.releaseId) throw new Error("Release directory identity does not match its manifest.");
   const actual = await calculateReleaseArtifactSet(canonicalRelease);
   if (actual.algorithm !== manifest.artifactSet.algorithm || actual.digest !== manifest.artifactSet.digest || actual.fileCount !== manifest.artifactSet.fileCount || actual.totalBytes !== manifest.artifactSet.totalBytes || !artifactFilesMatch(actual.files, manifest.artifactSet.files)) throw new Error("Release tree does not match its v2 artifact identity.");
-  return { releasePath: canonicalRelease, manifest, digest, artifactSet: actual };
+  const releaseProvenanceBytes = await readFile(path.join(canonicalRelease, "release.provenance.json"));
+  const releaseProvenance = JSON.parse(releaseProvenanceBytes.toString("utf8"));
+  let historicalOnly = false;
+  if (releaseProvenance.payloadSchemaVersion === 4) {
+    if (!authority) throw new Error("Candidate provenance v4 requires an approved LogicalReleaseAuthority.");
+    await assertAuthorityBoundProvenance(releaseProvenance, manifest, actual, authority, canonicalRelease, admissionContext);
+    if (!releaseProvenanceBytes.equals(Buffer.from(serializeCandidateProvenance(releaseProvenance), "utf8"))) throw new Error("Release provenance serialization is not canonical.");
+    assertHostRuntimeClosureBinding({ runtimeClosure: releaseProvenance.runtimeClosure, artifactSet: actual, sourceCommit: manifest.assetHub.commit, sourceArchiveSha256: manifest.assetHub.sourceArchiveSha256 });
+    await assertCandidateRuntimeClosureManifest({ manifest: releaseProvenance.candidateRuntimeClosure, candidateRoot: canonicalRelease, artifactSet: actual, sourceCommit: manifest.assetHub.commit, sourceArchiveSha256: manifest.assetHub.sourceArchiveSha256, runtimeArtifacts: { nextOutput: releaseProvenance.build?.nextOutputArtifact, nodeModules: { digest: releaseProvenance.build?.runtimeDependencyArtifact?.nodeModulesManifestSha256, fileCount: releaseProvenance.build?.runtimeDependencyArtifact?.fileCount } } });
+  } else if ([1, 2, 3].includes(releaseProvenance.payloadSchemaVersion)) {
+    if (requireLiveAuthority) throw new Error("Historical Candidate provenance cannot enter a live Constructor path.");
+    historicalOnly = true;
+    if (releaseProvenance.payloadSchemaVersion === 3) assertHistoricalCandidateProvenance(releaseProvenance);
+    else if (releaseProvenance.payloadSchemaVersion === 2) assertHostRuntimeClosureBinding({ runtimeClosure: releaseProvenance.runtimeClosure, artifactSet: actual, sourceCommit: manifest.assetHub.commit, sourceArchiveSha256: manifest.assetHub.sourceArchiveSha256 });
+  } else throw new Error("Release payload provenance schema is unsupported.");
+  return { releasePath: canonicalRelease, manifest, digest, artifactSet: actual, releaseProvenance, historicalOnly };
 }
 
 export async function writeDeploymentManifest(releasePath, manifest) {

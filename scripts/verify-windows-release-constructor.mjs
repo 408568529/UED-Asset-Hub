@@ -7,23 +7,29 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { calculateNativeSourceInputs, createNativeBuildId, nativeSourceIdentity, verifyFrozenNativeSet } from "./native-artifact-contract.mjs";
+import { createNativeSetManifestV2, nativeComponentDefinitions, nativeSourceInputs, promoteNativeCandidate, verifyFrozenNativeSet, writeCanonicalManifest, writeNativeComponentManifest } from "./native-artifact-contract.mjs";
 import { calculateReleaseArtifactSet, canonicalJson } from "./release-artifact-tree.mjs";
 import { verifyRelease } from "./windows-deployment-contract.mjs";
-import { assertFrozenNativeSetBinding, assertNpmTreeHasNoSecrets, bindWindowsReleaseInputs, buildContract, assertBuildPlatform, assertPinnedIdentity, compareDependencyEvidence, compareNpmLsGraphs, deterministicBuildId, finalizeWindowsRelease, findDotenvFiles, npmTreeDigest, prepareWindowsRelease, resolveFrozenNativeSetPath, runWindowsNextBuild } from "./windows-release-constructor.mjs";
+import { componentPaths, sourceReleaseComponentPaths } from "./windows-release-payload.mjs";
+import { createControlledSourceSnapshot } from "./create-controlled-source-snapshot.mjs";
+import { r3DiagnosticObserverPath, assertR3DiagnosticObserverClosure } from "./r3-diagnostic-observer-contract.mjs";
+import { compareObserverModules, validateObserverEntry } from "./r3-observer-schema.mjs";
+import { assertFrozenNativeSetBinding, assertNpmTreeHasNoSecrets, assertPackageLockContract, bindWindowsReleaseInputs, buildContract, assertBuildPlatform, assertPinnedIdentity, compareDependencyEvidence, compareNpmLsGraphs, deterministicBuildId, finalizeWindowsRelease, findDotenvFiles, materializeArchive, npmTreeDigest, prepareWindowsRelease, resolveFrozenNativeSetPath, runWindowsNextBuild, validateSourceSnapshotManifest } from "./windows-release-constructor.mjs";
 
 const dshCommit = "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e";
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 const compareUtf8 = (left, right) => Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
 const runtimeRelevantNextPrefixes = Object.freeze([".next/standalone/", ".next/static/"]);
+assert(sourceReleaseComponentPaths().includes(componentPaths.managedShutdownClient), "managed shutdown client must be copied from the current source payload.");
 
 function parseArgs(argv) {
   const values = {};
-  const focused = { stop: false, dependencyStop: false, r3bDiagnostic: false, r3b2Probe: false, r3b2Diagnostic: false, r3b2bProbe: false, r3b2bSmoke: false, r3b2bDiagnostic: false, fail: null };
+  const focused = { stop: false, dependencyStop: false, r3StopAfterAb: false, r3bDiagnostic: false, r3b2Probe: false, r3b2Diagnostic: false, r3b2bProbe: false, r3b2bSmoke: false, r3b2bDiagnostic: false, fail: null };
   for (let index = 0; index < argv.length;) {
     const key = argv[index];
     if (key === "--focused-entry-stop") { focused.stop = true; index += 1; continue; }
     if (key === "--focused-dependency-stop") { focused.dependencyStop = true; index += 1; continue; }
+    if (key === "--r3-stop-after-ab") { focused.r3StopAfterAb = true; index += 1; continue; }
     if (key === "--r3b-diagnostic") { focused.r3bDiagnostic = true; index += 1; continue; }
     if (key === "--r3b2-probe") { focused.r3b2Probe = true; index += 1; continue; }
     if (key === "--r3b2-diagnostic") { focused.r3b2Diagnostic = true; index += 1; continue; }
@@ -36,9 +42,30 @@ function parseArgs(argv) {
     values[key.slice(2)] = value;
     index += 2;
   }
-  for (const key of ["staging-root", "source-archive", "source-archive-sha256", "source-commit", "native-set-root", "native-build-id", "native-set-digest", "native-set-run-binding-a", "native-set-run-binding-b", "node-root", "dsh-source-root", "dsh-provenance-evidence", "run-root", "evidence-dir"]) if (!values[key]) throw new Error(`missing --${key}`);
+  for (const key of ["staging-root", "source-archive", "source-archive-sha256", "source-commit", "native-set-root", "native-build-id", "native-set-digest", "native-set-run-binding-a", "native-set-run-binding-b", "node-root", "dsh-source-root", "dsh-provenance-evidence", "run-root", "evidence-dir", "security-set", "security-set-id", "security-set-authorization-id"]) if (!values[key]) throw new Error(`missing --${key}`);
   if (!/^[a-f0-9]{64}$/.test(values["source-archive-sha256"])) throw new Error("source archive SHA-256 argument is invalid.");
+  if (focused.r3StopAfterAb || focused.r3b2bProbe || focused.r3b2bSmoke || focused.r3b2bDiagnostic) {
+    if (!values["source-snapshot-manifest"] || !/^[a-f0-9]{64}$/.test(values["source-snapshot-manifest-sha256"] || "")) throw new Error("R3 diagnostic requires source snapshot manifest identity.");
+  }
   return { values, focused };
+}
+
+async function validateR3SnapshotAuthority(args, stagingRoot, sourceManifest) {
+  const snapshotPath = path.resolve(args["source-snapshot-manifest"]);
+  const relative = path.relative(stagingRoot, snapshotPath);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("R3 diagnostic source snapshot manifest must be inside isolated staging.");
+  const snapshotBytes = await readFile(snapshotPath);
+  if (digest(snapshotBytes) !== args["source-snapshot-manifest-sha256"]) throw new Error("R3 diagnostic source snapshot manifest SHA-256 mismatch.");
+  const snapshot = JSON.parse(snapshotBytes.toString("utf8"));
+  const validated = await validateSourceSnapshotManifest({
+    "source-classification": "SNAPSHOT_WITH_UNCOMMITTED_CHANGES",
+    "source-snapshot-manifest": snapshotPath,
+    "source-snapshot-manifest-sha256": args["source-snapshot-manifest-sha256"],
+    "source-commit": args["source-commit"],
+    "source-archive-sha256": args["source-archive-sha256"],
+    "creation-run-id": snapshot.creationRunId,
+  }, sourceManifest);
+  return validated.snapshot;
 }
 
 function run(command, args, { cwd, env, timeoutMs = 0 } = {}) {
@@ -74,6 +101,19 @@ function manifestDifference(left, right) {
 
 function runtimeRelevantNext(manifest) {
   return { files: manifest.files.filter((file) => runtimeRelevantNextPrefixes.some((prefix) => file.path.startsWith(prefix))) };
+}
+
+async function persistR3OutputIdentity(prepared, evidenceDir, label) {
+  const runtime = runtimeRelevantNext(prepared.rawNext);
+  const manifest = JSON.parse(await readFile(path.join(prepared.workspace, ".next", "app-build-manifest.json"), "utf8"));
+  const refs = manifest.pages?.["/_not-found/page"];
+  if (!Array.isArray(refs)) throw new Error("R3 output envelope is missing /_not-found/page references.");
+  const assets = await Promise.all(refs.map(async (name) => {
+    const bytes = await readFile(path.join(prepared.workspace, ".next", name));
+    const chunkIds = /\.push\(\[\[([0-9,]+)\]/.exec(bytes.toString("utf8"))?.[1] ?? null;
+    return { name, size: bytes.length, sha256: digest(bytes), emittedChunkIds: chunkIds };
+  }));
+  await writeR3bJson(evidenceDir, `runtime-identity-${label}.json`, { runtimeDigest: digest(canonicalJson(runtime)), runtime, manifest, assets });
 }
 
 function nextComparisonLadder(left, right) {
@@ -249,7 +289,7 @@ async function readR3b2BootstrapGate(observerDir) {
 async function readR3b2bObserverEvidence(observerDir) {
   const files = (await readdir(observerDir)).filter((name) => /^webpack-observer-[ab]-.+-pid\d+\.json$/.test(name)).sort(compareUtf8);
   if (!files.length) throw new Error("R3B2B observer did not persist any compiler evidence.");
-  const entries = await Promise.all(files.map(async (name) => JSON.parse(await readFile(path.join(observerDir, name), "utf8"))));
+  const entries = await Promise.all(files.map(async (name) => validateObserverEntry(JSON.parse(await readFile(path.join(observerDir, name), "utf8")))));
   const reached = (name) => entries.some((entry) => entry.compilation && Array.isArray(entry.preModuleIds) && Array.isArray(entry.postModuleIds) && Array.isArray(entry.chunkMembership));
   return {
     files,
@@ -264,19 +304,11 @@ async function readR3b2bObserverEvidence(observerDir) {
   };
 }
 
-function currentChunkModuleIds(chunkPath) {
-  const text = Buffer.from(chunkPath).toString("utf8");
-  return [...text.matchAll(/(?:^|[,\{])([0-9]{1,8}):/g)].map((match) => match[1]);
-}
-
 async function captureR3b2bEvidence(evidenceDir, chunk) {
   const aDir = path.join(evidenceDir, "r3b2b-observer-a");
   const bDir = path.join(evidenceDir, "r3b2b-observer-b");
   const [a, b] = await Promise.all([readR3b2bObserverEvidence(aDir), readR3b2bObserverEvidence(bDir)]);
-  const idsA = currentChunkModuleIds(await readFile(path.join(evidenceDir, "chunk-a.js")));
-  const idsB = currentChunkModuleIds(await readFile(path.join(evidenceDir, "chunk-b.js")));
-  const find = (entries, ids) => ids.map((id) => entries.flatMap((entry) => entry.entries).flatMap((entry) => entry.postModuleIds).find((module) => String(module.assignedModuleId) === id) ?? null);
-  const mapping = { ids: { a: idsA, b: idsB }, modules: { a: find(a, idsA), b: find(b, idsB) } };
+  const mapping = compareObserverModules(a.entries, b.entries);
   await writeR3bJson(evidenceDir, "r3b2b-module-id-mapping.json", mapping);
   return { a, b, mapping, chunk };
 }
@@ -287,7 +319,7 @@ function r3bEnvironmentEvidence(prepared) {
   return { cwd: normalize(prepared.workspace), values: Object.fromEntries(keys.map((key) => [key, key === "NODE_ENV" ? "production" : normalize(prepared.buildEnvironment.env[key])])), nodeOptions: "R3B_EXTERNAL_PRELOAD_ONLY", observerPreload: "EXTERNAL_DIAGNOSTIC_ONLY" };
 }
 
-async function jsonDifference(first, leftRoot, rightRoot) {
+export async function jsonDifference(first, leftRoot, rightRoot) {
   if (!first?.a || !first?.b || !/\.json$/i.test(first.path)) return null;
   try {
     const left = JSON.parse(await readFile(path.join(leftRoot, ...first.path.split("/")), "utf8"));
@@ -300,7 +332,8 @@ async function jsonDifference(first, leftRoot, rightRoot) {
         for (let index = 0; index < Math.max(a.length, b.length); index += 1) queue.push([`${field}[${index}]`, a[index] ?? null, b[index] ?? null]);
       } else if (a && b && typeof a === "object" && typeof b === "object") {
         for (const key of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort(compareUtf8)) queue.push([`${field}.${key}`, a[key] ?? null, b[key] ?? null]);
-      } else return { field, a, b };
+      } else if (/previewMode(?:Id|SigningKey|EncryptionKey)|encryptionKey/iu.test(field)) return { field, a: "[REDACTED]", b: "[REDACTED]" };
+      else return { field, a, b };
     }
   } catch {}
   return null;
@@ -344,13 +377,54 @@ async function negativeGates(root, identity) {
 async function focusedNativeBinding() {
   const root = await mkdtemp(path.join(os.tmpdir(), "ued-g032-native-binding-")); const sourceRoot = path.join(root, "source");
   try {
-    for (const relative of ["native/windows-job-helper/ued_windows_job_helper.cpp", "native/windows-pipe-security-adapter/ued_windows_pipe_security_adapter.cpp", "native/windows-dpapi-credential-helper/ued_windows_dpapi_credential_helper.cpp", "scripts/build-windows-job-helper.mjs", "scripts/build-windows-pipe-security-adapter.mjs", "scripts/build-windows-dpapi-credential-helper.mjs", "scripts/native-build-path-contract.mjs"]) { const file = path.join(sourceRoot, ...relative.split("/")); await mkdir(path.dirname(file), { recursive: true }); await writeFile(file, relative); }
-    const currentCommit = "67121a41dee60b4a44978b6977967e1f1e39f50b"; const inputs = await calculateNativeSourceInputs(sourceRoot); const identity = nativeSourceIdentity(inputs); const toolchain = { buildToolsVersion: "fixture", compilerVersion: "fixture", linkerVersion: "fixture", windowsSdkVersion: "fixture" }; const buildId = createNativeBuildId(identity, toolchain); const exact = resolveFrozenNativeSetPath(root, buildId); const native = { set: { digest: "a".repeat(64) }, manifest: { sourceCommit: currentCommit, sourceArchiveSha256: "b".repeat(64), nativeSourceInputs: inputs, nativeSourceIdentity: identity, nativeBuildId: buildId, toolchain } };
+    for (const relative of new Set(Object.values(nativeSourceInputs).flat())) {
+      const file = path.join(sourceRoot, ...relative.split("/"));
+      await mkdir(path.dirname(file), { recursive: true });
+      if (relative.endsWith(".mjs")) await copyFile(path.join(import.meta.dirname, "..", ...relative.split("/")), file);
+      else await writeFile(file, relative);
+    }
+    const currentCommit = "67121a41dee60b4a44978b6977967e1f1e39f50b";
+    const sourceArchiveSha256 = "b".repeat(64);
+    const toolchain = { buildToolsVersion: "fixture", compilerVersion: "fixture", linkerVersion: "fixture", windowsSdkVersion: "fixture" };
+    const candidate = path.join(root, "native-candidate");
+    for (const definition of nativeComponentDefinitions) {
+      const directory = path.join(candidate, definition.componentName);
+      await mkdir(directory, { recursive: true });
+      await writeFile(path.join(directory, path.basename(definition.executableRelativePath)), `fixture:${definition.componentName}`);
+      await writeNativeComponentManifest({ definition, outputDir: directory, sourceRoot, assetHubCommit: currentCommit, toolchain: { compilerVersion: toolchain.compilerVersion, linkerVersion: toolchain.linkerVersion, windowsSdkVersion: toolchain.windowsSdkVersion } });
+    }
+    const aggregate = await createNativeSetManifestV2({ sourceCommit: currentCommit, sourceArchiveSha256, sourceRoot, toolchain, nativeOutputRoot: candidate });
+    await writeCanonicalManifest(path.join(candidate, "native-components.manifest.json"), aggregate);
+    const promoted = await promoteNativeCandidate({ candidateDirectory: candidate, frozenRoot: path.join(root, "frozen", "native-components") });
+    const native = await verifyFrozenNativeSet(promoted.directory);
+    const buildId = native.manifest.nativeBuildId;
+    const exact = resolveFrozenNativeSetPath(root, buildId);
+    assert.equal(promoted.directory, exact);
     assert.equal(await assertFrozenNativeSetBinding({ stagingRoot: root, nativeBuildId: buildId, nativeSetDigest: native.set.digest, nativeSetRoot: exact, native, sourceRoot, sourceCommit: currentCommit, sourceArchiveSha256: "b".repeat(64) }), exact);
     await assert.rejects(() => assertFrozenNativeSetBinding({ stagingRoot: root, nativeBuildId: buildId, nativeSetDigest: native.set.digest, nativeSetRoot: exact, native, sourceRoot, sourceCommit: "5932a1dff20b00fb8ee5ba76af08616709e50367", sourceArchiveSha256: "b".repeat(64) }));
     await assert.rejects(() => assertFrozenNativeSetBinding({ stagingRoot: root, nativeBuildId: "nb1-5932a1dff20b-c9f4e7ea1bc84836ae7f87ebb3640324", nativeSetDigest: native.set.digest, nativeSetRoot: exact, native, sourceRoot, sourceCommit: currentCommit, sourceArchiveSha256: "b".repeat(64) }));
   } finally { await rm(root, { recursive: true, force: true }); }
   process.stdout.write("[UED Release Constructor] focused native path binding: PASS\n");
+}
+
+async function focusedLockfileContract() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ued-lockfile-contract-"));
+  const current = await readFile(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "package-lock.json"));
+  const exact = path.join(root, "package-lock.json");
+  const changed = path.join(root, "materialized-mismatch.json");
+  const missing = path.join(root, "missing-package-lock.json");
+  const historicalSha256 = ["94da6e178dd5f8ea8b715abb430ad4bc", "47bfb5eb5be46a142f67cb17a863a5e0"].join("");
+  try {
+    await writeFile(exact, current);
+    assert.equal(await assertPackageLockContract(exact), buildContract.lockfileSha256);
+    await writeFile(changed, Buffer.concat([current, Buffer.from(" ", "utf8")]));
+    await assert.rejects(() => assertPackageLockContract(changed), /package-lock contract mismatch/);
+    await assert.rejects(() => assertPackageLockContract(exact, historicalSha256), /package-lock contract mismatch/);
+    await assert.rejects(() => assertPackageLockContract(missing), /ENOENT/);
+    await assert.rejects(() => assertPackageLockContract(exact, "0".repeat(64)), /package-lock contract mismatch/);
+    await assert.rejects(() => assertPackageLockContract(changed), /package-lock contract mismatch/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+  process.stdout.write("[UED Release Constructor] focused package-lock contract negatives: PASS\n");
 }
 
 async function focusedNpmGraphDiff() {
@@ -456,20 +530,24 @@ async function focusedR3b2bObserver() {
   const root = await mkdtemp(path.join(os.tmpdir(), "ued-r3b2b-observer-"));
   const originalDir = process.env.UED_R3B2B_OBSERVER_DIR;
   const originalLabel = process.env.UED_R3B2B_OBSERVER_LABEL;
+  const originalNextWorker = process.env.IS_NEXT_WORKER;
+  const originalNextBuildWorker = process.env.NEXT_PRIVATE_BUILD_WORKER;
   process.env.UED_R3B2B_OBSERVER_DIR = root;
   process.env.UED_R3B2B_OBSERVER_LABEL = "a";
   const Hook = class { constructor() { this.handlers = []; } tap(_name, handler) { this.handlers.push(handler); } tapPromise(_name, handler) { this.handlers.push(handler); } };
   const module = { identifier: () => "fixture-module", readableIdentifier: () => "fixture-module", resource: "C:\\fixture\\module.js", type: "javascript/auto", layer: null };
-  const chunk = { name: "fixture", id: 1, ids: [1], runtime: "runtime", files: new Set(["fixture.js"]), contentHash: null };
-  const compilationHooks = { beforeModuleIds: new Hook(), afterOptimizeModuleIds: new Hook(), afterOptimizeChunkIds: new Hook() };
-  const compilation = { hooks: compilationHooks, name: "fixture", requestShortener: {}, chunks: new Set([chunk]), chunkGraph: { getModuleId: () => 42, getChunkModulesIterable: () => [module] } };
+  const chunk = { name: "main-app", id: 1, ids: [1], runtime: "runtime", files: new Set(["main-app.js"]), contentHash: null };
+  const compilationHooks = { beforeModuleIds: new Hook(), afterOptimizeModuleIds: new Hook(), afterOptimizeChunkIds: new Hook(), processAssets: new Hook() };
+  const compilation = { hooks: compilationHooks, name: "fixture", requestShortener: {}, chunks: new Set([chunk]), getAssets: () => [], moduleGraph: { getIncomingConnections: () => [] }, chunkGraph: { getModuleId: () => 42, getChunkModulesIterable: () => [module], getChunkRuntimeModulesIterable: () => [] } };
   const webpack = function webpackFixture() {};
   const staticApis = ["NormalModuleReplacementPlugin", "DefinePlugin", "Compilation", "Compiler", "NormalModule", "RuntimeModule", "sources", "webpack", "version"];
-  for (const key of staticApis) Object.defineProperty(webpack, key, { value: { key }, enumerable: true });
+  for (const key of staticApis) Object.defineProperty(webpack, key, { value: key === "Compilation" ? { PROCESS_ASSETS_STAGE_OPTIMIZE_SIZE: 1000 } : key === "version" ? "5.98.0" : { key }, enumerable: true });
   const compiler = { context: "C:\\fixture", hooks: { thisCompilation: new Hook(), done: new Hook() }, webpack };
   const require = createRequire(import.meta.url);
   const observer = require("./r3b2b-webpack-observer.cjs");
   try {
+    process.env.IS_NEXT_WORKER = "true";
+    process.env.NEXT_PRIVATE_BUILD_WORKER = "1";
     const keys = Reflect.ownKeys(webpack);
     const descriptors = Object.getOwnPropertyDescriptors(webpack);
     const prototype = Object.getPrototypeOf(webpack);
@@ -483,7 +561,8 @@ async function focusedR3b2bObserver() {
     compilationHooks.beforeModuleIds.handlers[0]([module]);
     compilationHooks.afterOptimizeModuleIds.handlers[0]([module]);
     compilationHooks.afterOptimizeChunkIds.handlers[0]();
-    await compiler.hooks.done.handlers[0]({ compilation });
+    for (const handler of compilationHooks.processAssets.handlers) handler();
+    await compiler.hooks.done.handlers[0]({ compilation, hasErrors: () => false });
     const gate = await readR3b2bObserverEvidence(root);
     assert.equal(gate.compilerObserved, true);
     assert.equal(gate.beforeModuleIdsReached, true);
@@ -493,8 +572,48 @@ async function focusedR3b2bObserver() {
   } finally {
     originalDir === undefined ? delete process.env.UED_R3B2B_OBSERVER_DIR : process.env.UED_R3B2B_OBSERVER_DIR = originalDir;
     originalLabel === undefined ? delete process.env.UED_R3B2B_OBSERVER_LABEL : process.env.UED_R3B2B_OBSERVER_LABEL = originalLabel;
+    originalNextWorker === undefined ? delete process.env.IS_NEXT_WORKER : process.env.IS_NEXT_WORKER = originalNextWorker;
+    originalNextBuildWorker === undefined ? delete process.env.NEXT_PRIVATE_BUILD_WORKER : process.env.NEXT_PRIVATE_BUILD_WORKER = originalNextBuildWorker;
     await rm(root, { recursive: true, force: true });
   }
+}
+
+async function focusedR3DiagnosticObserverClosure() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ued-r3-observer-closure-"));
+  try {
+    const sourceRoot = path.join(root, "source");
+    const outputDir = path.join(root, "snapshot");
+    const materializedRoot = path.join(root, "materialized");
+    const workspace = path.join(root, "workspace");
+    await mkdir(path.join(sourceRoot, "scripts"), { recursive: true });
+    await run("git", ["init", "-q"], { cwd: sourceRoot });
+    await run("git", ["config", "user.email", "r3@example.invalid"], { cwd: sourceRoot });
+    await run("git", ["config", "user.name", "R3"], { cwd: sourceRoot });
+    await writeFile(path.join(sourceRoot, "package-lock.json"), '{"lockfileVersion":3}\n');
+    await run("git", ["add", "package-lock.json"], { cwd: sourceRoot });
+    await run("git", ["commit", "-qm", "fixture"], { cwd: sourceRoot });
+    const observerBytes = Buffer.from("diagnostic observer fixture\n", "utf8");
+    await writeFile(path.join(sourceRoot, ...r3DiagnosticObserverPath.split("/")), observerBytes);
+    const snapshot = await createControlledSourceSnapshot({ sourceRoot, outputDir, creationRunId: "r3-observer-closure-fixture", createdAt: "2026-09-24T00:00:00.000Z" });
+    assert(snapshot.manifest.files.some((file) => file.relativePath === r3DiagnosticObserverPath && file.classification === "untracked"));
+    const sourceManifest = await materializeArchive({ archive: snapshot.archive, sourceRoot: materializedRoot, workspace });
+    const snapshotAuthority = await validateR3SnapshotAuthority({ "source-snapshot-manifest": snapshot.manifestPath, "source-snapshot-manifest-sha256": snapshot.manifestSha256, "source-commit": snapshot.manifest.sourceCommit, "source-archive-sha256": snapshot.archiveSha256 }, root, sourceManifest);
+    assert.equal(snapshotAuthority.sourceArchiveSha256, snapshot.archiveSha256);
+    await assert.rejects(() => validateR3SnapshotAuthority({ "source-snapshot-manifest": snapshot.manifestPath, "source-snapshot-manifest-sha256": "0".repeat(64), "source-commit": snapshot.manifest.sourceCommit, "source-archive-sha256": snapshot.archiveSha256 }, root, sourceManifest), /manifest SHA-256 mismatch/);
+    await assert.rejects(() => validateR3SnapshotAuthority({ "source-snapshot-manifest": snapshot.manifestPath, "source-snapshot-manifest-sha256": snapshot.manifestSha256, "source-commit": snapshot.manifest.sourceCommit, "source-archive-sha256": snapshot.archiveSha256 }, materializedRoot, sourceManifest), /must be inside isolated staging/);
+    const identity = { sourceRoot: materializedRoot, sourceManifest, snapshot: snapshot.manifest, sourceCommit: snapshot.manifest.sourceCommit, sourceArchiveSha256: snapshot.archiveSha256 };
+    const valid = await assertR3DiagnosticObserverClosure(identity);
+    assert.equal(valid.relativePath, r3DiagnosticObserverPath);
+    assert.equal(valid.sha256, digest(observerBytes));
+    await assert.rejects(() => assertR3DiagnosticObserverClosure({ ...identity, observerPath: path.join(root, "outside.cjs") }), /fallback or wrong relative path denied/);
+    await assert.rejects(() => assertR3DiagnosticObserverClosure({ ...identity, observerPath: path.join(materializedRoot, "scripts", "wrong-observer.cjs") }), /fallback or wrong relative path denied/);
+    await rm(path.join(materializedRoot, ...r3DiagnosticObserverPath.split("/")));
+    await assert.rejects(() => assertR3DiagnosticObserverClosure(identity), { code: "ENOENT" });
+    await writeFile(path.join(materializedRoot, ...r3DiagnosticObserverPath.split("/")), "wrong bytes\n");
+    await assert.rejects(() => assertR3DiagnosticObserverClosure(identity), /do not match the source archive and snapshot manifest/);
+    await assert.rejects(() => assertR3DiagnosticObserverClosure({ ...identity, sourceArchiveSha256: "0".repeat(64) }), /snapshot identity mismatch/);
+    process.stdout.write("R3 diagnostic observer closure and snapshot fixtures: PASS\n");
+  } finally { await rm(root, { recursive: true, force: true }); }
 }
 
 async function payloadLeakScan(candidate, forbiddenValues) {
@@ -576,7 +695,7 @@ async function main() {
     for (const key of ["ADMIN_PASSWORD", "ADMIN_SESSION_SECRET", "DEEPSEEK_API_KEY", "AGENT_GATEWAY_TOKEN", "DATA_DIR", "AGENT_RUNTIME_DIR", "ASSET_HUB_RUNTIME_DIR", "TRAINING_MEDIA_DIR", "NEXT_PUBLIC_R3_SENTINEL", "NODE_OPTIONS", "HTTPS_PROXY", "NPM_TOKEN", "NODE_AUTH_TOKEN"]) process.env[key] = "DO_NOT_INHERIT";
     await checkpoint("BEFORE_COMMON_INPUTS");
     if (focused.fail === "common-inputs") throw new Error("synthetic focused common-input failure");
-    common = { "staging-root": stagingRoot, "source-archive": path.resolve(args["source-archive"]), "source-commit": sourceCommit, "source-archive-sha256": args["source-archive-sha256"], "source-classification": buildContract.sourceClassification, "dsh-source-root": path.resolve(args["dsh-source-root"]), "dsh-version": "0.1.1-rc.2", "dsh-commit": dshCommit, "dsh-provenance-evidence": path.resolve(args["dsh-provenance-evidence"]), ...(args["dsh-acquisition-artifact"] ? { "dsh-acquisition-artifact": path.resolve(args["dsh-acquisition-artifact"]) } : {}), "native-set-root": path.resolve(args["native-set-root"]), "native-build-id": args["native-build-id"], "native-set-digest": args["native-set-digest"], "node-root": path.resolve(args["node-root"]) };
+    common = { "staging-root": stagingRoot, "source-archive": path.resolve(args["source-archive"]), "source-commit": sourceCommit, "source-archive-sha256": args["source-archive-sha256"], "source-classification": buildContract.sourceClassification, "dsh-source-root": path.resolve(args["dsh-source-root"]), "dsh-version": "0.1.1-rc.2", "dsh-commit": dshCommit, "dsh-provenance-evidence": path.resolve(args["dsh-provenance-evidence"]), ...(args["dsh-acquisition-artifact"] ? { "dsh-acquisition-artifact": path.resolve(args["dsh-acquisition-artifact"]) } : {}), "native-set-root": path.resolve(args["native-set-root"]), "native-build-id": args["native-build-id"], "native-set-digest": args["native-set-digest"], "node-root": path.resolve(args["node-root"]), "security-set": path.resolve(args["security-set"]), "security-set-id": args["security-set-id"], "security-set-authorization-id": args["security-set-authorization-id"] };
     await checkpoint("AFTER_COMMON_INPUTS");
     await checkpoint("BEFORE_EVIDENCE_OBJECT");
     if (focused.fail === "evidence-object") throw new Error("synthetic focused evidence-object failure");
@@ -590,6 +709,8 @@ async function main() {
   }
   let buildA;
   let buildB;
+  let observerIdentityA;
+  let sourceSnapshotAuthority;
   try {
     const graphs = {};
     const captureGraph = async (label, graph) => {
@@ -603,11 +724,30 @@ async function main() {
     const captureA = focused.dependencyStop ? { onNpmTree: (graph) => captureGraph("a", graph) } : {};
     const captureB = focused.dependencyStop ? { onNpmTree: (graph) => captureGraph("b", graph) } : {};
     buildA = await prepareWindowsRelease({ ...common, "creation-run-id": "build-a", "native-set-run-binding": path.resolve(args["native-set-run-binding-a"]), "temp-dir": path.join(runRoot, "build-a", "temp"), "output-dir": path.join(runRoot, "build-a", "output") }, captureA);
+    const r3b2b = focused.r3b2bProbe || focused.r3b2bSmoke || focused.r3b2bDiagnostic;
+    if (focused.r3StopAfterAb || r3b2b) {
+      sourceSnapshotAuthority = await validateR3SnapshotAuthority(args, stagingRoot, buildA.source);
+      evidence.sourceSnapshotManifestSha256 = args["source-snapshot-manifest-sha256"];
+      if (r3b2b) {
+        observerIdentityA = await assertR3DiagnosticObserverClosure({ sourceRoot: buildA.sourceRoot, sourceManifest: buildA.source, snapshot: sourceSnapshotAuthority, sourceCommit, sourceArchiveSha256: args["source-archive-sha256"] });
+        evidence.r3DiagnosticObserver = observerIdentityA;
+      }
+    }
     await bindWindowsReleaseInputs(buildA);
     buildB = await prepareWindowsRelease({ ...common, "creation-run-id": "build-b", "native-set-run-binding": path.resolve(args["native-set-run-binding-b"]), "temp-dir": path.join(runRoot, "build-b", "temp"), "output-dir": path.join(runRoot, "build-b", "output") }, captureB);
+    if (focused.r3StopAfterAb || r3b2b) {
+      const snapshotB = await validateR3SnapshotAuthority(args, stagingRoot, buildB.source);
+      same(sourceSnapshotAuthority, snapshotB, "R3 source snapshot A/B identity");
+      if (r3b2b) {
+        const observerIdentityB = await assertR3DiagnosticObserverClosure({ sourceRoot: buildB.sourceRoot, sourceManifest: buildB.source, snapshot: snapshotB, sourceCommit, sourceArchiveSha256: args["source-archive-sha256"] });
+        same(observerIdentityA, observerIdentityB, "R3 diagnostic observer A/B source identity");
+      }
+    }
     await bindWindowsReleaseInputs(buildB);
     same(buildA.source, buildB.source, "source member manifest");
     same(buildA.toolchain, buildB.toolchain, "toolchain identity");
+    same(buildA.securitySetMetadata, buildB.securitySetMetadata, "Release Security Set authority");
+    evidence.releaseSecuritySet = { ...buildA.securitySetMetadata, sharedByBuilds: true };
     const dependencyComparison = compareDependencyEvidence(buildA.dependencies, buildB.dependencies);
     await writeFile(path.join(evidenceDir, "dependency-a.json"), `${canonicalJson(buildA.dependencies)}\n`);
     await writeFile(path.join(evidenceDir, "dependency-b.json"), `${canonicalJson(buildB.dependencies)}\n`);
@@ -632,14 +772,13 @@ async function main() {
     await negativeGates(runRoot, buildA.dependencies.versions);
     await assert.rejects(bindWindowsReleaseInputs({ ...buildA, values: { ...buildA.values, "native-set-digest": "0".repeat(64) } }));
     await assert.rejects(bindWindowsReleaseInputs({ ...buildA, values: { ...buildA.values, "dsh-commit": "0".repeat(40) } }));
-    const r3b2b = focused.r3b2bProbe || focused.r3b2bSmoke || focused.r3b2bDiagnostic;
-    const observerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), r3b2b ? "r3b2b-webpack-observer.cjs" : "r3b-webpack-observer.cjs");
+    const observerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "r3b-webpack-observer.cjs");
     const observerEnabled = focused.r3bDiagnostic || focused.r3b2Probe || focused.r3b2Diagnostic || r3b2b;
     const observerRoot = r3b2b ? "r3b2b-observer" : focused.r3b2Probe || focused.r3b2Diagnostic ? "r3b2-observer" : "r3b-observer";
-    const diagnostic = (label) => r3b2b ? { kind: "r3b2b", observerPath, evidenceDir: path.join(evidenceDir, `${observerRoot}-${label}`), label } : { preloadPath: observerPath, evidenceDir: path.join(evidenceDir, `${observerRoot}-${label}`), label };
-    const diagnosticA = observerEnabled ? diagnostic("a") : null;
-    const diagnosticB = observerEnabled ? diagnostic("b") : null;
-    if (observerEnabled) await lstat(observerPath);
+    const diagnostic = (label, prepared) => r3b2b ? { kind: "r3b2b", observerPath: path.join(prepared.sourceRoot, ...r3DiagnosticObserverPath.split("/")), evidenceDir: path.join(evidenceDir, `${observerRoot}-${label}`), label } : { preloadPath: observerPath, evidenceDir: path.join(evidenceDir, `${observerRoot}-${label}`), label };
+    const diagnosticA = observerEnabled ? diagnostic("a", buildA) : null;
+    const diagnosticB = observerEnabled ? diagnostic("b", buildB) : null;
+    if (observerEnabled && !r3b2b) await lstat(observerPath);
     if (focused.r3b2Probe) {
       await runWindowsNextBuild(buildA, diagnosticA);
       const gate = await readR3b2BootstrapGate(diagnosticA.evidenceDir);
@@ -675,6 +814,8 @@ async function main() {
       return;
     }
     await Promise.all([runWindowsNextBuild(buildA, diagnosticA), runWindowsNextBuild(buildB, diagnosticB)]);
+    evidence.securityMaterialAdoption = { a: buildA.securitySetAdoption, b: buildB.securitySetAdoption, status: "PASS" };
+    if (focused.r3StopAfterAb || focused.r3b2bDiagnostic) await Promise.all([persistR3OutputIdentity(buildA, evidenceDir, "a"), persistR3OutputIdentity(buildB, evidenceDir, "b")]);
     const nextComparison = nextComparisonLadder(buildA.rawNext, buildB.rawNext);
     const rawComparison = nextComparison.raw;
     evidence.rawComparison = rawComparison;
@@ -701,8 +842,14 @@ async function main() {
       await writeFile(path.join(evidenceDir, "r3-evidence.json"), `${canonicalJson(evidence)}\n`);
       throw new Error(`runtime-relevant Next A/B outputs differ: ${nextComparison.runtimeRelevant.first?.path ?? "unknown"}`);
     }
+    if (focused.r3StopAfterAb) {
+      evidence.status = "R3_AB_PASS_STOPPED_BEFORE_CANDIDATE";
+      await writeFile(path.join(evidenceDir, "r3-evidence.json"), `${canonicalJson(evidence)}\n`);
+      process.stdout.write(`R3_AB_RESULT ${canonicalJson({ status: evidence.status, runtimeRelevantNextMatch: true, candidateCreated: false })}\n`);
+      return;
+    }
     await run(buildA.nodeExe, [path.join(buildA.workspace, "node_modules", "typescript", "bin", "tsc"), "--noEmit"], { cwd: buildA.workspace, env: buildA.buildEnvironment.env });
-    const [resultA, resultB] = await Promise.all([finalizeWindowsRelease(buildA), finalizeWindowsRelease(buildB)]);
+    const [resultA, resultB] = await Promise.all([finalizeWindowsRelease(buildA, { candidateLabel: "A", executionEvidencePath: path.join(evidenceDir, "candidate-execution-evidence-A.json") }), finalizeWindowsRelease(buildB, { candidateLabel: "B", executionEvidencePath: path.join(evidenceDir, "candidate-execution-evidence-B.json") })]);
     assert.equal(resultA.postPruneDependencyDigest, resultB.postPruneDependencyDigest, "post-prune dependency graphs must match.");
     const payloadA = await calculateReleaseArtifactSet(resultA.destination);
     const payloadB = await calculateReleaseArtifactSet(resultB.destination);
@@ -742,7 +889,8 @@ async function main() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const task = process.argv[2] === "--focused-native-binding" ? Promise.resolve().then(focusedNativeBinding) : process.argv[2] === "--focused-npm-graph-diff" ? Promise.resolve().then(focusedNpmGraphDiff) : process.argv[2] === "--focused-raw-next-gate" ? Promise.resolve().then(focusedRawNextGate) : process.argv[2] === "--focused-r3b-evidence" ? Promise.resolve().then(focusedR3bEvidence) : process.argv[2] === "--focused-r3b2-module-mapping" ? Promise.resolve().then(focusedR3b2ModuleMapping) : process.argv[2] === "--focused-r3b2b-observer" ? Promise.resolve().then(focusedR3b2bObserver) : main();
+  if (process.argv.includes("--r3") || process.argv.some((arg) => /^--r3/u.test(arg))) throw new Error("Legacy R3 execution harness is historical-only. Use the protected-approval serial runner after independent execution authorization.");
+  const task = process.argv[2] === "--focused-native-binding" ? Promise.resolve().then(focusedNativeBinding) : process.argv[2] === "--focused-lockfile-contract" ? Promise.resolve().then(focusedLockfileContract) : process.argv[2] === "--focused-npm-graph-diff" ? Promise.resolve().then(focusedNpmGraphDiff) : process.argv[2] === "--focused-raw-next-gate" ? Promise.resolve().then(focusedRawNextGate) : process.argv[2] === "--focused-r3b-evidence" ? Promise.resolve().then(focusedR3bEvidence) : process.argv[2] === "--focused-r3b2-module-mapping" ? Promise.resolve().then(focusedR3b2ModuleMapping) : process.argv[2] === "--focused-r3b2b-observer" ? Promise.resolve().then(focusedR3b2bObserver) : process.argv[2] === "--focused-r3-diagnostic-observer-closure" ? Promise.resolve().then(focusedR3DiagnosticObserverClosure) : Promise.reject(new Error("Legacy execution harness disabled; only named isolated focused regressions are available."));
   task.catch((error) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

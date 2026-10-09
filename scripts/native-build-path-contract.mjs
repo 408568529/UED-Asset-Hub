@@ -19,7 +19,7 @@ export function parseNativeBuildArgs(argv) {
   }
   if (!values["--mode"]) throw new Error("Native build mode is required.");
   if (![releaseMode, developerMode].includes(values["--mode"])) throw new Error("Native build mode is invalid.");
-  return { mode: values["--mode"], stagingRoot: values["--staging-root"], outputDir: values["--output-dir"], tempDir: values["--temp-dir"], assetHubCommit: values["--asset-hub-commit"], compilerVersion: values["--compiler-version"], linkerVersion: values["--linker-version"], windowsSdkVersion: values["--windows-sdk-version"] };
+  return { mode: values["--mode"], stagingRoot: values["--staging-root"], outputDir: values["--output-dir"], tempDir: values["--temp-dir"], assetHubCommit: values["--asset-hub-commit"], compilerVersion: values["--compiler-version"], linkerVersion: values["--linker-version"], windowsSdkVersion: values["--windows-sdk-version"], compilerPath: values["--compiler-path"], linkerPath: values["--linker-path"], sdkRoot: values["--sdk-root"], sourceArchive: values["--source-archive"], sourceSnapshotManifest: values["--source-snapshot-manifest"], buildReceiptDir: values["--build-receipt-dir"], experimentId: values["--experiment-id"], executionRunId: values["--execution-run-id"] };
 }
 
 function assertWindowsAbsolute(value, label) {
@@ -89,7 +89,7 @@ export function resolveNativeBuildPlan({ argv, projectRoot, componentDefinition,
   const options = parseNativeBuildArgs(argv);
   if (!componentDefinition?.componentName || !componentDefinition.developerOutputDirectory || !componentDefinition.executableRelativePath) throw new Error("native build component definition is invalid.");
   if (options.mode === developerMode) {
-    if (options.stagingRoot || options.outputDir || options.tempDir || options.assetHubCommit || options.compilerVersion || options.linkerVersion || options.windowsSdkVersion) throw new Error("developer-source-output does not accept release-native inputs.");
+    if (options.stagingRoot || options.outputDir || options.tempDir || options.assetHubCommit || options.compilerVersion || options.linkerVersion || options.windowsSdkVersion || options.compilerPath || options.linkerPath || options.sdkRoot || options.sourceArchive || options.sourceSnapshotManifest || options.buildReceiptDir || options.experimentId || options.executionRunId) throw new Error("developer-source-output does not accept release-native inputs.");
     const outputDir = path.join(projectRoot, "native", componentDefinition.developerOutputDirectory, "bin");
     return { mode: options.mode, outputDir, tempDir: path.join(outputDir, ".build-temp"), executable: path.join(outputDir, path.basename(componentDefinition.executableRelativePath)), componentDefinition };
   }
@@ -97,5 +97,5 @@ export function resolveNativeBuildPlan({ argv, projectRoot, componentDefinition,
   if (!/^[a-f0-9]{40}$/.test(options.assetHubCommit || "") || !options.compilerVersion || !options.linkerVersion || !options.windowsSdkVersion) throw new Error("release-native requires formal component provenance inputs.");
   const shaped = validateReleaseNativePathShape({ stagingRoot: options.stagingRoot, outputDir: options.outputDir, tempDir: options.tempDir, protectedRoots });
   if (path.win32.basename(shaped.outputDir) !== componentDefinition.componentName) throw new Error("release-native output directory is not the canonical component directory.");
-  return { mode: options.mode, ...shaped, executable: path.win32.join(shaped.outputDir, path.basename(componentDefinition.executableRelativePath)), componentDefinition, assetHubCommit: options.assetHubCommit, componentToolchain: { compilerVersion: options.compilerVersion, linkerVersion: options.linkerVersion, windowsSdkVersion: options.windowsSdkVersion } };
+  return { ...options, mode: options.mode, ...shaped, executable: path.win32.join(shaped.outputDir, path.basename(componentDefinition.executableRelativePath)), componentDefinition, assetHubCommit: options.assetHubCommit, componentToolchain: { compilerVersion: options.compilerVersion, linkerVersion: options.linkerVersion, windowsSdkVersion: options.windowsSdkVersion } };
 }

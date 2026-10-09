@@ -11,7 +11,7 @@ import { WindowsProcessAdapter } from "./managed-process-platform-adapter.mjs";
 import { WindowsJobHelperClient } from "./windows-job-helper-client.mjs";
 
 if (process.platform !== "win32") {
-  console.log("[UED Agent] Windows native managed-process verification: SKIPPED (requires Windows Server 2025 x64, Node 22.23.2, and an MSVC-built helper).");
+  console.log("[UED Agent] Windows native managed-process verification: SKIPPED (requires Windows Server 2025 x64, Node 22.23.3, and an MSVC-built helper).");
   process.exit(0);
 }
 

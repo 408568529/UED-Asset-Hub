@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { canonicalJson, sha256 } from "./release-artifact-tree.mjs";
+import { assertDshBundleAuthorityConsumption, assertReachableClosureReceipt } from "./dsh-bundle-authority-consumption.mjs";
+const exec = promisify(execFile);
+const temp = await mkdtemp(path.join(os.tmpdir(), "ued-dsh-closure-fixture-"));
+try {
+  const root = path.join(temp,"source"), bundlePath = path.join(temp,"fixture.bundle"); await mkdir(root);
+  const git = async (args) => (await exec("git", args, { cwd: root, env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null", GIT_OPTIONAL_LOCKS: "0" } })).stdout;
+  await git(["init","-q"]); await git(["config","user.name","isolated fixture"]); await git(["config","user.email","fixture@example.invalid"]);
+  await writeFile(path.join(root,"fixture.txt"),"fixture\n"); await git(["add","fixture.txt"]); await git(["commit","-qm","isolated fixture only"]);
+  const commit = (await git(["rev-parse","HEAD"])).trim(), tree = (await git(["rev-parse","HEAD^{tree}"])).trim();
+  await git(["bundle","create",bundlePath,"HEAD"]);
+  const bytes = await readFile(bundlePath), objects = (await git(["rev-list","--objects","HEAD"])).trim().split("\n").length;
+  const closure = { equal:true,expectedCount:objects,actualCount:objects,missingCount:0,extraCount:0,missingSample:[],extraSample:[] };
+  const pathSetDigest = sha256(Buffer.from("fixture.txt\n")), fingerprint = sha256(Buffer.from("fixture fingerprint"));
+  const dsh = { commit,tree,fingerprint,bundleSha256:sha256(bytes) };
+  const materializationDigest = sha256(Buffer.from(canonicalJson({ commit,tree,fingerprint,pathCount:1,pathSetDigest,clean:true })));
+  const authority = { bundle: { size:bytes.length,format:"# v2 git bundle",missingParentAvailable:true,reachableObjectClosure:closure }, emptyEnvironmentMaterialization:{ reachableObjectClosure:closure,trackedFileCount:1,pathSetDigest,materializationDigest } };
+  assert.equal((await assertDshBundleAuthorityConsumption({ authority,dsh,bundlePath,sourceDir:root })).objectCount,objects);
+  assert.throws(() => assertReachableClosureReceipt({ ...closure, missingCount:1 }), /closure/u);
+  assert.throws(() => assertReachableClosureReceipt({ ...closure, hidden:true }), /unknown/u);
+  await assert.rejects(assertDshBundleAuthorityConsumption({ authority:{ ...authority,bundle:{ ...authority.bundle,size:bytes.length+1 } },dsh,bundlePath,sourceDir:root }), /size/u);
+  await assert.rejects(assertDshBundleAuthorityConsumption({ authority:{ ...authority,emptyEnvironmentMaterialization:{ ...authority.emptyEnvironmentMaterialization,trackedFileCount:2 } },dsh,bundlePath,sourceDir:root }), /projection/u);
+  await writeFile(path.join(root,".git","shallow"),commit+"\n");
+  await assert.rejects(assertDshBundleAuthorityConsumption({ authority,dsh,bundlePath,sourceDir:root }), /shallow/u);
+  process.stdout.write(JSON.stringify({ result:"PASS",checks:6,scope:"isolated local Git/bundle fixtures; no original DSH artifact mutation or network" })+"\n");
+} finally { await rm(temp,{recursive:true,force:true}); }

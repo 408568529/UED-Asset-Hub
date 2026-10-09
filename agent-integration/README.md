@@ -32,10 +32,10 @@ The verified release is not available as the matching npm package version. Keep 
 .\agent-integration\scripts\setup-dsh.ps1 -DshSourceDir "D:\UED-Asset-Hub-Host\UED-Asset-Hub\vendor\deepseek-harness"
 ```
 
-Start the checked-out source:
+Use the checked-out source only as identity authority. Start a separate runtime materialization that has been derived from it and has no `.git` directory:
 
 ```powershell
-.\agent-integration\scripts\start-dsh.ps1 -RuntimeDir "D:\UED-Asset-Hub\agent-data" -DshSourceDir "D:\UED-Asset-Hub-Host\UED-Asset-Hub\vendor\deepseek-harness"
+.\agent-integration\scripts\start-dsh.ps1 -RuntimeDir "D:\UED-Asset-Hub\agent-data" -DshSourceDir "D:\UED-Asset-Hub-Host\UED-Asset-Hub\vendor\deepseek-harness" -DshRuntimeSourceDir "D:\UED-Asset-Hub-Staging\runtime\dsh"
 ```
 
 For development diagnosis, verify the fixed DSH runtime:

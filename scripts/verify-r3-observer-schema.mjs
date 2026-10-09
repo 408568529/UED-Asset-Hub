@@ -1,0 +1,23 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { compareObserverModules, validateObserverEntry } from "./r3-observer-schema.mjs";
+
+const fixture = JSON.parse(await readFile(new URL("./fixtures/r3-observer-v1.json", import.meta.url), "utf8"));
+const [a, b] = fixture.entries;
+validateObserverEntry(a); validateObserverEntry(b);
+const mapping = compareObserverModules([a], [b]);
+assert.equal(mapping.compilers[0].normalizedSetEqual, true);
+assert.deepEqual(mapping.compilers[0].differences.map(({ a, b }) => [a, b]).sort((a, b) => a[0] - b[0]), [[81965, 63536], [95553, 88512]]);
+const mutate = (fn) => { const entry = structuredClone(a); fn(entry); entry.moduleIds = { before: entry.preModuleIds, after: entry.postModuleIds }; return entry; };
+const zero = mutate((entry) => { entry.postModuleIds[0].id = 0; });
+assert.equal(compareObserverModules([zero], [b]).compilers[0].mappings[0].a, 0);
+assert.equal(typeof mapping.compilers[0].mappings[0].a, "number");
+assert.throws(() => validateObserverEntry(mutate((entry) => { delete entry.postModuleIds[0].id; })), /id missing/);
+assert.throws(() => validateObserverEntry(mutate((entry) => { entry.postModuleIds[0].id = {}; })), /id missing/);
+assert.throws(() => compareObserverModules([mutate((entry) => { entry.postModuleIds.push(entry.postModuleIds[0]); })], [b]), /duplicate normalized/);
+assert.throws(() => validateObserverEntry({ ...a, schemaVersion: 2 }), /schemaVersion/);
+assert.throws(() => compareObserverModules([mutate((entry) => { entry.postModuleIds.forEach((module) => { module.id = null; }); })], [b]), /all-null/);
+assert.throws(() => validateObserverEntry({ ...a, chunks: [] }), /projections disagree/);
+assert.throws(() => validateObserverEntry({ ...a, assets: {} }), /must be an array/);
+assert.throws(() => compareObserverModules([a, a], [b]), /duplicate compiler/);
+process.stdout.write(JSON.stringify({ status: "PASS", knownIdMapping: mapping.compilers[0].differences.map(({ a, b }) => [a, b]), fixtureProvenance: fixture.provenance }) + "\n");

@@ -1,0 +1,18 @@
+import assert from "node:assert/strict";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { createB4bServiceLifecycle, transitionB4bServiceLifecycle } from "./b4b-service-identity-lifecycle.mjs";
+import { createEphemeralCredentialPayload, parseWindowsCredentialBundle } from "./windows-credential-schema.mjs";
+import { cleanupOwnedCredentialBundle, provisionCredentialBundle } from "./windows-credential-provisioner.mjs";
+const digest = (value) => createHash("sha256").update(value).digest("hex");
+const root = await mkdtemp(path.join(os.tmpdir(), "ued-credential-provisioner-"));
+const candidate = path.join(root, "candidate"), helper = path.join(candidate, "native", "windows-dpapi-credential-helper", "bin"); await mkdir(helper, { recursive: true }); const bytes = Buffer.from("fixture-helper"); const helperSha = digest(bytes); await writeFile(path.join(helper, "ued-windows-dpapi-credential-helper.exe"), bytes); await writeFile(path.join(helper, "ued-windows-dpapi-credential-helper.manifest.json"), JSON.stringify({ componentName: "dpapi-helper", sha256: helperSha, binary: { size: bytes.length } })); await writeFile(path.join(candidate, "deployment.manifest.json"), JSON.stringify({ artifactSet: { digest: "a".repeat(64) }, components: { windowsDpapiHelper: { path: "native/windows-dpapi-credential-helper/bin/ued-windows-dpapi-credential-helper.exe", sha256: helperSha } } }));
+const payload = createEphemeralCredentialPayload((size) => Buffer.alloc(size, 7)); assert.equal("deepseekApiKey" in payload.credentials, false); assert.deepEqual(Object.keys(parseWindowsCredentialBundle(JSON.stringify(payload))).sort(), ["ADMIN_PASSWORD", "ADMIN_SESSION_SECRET", "AGENT_GATEWAY_TOKEN", "TEST_ENV_ENCRYPTION_KEY"].sort());
+const lifecycle = createB4bServiceLifecycle("g036b-20260922-a1b2c3d4"); await assert.rejects(() => provisionCredentialBundle({ lifecycle, candidateRoot: candidate, candidateDigest: "a".repeat(64), b4bRoot: root, platform: "win32" }));
+await assert.rejects(() => cleanupOwnedCredentialBundle({ lifecycle, candidateRoot: candidate, candidateDigest: "a".repeat(64), b4bRoot: root, ownership: { sha256: "a".repeat(64), size: 1, serviceIdentity: lifecycle.identity.serviceName, candidateDigest: "a".repeat(64), relativePath: `credentials/${lifecycle.identity.serviceName}.credentials.dpapi` }, validateAcl: async () => {}, platform: "win32" }));
+const installed = transitionB4bServiceLifecycle(transitionB4bServiceLifecycle(lifecycle, "MATERIALIZE"), "INSTALL_IDENTITY", { serviceInstalled: true, serviceRunning: false, hostStarted: false });
+assert.throws(() => transitionB4bServiceLifecycle(installed, "SID_READY", { serviceContext: { identity: installed.identity, serviceSid: "S-1-5-80-1" } }));
+await assert.rejects(() => provisionCredentialBundle({ lifecycle: { ...installed, phase: "CREDENTIAL_PROVISION", serviceSidContext: { identity: installed.identity, serviceSid: "S-1-5-80-1", sidType: "UNRESTRICTED" } }, candidateRoot: candidate, candidateDigest: "b".repeat(64), b4bRoot: root, platform: "win32", applyAcl: async () => {}, validateAcl: async () => {}, validateBundle: async () => {}, inspectSecretLeak: async () => false }));
+console.log("[UED Agent] Windows credential provisioner contract passed.");

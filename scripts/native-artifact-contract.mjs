@@ -1,9 +1,11 @@
+import { inspectNativeExecutable, nativeRuntimeDependencyClassification, nativeComponentArgv } from "./native-build-authority.mjs";
 import { createHash } from "node:crypto";
 import { copyFile, lstat, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { canonicalJson, normalizeArtifactPath } from "./release-artifact-tree.mjs";
 
 export const nativeSetDigestAlgorithm = "ued-asset-hub-native-set-v1";
+export const nativeSetManifestSchemaVersion = 3;
 export const nativeSetMembers = [
   "job-helper/ued-windows-job-helper.exe", "job-helper/ued-windows-job-helper.manifest.json",
   "pipe-security-adapter/ued-windows-pipe-security-adapter.exe", "pipe-security-adapter/ued-windows-pipe-security-adapter.manifest.json",
@@ -16,9 +18,9 @@ export const nativeComponentDefinitions = Object.freeze([
 ]);
 const componentNames = nativeComponentDefinitions.map(({ componentName }) => componentName);
 export const nativeSourceInputs = Object.freeze({
-  "job-helper": ["native/windows-job-helper/ued_windows_job_helper.cpp", "scripts/build-windows-job-helper.mjs", "scripts/native-build-path-contract.mjs"],
-  "pipe-security-adapter": ["native/windows-pipe-security-adapter/ued_windows_pipe_security_adapter.cpp", "scripts/build-windows-pipe-security-adapter.mjs", "scripts/native-build-path-contract.mjs"],
-  "dpapi-helper": ["native/windows-dpapi-credential-helper/ued_windows_dpapi_credential_helper.cpp", "scripts/build-windows-dpapi-credential-helper.mjs", "scripts/native-build-path-contract.mjs"],
+  "job-helper": ["native/windows-job-helper/ued_windows_job_helper.cpp", "scripts/build-windows-job-helper.mjs", "scripts/native-build-path-contract.mjs", "scripts/native-build-authority.mjs", "scripts/native-build-capture.mjs", "scripts/frozen-source-authority.mjs", "scripts/archive-member-contract.mjs", "scripts/release-json-contract.mjs", "scripts/release-artifact-tree.mjs", "scripts/release-byte-comparison.mjs", "scripts/native-artifact-contract.mjs"],
+  "pipe-security-adapter": ["native/windows-pipe-security-adapter/ued_windows_pipe_security_adapter.cpp", "scripts/build-windows-pipe-security-adapter.mjs", "scripts/native-build-path-contract.mjs", "scripts/native-build-authority.mjs", "scripts/native-build-capture.mjs", "scripts/frozen-source-authority.mjs", "scripts/archive-member-contract.mjs", "scripts/release-json-contract.mjs", "scripts/release-artifact-tree.mjs", "scripts/release-byte-comparison.mjs", "scripts/native-artifact-contract.mjs"],
+  "dpapi-helper": ["native/windows-dpapi-credential-helper/ued_windows_dpapi_credential_helper.cpp", "scripts/build-windows-dpapi-credential-helper.mjs", "scripts/native-build-path-contract.mjs", "scripts/native-build-authority.mjs", "scripts/native-build-capture.mjs", "scripts/frozen-source-authority.mjs", "scripts/archive-member-contract.mjs", "scripts/release-json-contract.mjs", "scripts/release-artifact-tree.mjs", "scripts/release-byte-comparison.mjs", "scripts/native-artifact-contract.mjs"],
 });
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 const utf8 = (value) => Buffer.from(value, "utf8");
@@ -40,6 +42,16 @@ function canonicalToolchain(toolchain) {
   exactKeys(toolchain, ["buildToolsVersion", "compilerVersion", "linkerVersion", "windowsSdkVersion"], "native set toolchain");
   for (const key of Object.keys(toolchain)) string(toolchain[key], `native set toolchain ${key}`);
   return toolchain;
+}
+async function assertNativeComponentClaims({ nativeOutputRoot, inputs, sourceCommit, toolchain, configuration }) {
+  const byPath = new Map(inputs.map((file) => [file.relativePath, file]));
+  for (const definition of nativeComponentDefinitions) {
+    const helperPath = path.join(nativeOutputRoot, ...definition.integrityManifestRelativePath.split("/"));
+    const helper = validateComponentManifest(JSON.parse(await readFile(helperPath, "utf8")));
+    const source = byPath.get(definition.sourceRelativePath);
+    const buildScript = byPath.get(definition.buildScriptRelativePath);
+    if (!source || !buildScript || helper.componentName !== definition.componentName || helper.source.relativePath !== source.relativePath || helper.source.sha256 !== source.sha256 || helper.buildScript.relativePath !== buildScript.relativePath || helper.buildScript.sha256 !== buildScript.sha256 || helper.assetHubCommit !== sourceCommit || helper.build.configuration !== configuration || helper.build.commandFingerprint !== commandFingerprint({ componentName: definition.componentName, configuration, executableRelativePath: definition.executableRelativePath, ...(helper.verification.componentLocalGateVersion === "native-release-v2" ? { normalizedArgv: nativeComponentArgv(definition) } : {}) }) || helper.toolchain.compilerName !== "cl.exe" || helper.toolchain.compilerVersion !== toolchain.compilerVersion || helper.toolchain.linkerVersion !== toolchain.linkerVersion || helper.toolchain.windowsSdkVersion !== toolchain.windowsSdkVersion) throw new Error("native component claims do not match approved source, role, build recipe, and toolchain.");
+  }
 }
 
 export function getNativeComponentDefinition(componentName) {
@@ -66,7 +78,7 @@ function componentOutputDirectory(outputDir, definition) {
   return path.resolve(outputDir);
 }
 
-export async function createNativeComponentManifest({ definition, outputDir, sourceRoot, assetHubCommit, toolchain }) {
+export async function createNativeComponentManifest({ definition, outputDir, sourceRoot, assetHubCommit, toolchain, inspection = null }) {
   if (!nativeComponentDefinitions.includes(definition)) throw new Error("native component definition is not canonical.");
   commit(assetHubCommit);
   exactKeys(toolchain, ["compilerVersion", "linkerVersion", "windowsSdkVersion"], "component toolchain input");
@@ -79,7 +91,8 @@ export async function createNativeComponentManifest({ definition, outputDir, sou
   const sourcePath = path.join(sourceRoot, ...definition.sourceRelativePath.split("/"));
   const buildScriptPath = path.join(sourceRoot, ...definition.buildScriptRelativePath.split("/"));
   const [source, buildScript] = await Promise.all([readFile(sourcePath), readFile(buildScriptPath)]);
-  const binary = { fileName: path.basename(definition.executableRelativePath), imports: [], peMachine: "AMD64", runtimeDependencyClassification: "A", sha256: digest(executable), size: details.size };
+  if (inspection && canonicalJson(inspection) !== canonicalJson(inspectNativeExecutable(executable))) throw new Error("Native actual executable inspection mismatch.");
+  const binary = { fileName: path.basename(definition.executableRelativePath), imports: inspection?.imports ?? [], peMachine: inspection?.machine ?? "AMD64", runtimeDependencyClassification: inspection ? nativeRuntimeDependencyClassification(inspection) : "A", sha256: digest(executable), size: details.size };
   return validateComponentManifest({
     manifestSchemaVersion: 1,
     version: 1,
@@ -91,15 +104,15 @@ export async function createNativeComponentManifest({ definition, outputDir, sou
     source: { relativePath: definition.sourceRelativePath, sha256: digest(source) },
     buildScript: { relativePath: definition.buildScriptRelativePath, sha256: digest(buildScript) },
     toolchain: { compilerName: "cl.exe", compilerVersion: toolchain.compilerVersion, linkerVersion: toolchain.linkerVersion, windowsSdkVersion: toolchain.windowsSdkVersion },
-    build: { commandFingerprint: commandFingerprint({ componentName: definition.componentName, configuration: "release-native", executableRelativePath: definition.executableRelativePath }), configuration: "release-native" },
+    build: { commandFingerprint: commandFingerprint({ componentName: definition.componentName, configuration: "release-native", executableRelativePath: definition.executableRelativePath, ...(inspection ? { normalizedArgv: nativeComponentArgv(definition) } : {}) }), configuration: "release-native" },
     binary,
-    verification: { componentLocalGateVersion: "native-release-v1", passedChecks: ["binary.identity", "canonical.output"], deferredChecks: ["service-context"] },
+    verification: { componentLocalGateVersion: inspection ? "native-release-v2" : "native-release-v1", passedChecks: inspection ? ["binary.identity", "canonical.output", "pe.amd64", "pe.imports", "normalized.argv"] : ["binary.identity", "canonical.output"], deferredChecks: ["service-context"] },
   });
 }
 
-export async function writeNativeComponentManifest({ definition, outputDir, sourceRoot, assetHubCommit, toolchain }) {
+export async function writeNativeComponentManifest({ definition, outputDir, sourceRoot, assetHubCommit, toolchain, inspection = null }) {
   const directory = componentOutputDirectory(outputDir, definition);
-  const manifest = await createNativeComponentManifest({ definition, outputDir: directory, sourceRoot, assetHubCommit, toolchain });
+  const manifest = await createNativeComponentManifest({ definition, outputDir: directory, sourceRoot, assetHubCommit, toolchain, inspection });
   const target = path.join(directory, path.basename(definition.integrityManifestRelativePath));
   await writeCanonicalManifest(target, manifest);
   return { manifest, manifestPath: target, manifestSha256: digest(await readFile(target)) };
@@ -144,14 +157,30 @@ export function createNativeBuildId(nativeSource, toolchain, configuration = "re
   const toolchainIdentity = digest(Buffer.from(canonicalJson(toolchain), "utf8"));
   return `nb2-${nativeSource.slice(0, 16)}-${toolchainIdentity.slice(0, 16)}-${digest(Buffer.from(configuration, "utf8")).slice(0, 16)}`;
 }
+export function createNativeBuildIdV3({ sourceCommit, sourceArchiveSha256, nativeSourceIdentity: identity, toolchain, configuration = "release-native" }) {
+  commit(sourceCommit); hash(sourceArchiveSha256, "source archive SHA-256"); hash(identity, "native source identity"); canonicalToolchain(toolchain); string(configuration, "native build configuration");
+  const toolchainIdentity = digest(Buffer.from(canonicalJson(toolchain), "utf8"));
+  const identityDomain = { configuration, nativeSourceIdentity: identity, schemaVersion: nativeSetManifestSchemaVersion, sourceArchiveSha256, sourceCommit, toolchainIdentity };
+  return `nb3-${digest(Buffer.from(canonicalJson(identityDomain), "utf8"))}`;
+}
+export function nativeBuildIdForManifest(manifest) {
+  if (manifest?.manifestSchemaVersion === 1) return `nb1-${manifest.assetHubCommit.slice(0, 12)}-${manifest.nativeSetDigest.slice(0, 32)}`;
+  if (manifest?.manifestSchemaVersion === 2) return createNativeBuildId(manifest.nativeSourceIdentity, manifest.toolchain);
+  if (manifest?.manifestSchemaVersion === nativeSetManifestSchemaVersion) return createNativeBuildIdV3({ sourceCommit: manifest.sourceCommit, sourceArchiveSha256: manifest.sourceArchiveSha256, nativeSourceIdentity: manifest.nativeSourceIdentity, toolchain: manifest.toolchain });
+  throw new Error("native set schema version is unsupported.");
+}
+function nativeBuildIdSchema(binding) {
+  if (binding.schemaVersion === 1 && /^(?:nb1-[a-f0-9]{12}-[a-f0-9]{32}|nb2-[a-f0-9]{16}(?:-[a-f0-9]{16}){2})$/.test(binding.nativeBuildId || "")) return true;
+  return binding.schemaVersion === 2 && /^nb3-[a-f0-9]{64}$/.test(binding.nativeBuildId || "");
+}
 export function validateNativeSetRunBinding(binding) {
   exactKeys(binding, ["nativeBuildId", "nativeSetManifestSha256", "nativeSourceIdentity", "runId", "schemaVersion", "sourceArchiveSha256", "sourceCommit"], "native set run binding");
-  if (binding.schemaVersion !== 1 || !/^[A-Za-z0-9-]+$/.test(binding.runId) || !/^nb2-[a-f0-9]{16}-[a-f0-9]{16}-[a-f0-9]{16}$/.test(binding.nativeBuildId)) throw new Error("native set run binding is invalid.");
+  if (!nativeBuildIdSchema(binding) || !/^[A-Za-z0-9-]+$/.test(binding.runId)) throw new Error("native set run binding is invalid.");
   commit(binding.sourceCommit); hash(binding.sourceArchiveSha256, "native set run binding archive SHA-256"); hash(binding.nativeSetManifestSha256, "native set run binding manifest SHA-256"); hash(binding.nativeSourceIdentity, "native set run binding native source identity");
   return binding;
 }
 export async function createNativeSetRunBinding({ runId, sourceCommit, sourceArchiveSha256, nativeSetManifestSha256, nativeSourceIdentity: sourceIdentity, nativeBuildId, outputPath }) {
-  const binding = validateNativeSetRunBinding({ schemaVersion: 1, runId, sourceCommit, sourceArchiveSha256, nativeSetManifestSha256, nativeSourceIdentity: sourceIdentity, nativeBuildId });
+  const binding = validateNativeSetRunBinding({ schemaVersion: nativeBuildId.startsWith("nb3-") ? 2 : 1, runId, sourceCommit, sourceArchiveSha256, nativeSetManifestSha256, nativeSourceIdentity: sourceIdentity, nativeBuildId });
   const bytes = canonicalManifestBytes(binding); await writeFile(outputPath, bytes); await writeFile(`${outputPath}.sha256`, `${digest(bytes)}  ${path.basename(outputPath)}\n`);
   return { ...binding, bindingSha256: digest(bytes) };
 }
@@ -159,7 +188,7 @@ export async function validateNativeSetRunBindingFile({ bindingPath, runId, sour
   const bytes = await readFile(bindingPath); const sidecar = await readFile(`${bindingPath}.sha256`, "utf8"); const bindingSha256 = digest(bytes);
   if (sidecar !== `${bindingSha256}  ${path.basename(bindingPath)}\n`) throw new Error("native set run binding sidecar is invalid.");
   const binding = validateNativeSetRunBinding(JSON.parse(bytes.toString("utf8")));
-  const expected = { schemaVersion: 1, runId, sourceCommit, sourceArchiveSha256, nativeSetManifestSha256, nativeSourceIdentity: sourceIdentity, nativeBuildId };
+  const expected = { schemaVersion: nativeBuildId.startsWith("nb3-") ? 2 : 1, runId, sourceCommit, sourceArchiveSha256, nativeSetManifestSha256, nativeSourceIdentity: sourceIdentity, nativeBuildId };
   if (canonicalJson(binding) !== canonicalJson(expected)) throw new Error("native set run binding does not match current formal inputs.");
   return { ...binding, bindingSha256 };
 }
@@ -235,29 +264,74 @@ export async function createNativeSetManifestV2({ sourceCommit, sourceArchiveSha
   };
   return validateNativeSetManifest(manifest);
 }
+export async function createNativeSetManifestV3({ sourceCommit, sourceArchiveSha256, nativeSourceInputs: inputFiles, sourceRoot, toolchain, configuration = "release-native", nativeOutputRoot }) {
+  onlyKeys(arguments[0], ["configuration", "nativeOutputRoot", "nativeSourceInputs", "sourceArchiveSha256", "sourceCommit", "sourceRoot", "toolchain"], "native set generator input");
+  if ((inputFiles == null) === (sourceRoot == null)) throw new Error("native set generator requires exactly one native source authority.");
+  commit(sourceCommit); hash(sourceArchiveSha256, "native set generator source archive SHA-256");
+  string(configuration, "native set generator build configuration");
+  if (configuration !== "release-native") throw new Error("native set generator build configuration is invalid.");
+  canonicalToolchain(toolchain);
+  if (typeof nativeOutputRoot !== "string" || !nativeOutputRoot) throw new Error("native set generator native output root is invalid.");
+  const files = inputFiles == null ? await calculateNativeSourceInputs(sourceRoot) : structuredClone(inputFiles);
+  const identity = nativeSourceIdentity(files);
+  exactNativeSourceInputs(files);
+  const outputs = await inspectNativeOutputSet(nativeOutputRoot);
+  await assertNativeComponentClaims({ nativeOutputRoot, inputs: files, sourceCommit, toolchain, configuration });
+  const bytes = Buffer.concat([Buffer.from("UED-ASSET-HUB-NATIVE-SET-V1\n", "utf8"), ...outputs.files.map((file) => Buffer.from(`${Buffer.byteLength(file.path, "utf8")}\t${file.size}\t${file.sha256}\t${file.path}\n`, "utf8"))]);
+  const manifest = {
+    manifestSchemaVersion: nativeSetManifestSchemaVersion,
+    nativeArtifactSetSchemaVersion: nativeSetManifestSchemaVersion,
+    sourceCommit,
+    sourceArchiveSha256,
+    nativeSourceInputs: files.sort((left, right) => compareUtf8(left.relativePath, right.relativePath)),
+    nativeSourceIdentity: identity,
+    architecture: "x64",
+    toolchain: structuredClone(toolchain),
+    nativeBuildId: createNativeBuildIdV3({ sourceCommit, sourceArchiveSha256, nativeSourceIdentity: identity, toolchain, configuration }),
+    components: outputs.components,
+    nativeSetDigestAlgorithm,
+    nativeSetDigest: digest(bytes),
+  };
+  return validateNativeSetManifest(manifest);
+}
 export function validateNativeSetManifest(manifest) {
-  exactKeys(manifest, ["architecture", "components", "manifestSchemaVersion", "nativeArtifactSetSchemaVersion", "nativeBuildId", "nativeSetDigest", "nativeSetDigestAlgorithm", "nativeSourceIdentity", "nativeSourceInputs", "sourceArchiveSha256", "sourceCommit", "toolchain"], "native set manifest");
-  if (manifest.manifestSchemaVersion !== 2 || manifest.nativeArtifactSetSchemaVersion !== 2 || manifest.architecture !== "x64" || manifest.nativeSetDigestAlgorithm !== nativeSetDigestAlgorithm) throw new Error("native set manifest identity is invalid."); commit(manifest.sourceCommit); hash(manifest.sourceArchiveSha256, "source archive sha256"); hash(manifest.nativeSetDigest, "native set digest"); hash(manifest.nativeSourceIdentity, "native source identity");
-  if (nativeSourceIdentity(manifest.nativeSourceInputs) !== manifest.nativeSourceIdentity) throw new Error("native source identity mismatch.");
-  exactNativeSourceInputs(manifest.nativeSourceInputs); canonicalToolchain(manifest.toolchain);
-  if (manifest.nativeBuildId !== createNativeBuildId(manifest.nativeSourceIdentity, manifest.toolchain)) throw new Error("native build ID does not match native source and toolchain identity.");
+  if (manifest?.manifestSchemaVersion === 1) {
+    exactKeys(manifest, ["architecture", "assetHubCommit", "components", "manifestSchemaVersion", "nativeArtifactSetSchemaVersion", "nativeSetDigest", "nativeSetDigestAlgorithm", "sourceArchiveSha256", "toolchain"], "legacy native set manifest");
+    if (manifest.nativeArtifactSetSchemaVersion !== 1 || manifest.architecture !== "x64" || manifest.nativeSetDigestAlgorithm !== nativeSetDigestAlgorithm) throw new Error("legacy native set manifest identity is invalid.");
+    commit(manifest.assetHubCommit); hash(manifest.sourceArchiveSha256, "source archive sha256"); hash(manifest.nativeSetDigest, "native set digest"); canonicalToolchain(manifest.toolchain);
+  } else {
+    exactKeys(manifest, ["architecture", "components", "manifestSchemaVersion", "nativeArtifactSetSchemaVersion", "nativeBuildId", "nativeSetDigest", "nativeSetDigestAlgorithm", "nativeSourceIdentity", "nativeSourceInputs", "sourceArchiveSha256", "sourceCommit", "toolchain"], "native set manifest");
+    const schema = manifest.manifestSchemaVersion;
+    if (![2, nativeSetManifestSchemaVersion].includes(schema) || manifest.nativeArtifactSetSchemaVersion !== schema || manifest.architecture !== "x64" || manifest.nativeSetDigestAlgorithm !== nativeSetDigestAlgorithm) throw new Error("native set manifest identity is invalid.");
+    commit(manifest.sourceCommit); hash(manifest.sourceArchiveSha256, "source archive sha256"); hash(manifest.nativeSetDigest, "native set digest"); hash(manifest.nativeSourceIdentity, "native source identity");
+    if (nativeSourceIdentity(manifest.nativeSourceInputs) !== manifest.nativeSourceIdentity) throw new Error("native source identity mismatch.");
+    exactNativeSourceInputs(manifest.nativeSourceInputs); canonicalToolchain(manifest.toolchain);
+    const expectedId = schema === 2 ? createNativeBuildId(manifest.nativeSourceIdentity, manifest.toolchain) : createNativeBuildIdV3({ sourceCommit: manifest.sourceCommit, sourceArchiveSha256: manifest.sourceArchiveSha256, nativeSourceIdentity: manifest.nativeSourceIdentity, toolchain: manifest.toolchain });
+    if (manifest.nativeBuildId !== expectedId) throw new Error("native build ID does not match native source and toolchain identity.");
+  }
   if (!Array.isArray(manifest.components) || manifest.components.length !== 3) throw new Error("native components must contain exactly three entries."); const names = manifest.components.map((component) => component.componentName); if (canonicalJson(names) !== canonicalJson([...componentNames].sort(compareUtf8))) throw new Error("native components are invalid.");
   for (const component of manifest.components) { exactKeys(component, ["componentName", "executableRelativePath", "executableSha256", "executableSize", "integrityManifestRelativePath", "integrityManifestSha256"], "native component binding"); const definition = nativeComponentDefinitions.find((item) => item.componentName === component.componentName); if (!definition || component.executableRelativePath !== definition.executableRelativePath || component.integrityManifestRelativePath !== definition.integrityManifestRelativePath) throw new Error("native component role binding is invalid."); logicalPath(component.executableRelativePath, "native executable path"); logicalPath(component.integrityManifestRelativePath, "native manifest path"); hash(component.executableSha256, "native executable sha256"); hash(component.integrityManifestSha256, "native manifest sha256"); if (!Number.isSafeInteger(component.executableSize) || component.executableSize < 0) throw new Error("native executable size is invalid."); }
   return manifest;
 }
 export async function writeCanonicalManifest(file, manifest) { const bytes = canonicalManifestBytes(manifest); await writeFile(file, bytes); return digest(bytes); }
-export async function verifyFrozenNativeSet(directory, { requireDirectoryIdentity = true } = {}) {
+export async function verifyFrozenNativeSet(directory, { requireDirectoryIdentity = true, sourceRoot = null, sourceCommit = null, sourceArchiveSha256 = null, configuration = "release-native", toolchain = null } = {}) {
   const names = [];
   async function visit(relative = "") { for (const entry of await readdir(path.join(directory, relative), { withFileTypes: true })) { const next = relative ? `${relative}/${entry.name}` : entry.name; if (entry.isDirectory()) await visit(next); else if (entry.isFile()) names.push(next); else throw new Error("native set contains an unsupported entry."); } }
   await visit(); const expected = [...nativeSetMembers, "native-components.manifest.json"].sort(compareUtf8); if (canonicalJson(names.sort(compareUtf8)) !== canonicalJson(expected)) throw new Error("native set contains unexpected files.");
   const aggregateDetails = await lstat(path.join(directory, "native-components.manifest.json")); if (!aggregateDetails.isFile() || aggregateDetails.nlink > 1 || aggregateDetails.isSymbolicLink()) throw new Error("native aggregate manifest is not a regular unlinked file.");
   const set = await calculateNativeSet(directory); const manifest = validateNativeSetManifest(JSON.parse(await readFile(path.join(directory, "native-components.manifest.json"), "utf8"))); if (manifest.nativeSetDigest !== set.digest) throw new Error("native set digest mismatch.");
   for (const component of manifest.components) { const executable = set.files.find((file) => file.path === component.executableRelativePath); const integrity = set.files.find((file) => file.path === component.integrityManifestRelativePath); if (!executable || !integrity || executable.sha256 !== component.executableSha256 || executable.size !== component.executableSize || integrity.sha256 !== component.integrityManifestSha256) throw new Error("native aggregate binding mismatch."); const helper = validateComponentManifest(JSON.parse(await readFile(path.join(directory, ...component.integrityManifestRelativePath.split("/")), "utf8"))); if (helper.componentName !== component.componentName || helper.binary.sha256 !== executable.sha256 || helper.binary.size !== executable.size || helper.binary.fileName !== path.basename(component.executableRelativePath)) throw new Error("native component manifest binding mismatch."); }
-  if (manifest.nativeSetDigest !== set.digest || manifest.nativeBuildId !== createNativeBuildId(manifest.nativeSourceIdentity, manifest.toolchain) || (requireDirectoryIdentity && path.basename(directory) !== manifest.nativeBuildId)) throw new Error("native build ID mismatch."); return { manifest, set };
+  const buildId = nativeBuildIdForManifest(manifest);
+  if (manifest.manifestSchemaVersion === nativeSetManifestSchemaVersion && sourceRoot) {
+    const inputs = await calculateNativeSourceInputs(sourceRoot);
+    if (canonicalJson(inputs) !== canonicalJson(manifest.nativeSourceInputs) || manifest.sourceCommit !== sourceCommit || manifest.sourceArchiveSha256 !== sourceArchiveSha256 || canonicalJson(manifest.toolchain) !== canonicalJson(toolchain ?? manifest.toolchain)) throw new Error("native aggregate does not match the consuming source/archive/toolchain authority.");
+    await assertNativeComponentClaims({ nativeOutputRoot: directory, inputs, sourceCommit, toolchain: toolchain ?? manifest.toolchain, configuration });
+  } else if ((sourceRoot || sourceCommit || sourceArchiveSha256 || toolchain) && !(sourceRoot && sourceCommit && sourceArchiveSha256 && toolchain)) throw new Error("complete Native source authority inputs are required together.");
+  if (manifest.nativeSetDigest !== set.digest || (manifest.nativeBuildId && manifest.nativeBuildId !== buildId) || (requireDirectoryIdentity && path.basename(directory) !== buildId)) throw new Error("native build ID mismatch."); return { manifest, set };
 }
 export async function promoteNativeCandidate({ candidateDirectory, frozenRoot }) {
   const candidate = await verifyFrozenNativeSet(candidateDirectory, { requireDirectoryIdentity: false }); const destination = path.join(frozenRoot, candidate.manifest.nativeBuildId);
-  try { const existing = await verifyFrozenNativeSet(destination); if (existing.set.digest !== candidate.set.digest || existing.manifest.sourceCommit !== candidate.manifest.sourceCommit) throw new Error("native build ID collision."); return { status: "idempotent", directory: destination, ...existing }; } catch (error) { if (error?.code !== "ENOENT") throw error; }
+  try { const existing = await verifyFrozenNativeSet(destination); if (existing.set.digest !== candidate.set.digest || existing.manifest.sourceCommit !== candidate.manifest.sourceCommit || existing.manifest.sourceArchiveSha256 !== candidate.manifest.sourceArchiveSha256 || existing.manifest.manifestSchemaVersion !== candidate.manifest.manifestSchemaVersion) throw new Error("native build ID collision."); return { status: "idempotent", directory: destination, ...existing }; } catch (error) { if (error?.code !== "ENOENT") throw error; }
   await mkdir(frozenRoot, { recursive: true }); if ((await stat(candidateDirectory)).dev !== (await stat(frozenRoot)).dev) throw new Error("native promotion must remain on one volume."); await rename(candidateDirectory, destination); return { status: "promoted", directory: destination, ...(await verifyFrozenNativeSet(destination)) };
 }
 export async function copyNativeSetMembers({ frozenDirectory, releaseDirectory }) {

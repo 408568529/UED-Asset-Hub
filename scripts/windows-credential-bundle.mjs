@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import path from "node:path";
+export { parseWindowsCredentialBundle } from "./windows-credential-schema.mjs";
+import { parseWindowsCredentialBundle } from "./windows-credential-schema.mjs";
 
 const maximumBytes = 64 * 1024;
-const required = { adminPassword: "ADMIN_PASSWORD", adminSessionSecret: "ADMIN_SESSION_SECRET", deepseekApiKey: "DEEPSEEK_API_KEY", gatewayToken: "AGENT_GATEWAY_TOKEN", testEnvironmentEncryptionKey: "TEST_ENV_ENCRYPTION_KEY" };
 
 export async function loadWindowsCredentialBundle({ helperPath, bundlePath }) {
   await Promise.all([access(helperPath), access(bundlePath)]);
@@ -20,15 +21,5 @@ export async function loadWindowsCredentialBundle({ helperPath, bundlePath }) {
   });
 }
 
-export function parseWindowsCredentialBundle(source) {
-  const payload = JSON.parse(source);
-  if (!payload || payload.schemaVersion !== 1 || !payload.credentials || typeof payload.credentials !== "object") throw new Error("Credential bundle is invalid.");
-  const environment = {};
-  for (const [field, name] of Object.entries(required)) {
-    if (typeof payload.credentials[field] !== "string" || !payload.credentials[field]) throw new Error("Credential bundle is invalid.");
-    environment[name] = payload.credentials[field];
-  }
-  return environment;
-}
 
 export function credentialHelperPath(projectDir) { return path.join(projectDir, "native", "windows-dpapi-credential-helper", "bin", "ued-windows-dpapi-credential-helper.exe"); }

@@ -6,13 +6,14 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { isInside, runtimeEnvironmentProfiles } from "../agent-integration/scripts/runtime-boundary.mjs";
 import { resolveAllowedDshSourcePath } from "../agent-integration/scripts/dsh-source-policy.mjs";
-import { validateDshSource } from "../agent-integration/scripts/dsh-source-validator.mjs";
+import { validateDshRuntimeSource, validateDshSource } from "../agent-integration/scripts/dsh-source-validator.mjs";
 import { ensureRuntimePaths, ensureRuntimeSubdirectory, inspectRuntimePaths } from "./runtime-path-safety.mjs";
 import { ManagedProcessController, assertNoLiveManagedOrphans, managedMetadataPath } from "./managed-process-controller.mjs";
 import { RuntimeLifecycleCore } from "./runtime-lifecycle-core.mjs";
 import { acquireSupervisorLock, supervisorLockPath } from "./supervisor-lock.mjs";
 import { createRuntimeControlBridge, runtimeControlEndpoint } from "./runtime-control-bridge.mjs";
 import { createWindowsStopDiscoveryBridge, windowsServiceMode } from "./windows-stop-discovery.mjs";
+import { resolveWindowsServiceIdentity } from "./windows-service-identity.mjs";
 import { credentialHelperPath, loadWindowsCredentialBundle } from "./windows-credential-bundle.mjs";
 import { resolveHostSecurityConfig } from "./host-security-config.mjs";
 import { createRuntimeDiagnosticsState } from "./runtime-diagnostics-state.mjs";
@@ -53,7 +54,7 @@ function port(name, fallback) { const parsed = Number.parseInt(value(name) || St
 function assertNodeVersion() {
   const [major, minor] = process.versions.node.split(".").map(Number);
   if (major < 22 || (major === 22 && minor < 19)) fail(`Node.js ${process.versions.node} 不满足 DSH 需要的 22.19+。`);
-  if (windowsServiceMode() && process.versions.node !== "22.23.2") fail(`Windows service mode requires pinned Node.js 22.23.2, received ${process.versions.node}.`);
+  if (windowsServiceMode() && process.versions.node !== "22.23.3") fail(`Windows service mode requires pinned Node.js 22.23.3, received ${process.versions.node}.`);
 }
 
 function dshUrl() {
@@ -187,6 +188,7 @@ export function publicLifecycleRecord(event) {
     reasonCode: event.reasonCode ?? null,
     status: event.status ?? null,
     operation: event.operation ?? null,
+    stderrRef: typeof event.stderrRef === "string" ? event.stderrRef : null,
     ownership: event.ownership ?? null,
     exitCode: Number.isInteger(event.exitCode) ? event.exitCode : null,
     exitSignal: typeof event.exitSignal === "string" ? event.exitSignal : null,
@@ -198,6 +200,7 @@ export function publicLifecycleRecord(event) {
 export async function main() {
   loadEnvConfig(projectDir);
   const serviceMode = windowsServiceMode();
+  const serviceIdentity = serviceMode ? resolveWindowsServiceIdentity() : null;
   let securityEnvironment = process.env;
   if (serviceMode && process.env.NODE_ENV === "production") {
     for (const key of ["ADMIN_PASSWORD", "ADMIN_SESSION_SECRET", "DEEPSEEK_API_KEY", "AGENT_GATEWAY_TOKEN", "TEST_ENV_ENCRYPTION_KEY"]) if (process.env[key]) fail(`Windows production credential ${key} must come from the DPAPI bundle.`);
@@ -211,6 +214,7 @@ export async function main() {
   const dataDir = requiredPath("DATA_DIR");
   const agentRuntimeDir = optionalPath("AGENT_RUNTIME_DIR");
   const sourceDir = optionalPath("DSH_SOURCE_DIR");
+  const runtimeSourceDir = optionalPath("DSH_RUNTIME_SOURCE_DIR");
   const expectedVersion = JSON.parse(await readFile(path.join(projectDir, "agent-integration/dsh/version.json"), "utf8"));
   let runtimeUrl = new URL("http://127.0.0.1:3080");
   const dshPort = 3080;
@@ -270,7 +274,10 @@ export async function main() {
     onProcessEvent: (event) => {
       diagnostics.recordManagedEvent(event);
       const componentState = diagnostics.component(event.component === "assetHub" ? "assetHubInternal" : event.component);
-      logLifecycle({ component: event.component, pid: event.pid, generation: event.generation, status: event.type, operation: event.operation, operationId: event.operationId, ownership: event.ownership ?? null, exitCode: event.code, exitSignal: event.signal, restartCount: componentState?.restartCount ?? null, reasonCode: componentState?.reasonCode ?? null });
+      const wrapperPath = value("UED_WINSW_EXECUTABLE");
+      const stderrRef = serviceMode && wrapperPath ? path.win32.resolve(wrapperPath, "..", "..", "logs", "winsw", `${serviceIdentity.serviceName}.err.log`) : null;
+      const exitReasonCode = event.type !== "exit" ? null : event.spawnFailed ? "child_spawn_failed" : event.signal ? "child_exit_signal" : event.code === 0 ? "child_exit_code_zero" : Number.isInteger(event.code) ? "child_exit_code_nonzero" : "child_exit_code_unknown";
+      logLifecycle({ component: event.component, pid: event.pid, generation: event.generation, status: event.type, operation: event.operation, operationId: event.operationId, stderrRef, ownership: event.ownership ?? null, exitCode: event.code, exitSignal: event.signal, restartCount: componentState?.restartCount ?? null, reasonCode: exitReasonCode ?? componentState?.reasonCode ?? null });
       if (stopping || event.type !== "exit") return;
       if (event.component === "assetHub") {
         controller.scheduleRestart("assetHub", async () => { try { await controller.start("assetHub", specifications.assetHub, { operation: "process_restart" }); await waitFor("Asset Hub", () => request(`http://127.0.0.1:${internalPort}/api/auth/session`)); } catch (error) { console.error(`[Host Supervisor] Asset Hub recovery failed: ${error instanceof Error ? error.message : error}`); } }, 1_000);
@@ -301,15 +308,16 @@ export async function main() {
   };
   const inspectStatic = async () => {
     try {
-      if (!agentRuntimeDir || !sourceDir || !securityEnvironment.AGENT_GATEWAY_TOKEN) return { ok: false, reasonCode: "runtime_configuration_invalid" };
+      if (!agentRuntimeDir || !sourceDir || !runtimeSourceDir || !securityEnvironment.AGENT_GATEWAY_TOKEN) return { ok: false, reasonCode: "runtime_configuration_invalid" };
       const configuredUrl = dshUrl();
       if (Number.parseInt(configuredUrl.port || "3080", 10) !== dshPort) return { ok: false, reasonCode: "runtime_configuration_invalid" };
       await inspectRuntimePaths({ dataDir, agentRuntimeDir });
       const canonicalSource = await resolveAllowedDshSourcePath(projectDir, sourceDir);
       const identity = await validateDshSource(canonicalSource, expectedVersion, { readOnly: true });
-      const build = await inspectBuild(canonicalSource, identity);
+      const runtimeSource = await validateDshRuntimeSource(canonicalSource, runtimeSourceDir);
+      const build = await inspectBuild(runtimeSource.runtimeSourceDir, identity);
       if (!build.ok) return build;
-      lastCanonicalSource = canonicalSource;
+      lastCanonicalRuntimeSource = runtimeSource.runtimeSourceDir;
       runtimeUrl = configuredUrl;
       return { ok: true };
     } catch (error) {
@@ -318,12 +326,12 @@ export async function main() {
       return { ok: false, reasonCode: /DSH|Git|版本|fingerprint/.test(message) ? "source_invalid" : "runtime_configuration_invalid" };
     }
   };
-  let lastCanonicalSource = null;
+  let lastCanonicalRuntimeSource = null;
   const configureAgentSpecifications = () => {
-    if (!runtimePaths?.agentRoot || !lastCanonicalSource) throw new Error("Agent Runtime 尚未完成受控预检。");
+    if (!runtimePaths?.agentRoot || !lastCanonicalRuntimeSource) throw new Error("Agent Runtime 尚未完成受控预检。");
     const values = { DSH_HOME: path.join(runtimePaths.agentRoot, "dsh-home"), AGENT_WORKSPACE_ROOT: path.join(runtimePaths.agentRoot, "workspaces") };
     specifications.gateway = { command: process.execPath, args: ["agent-integration/scripts/start-knowledge-gateway-mcp.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.gatewayBridge(securityEnvironment, { KNOWLEDGE_GATEWAY_MCP_PORT: String(gatewayPort), KNOWLEDGE_GATEWAY_INTERNAL_URL: `http://127.0.0.1:${internalPort}` }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(gatewayPort, "Knowledge Gateway") } };
-    specifications.dsh = { command: process.execPath, args: ["--import", "tsx/esm", "apps/cli/src/bin.ts", "web", "--patch", path.join(projectDir, "agent-integration", "dsh", "asset-hub-agent.overlay.yml"), "--host", "127.0.0.1", "--port", String(dshPort)], cwd: lastCanonicalSource, env: runtimeEnvironmentProfiles.dsh(securityEnvironment, { DSH_HOME: values.DSH_HOME, DSH_TELEMETRY_DISABLED: "1", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT, ASSET_HUB_MCP_URL: `http://127.0.0.1:${gatewayPort}/mcp` }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(dshPort, "DSH") } };
+    specifications.dsh = { command: process.execPath, args: ["--import", "tsx/esm", "apps/cli/src/bin.ts", "web", "--patch", path.join(projectDir, "agent-integration", "dsh", "asset-hub-agent.overlay.yml"), "--host", "127.0.0.1", "--port", String(dshPort)], cwd: lastCanonicalRuntimeSource, env: runtimeEnvironmentProfiles.dsh(securityEnvironment, { DSH_HOME: values.DSH_HOME, DSH_TELEMETRY_DISABLED: "1", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT, ASSET_HUB_MCP_URL: `http://127.0.0.1:${gatewayPort}/mcp` }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(dshPort, "DSH") } };
     specifications.proxy = { command: process.execPath, args: ["agent-integration/scripts/start-agent-proxy.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.agentProxy(securityEnvironment, { ADMIN_USERNAME: securityConfig.username, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, DSH_BASE_URL: runtimeUrl.origin, AGENT_PROXY_HOST: "127.0.0.1", AGENT_PROXY_BASE_PATH: "/agent-runtime", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(proxyPort, "Agent Proxy") } };
   };
   const inspectRuntime = async () => {
@@ -413,6 +421,7 @@ export async function main() {
   if (serviceMode && configuredEdgeHost && configuredEdgeHost !== "127.0.0.1") fail("Windows service mode requires HOST_BIND_HOST=127.0.0.1.");
   const winswExecutable = value("UED_WINSW_EXECUTABLE");
   if (serviceMode && !winswExecutable) fail("Windows service mode requires UED_WINSW_EXECUTABLE.");
+  if (serviceMode && path.resolve(winswExecutable) !== path.resolve(projectDir, "..", "service", `${serviceIdentity.serviceName}.exe`)) fail("Windows service wrapper identity is invalid.");
   const edge = createEdgeServer({ host: serviceMode ? "127.0.0.1" : configuredEdgeHost || "0.0.0.0", port: publicPort, internalPort, proxyPort });
   diagnostics.recordInProcessLifecycle("publicEdge", { status: "starting" });
   await edge.start();
@@ -422,6 +431,7 @@ export async function main() {
   if (state.status !== "ready") console.error(`[Host Supervisor] Agent Runtime is ${state.status}${state.reasonCode ? `: ${state.reasonCode}` : ""}. Asset Hub Shell remains available.`);
   const shutdown = createSharedShutdown(async (signal) => {
     stopping = true;
+    logLifecycle({ status: "managed-shutdown-entered", phase: "managed-shutdown" });
     diagnostics.beginShutdown();
     controller.beginShutdown();
     let releaseAllowed = false;
@@ -433,7 +443,9 @@ export async function main() {
       await core.stopForShutdown();
       await controller.stopAll(["assetHub"]);
       await controller.flushMetadata();
+      logLifecycle({ status: "metadata-flushed", phase: "managed-shutdown" });
       controller.assertAllExited();
+      logLifecycle({ status: "managed-components-converged", phase: "managed-shutdown" });
       await lifecycleWriter?.flush();
       releaseAllowed = true;
     } finally { if (!releaseAllowed) diagnostics.recordSupervisorDegradation("shutdown_incomplete"); }
@@ -447,14 +459,18 @@ export async function main() {
       diagnostics.recordInProcessLifecycle("runtimeControl", { status: "stopped" });
       diagnostics.recordInProcessLifecycle("supervisor", { status: "stopped" });
       await releaseLock();
+      logLifecycle({ status: "finalization-completed", phase: "managed-shutdown" });
+      await lifecycleWriter?.flush();
       if (exitProcess) process.exit(exitCode);
     })();
     return finalizationPromise;
   };
   managedShutdown = () => shutdown("SCM_STOP");
   if (serviceMode) {
+    logLifecycle({ operation: "stop-discovery", status: "initializing", phase: "stop-discovery" });
     stopDiscovery = createWindowsStopDiscoveryBridge({
       adapterPath: windowsPipeSecurityAdapter.path,
+      serviceName: serviceIdentity.serviceName,
       clientExecutable: process.execPath,
       clientScript: path.join(projectDir, "scripts", "windows-managed-shutdown-client.mjs"),
       parentPid: process.ppid,
@@ -463,6 +479,7 @@ export async function main() {
       onEvent: (event) => logLifecycle({ ...event, phase: "stop-discovery" })
     });
     stopDiscovery.start();
+    logLifecycle({ operation: "stop-discovery", status: "initialized", phase: "stop-discovery" });
   }
   const handleSignal = (signal) => {
     void shutdown(signal).then((exitCode) => finalizeShutdown({ exitCode, exitProcess: true })).catch((error) => {

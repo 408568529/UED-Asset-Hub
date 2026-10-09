@@ -86,6 +86,7 @@ export function createWindowsStopDiscoveryBridge({ adapterPath, serviceName = de
         }
         sendLine(child.stdin, { ok: true, capability: { protocolVersion: stopDiscoveryProtocolVersion, ...capability() } });
         try { onEvent({ operation: "discover-shutdown", status: "accepted", reasonCode: null, generation: capability().generation }); } catch {}
+        try { onEvent({ operation: "stop-discovery-client", status: "connected-authenticated", reasonCode: null, generation: capability().generation }); } catch {}
       } catch {
         child?.stdin.destroy();
       }

@@ -1,0 +1,7 @@
+{
+  "architecture": "x64",
+  "name": "Node.js",
+  "sha256": "9c9245166b4a8e182e0b797da9c20136117ff24368eaff1fec8343a123c8db0e",
+  "source": "https://nodejs.org/dist/v22.23.3/node-v22.23.3-win-x64.zip",
+  "version": "22.23.3"
+}

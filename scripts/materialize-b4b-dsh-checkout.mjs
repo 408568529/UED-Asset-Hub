@@ -1,0 +1,22 @@
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { mkdir, readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
+
+const options = Object.fromEntries(process.argv.slice(2).reduce((pairs, value, index, values) => value.startsWith("--") && values[index + 1] ? [...pairs, [value.slice(2), values[index + 1]]] : pairs, []));
+const runId = options["run-id"], b4bRoot = path.resolve(options["b4b-root"] || ""), expectedLeaf = runId;
+if (process.platform !== "win32" || !/^[A-Za-z0-9](?:[A-Za-z0-9-]{6,46}[A-Za-z0-9])?$/.test(runId || "") || path.win32.basename(b4bRoot) !== expectedLeaf || path.win32.dirname(b4bRoot).toLowerCase() !== "d:\\ued-asset-hub-staging\\b4b") throw new Error("B4B DSH checkout identity is invalid.");
+const candidate = path.join(b4bRoot, "current"), input = path.join(b4bRoot, "dsh-input"), outputDir = path.join(b4bRoot, "dsh-git-authority-v2");
+const expected = JSON.parse(await readFile(path.join(candidate, "agent-integration", "dsh", "version.json"), "utf8"));
+const offlinePackageModule = pathToFileURL(path.join(b4bRoot, "source-root", "agent-integration", "scripts", "dsh-offline-package.mjs")).href;
+const { validateOfflineDshGitCheckout, validateOfflineDshPackage } = await import(offlinePackageModule);
+const packageResult = await validateOfflineDshPackage({ archivePath: path.join(input, "dsh-source.tar"), manifestPath: path.join(input, "dsh-source.manifest.json"), provenancePath: path.join(input, "dsh-source.provenance.json"), bundlePath: path.join(input, "dsh-source.bundle"), expected });
+const runGit = (args) => { const result = spawnSync("git", ["-C", outputDir, ...args], { encoding: "utf8", windowsHide: true }); if (result.status !== 0) throw new Error(`offline DSH Git ${args[0]} failed.`); return result.stdout.trim(); };
+await mkdir(outputDir);
+runGit(["init", "-q"]);
+runGit(["config", "core.symlinks", "true"]);
+runGit(["bundle", "verify", path.join(input, "dsh-source.bundle")]);
+runGit(["bundle", "unbundle", path.join(input, "dsh-source.bundle")]);
+runGit(["checkout", "--detach", "-q", packageResult.sourceCommit]);
+const checkout = await validateOfflineDshGitCheckout({ packageResult, outputDir, expected });
+console.log(JSON.stringify({ result: "PASS", b4bRunId: runId, commit: checkout.identity.commit, tree: checkout.identity.tree, fingerprint: checkout.identity.fingerprint, checkoutRootIdentity: checkout.checkoutRootIdentity }));

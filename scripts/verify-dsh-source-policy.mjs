@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { resolveAllowedDshSourcePath } from "../agent-integration/scripts/dsh-source-policy.mjs";
-import { validateDshSource } from "../agent-integration/scripts/dsh-source-validator.mjs";
+import { validateDshRuntimeSource, validateDshSource } from "../agent-integration/scripts/dsh-source-validator.mjs";
 
 const officialOrigin = "https://github.com/deepseek-ai/deepseek-harness.git";
 
@@ -62,6 +62,18 @@ try {
   assert.equal(valid.sourceType, "git");
   assert.equal(await resolveAllowedDshSourcePath(projectDir, externalSource), externalSource);
   console.log("[DSH Source] official external Git Source: PASS");
+
+  const runtimeSource = path.join(root, "runtime-dsh");
+  await cp(externalSource, runtimeSource, { recursive: true, filter: (entry) => path.basename(entry) !== ".git" });
+  const runtime = await validateDshRuntimeSource(externalSource, runtimeSource);
+  assert.equal(runtime.runtimeSourceDir, runtimeSource);
+  await writeFile(path.join(runtimeSource, "package.json"), "{\"tampered\":true}\n", "utf8");
+  await expectFailure(() => validateDshRuntimeSource(externalSource, runtimeSource));
+  await writeDshStructure(runtimeSource);
+  await mkdir(path.join(runtimeSource, ".git"));
+  await expectFailure(() => validateDshRuntimeSource(externalSource, runtimeSource));
+  await rm(path.join(runtimeSource, ".git"), { recursive: true, force: true });
+  console.log("[DSH Source] isolated runtime source matches the authoritative tracked baseline and rejects tampering or .git: PASS");
 
   const vendorSource = path.join(projectDir, "vendor", "deepseek-harness");
   const vendorExpected = await createDshSource(vendorSource);

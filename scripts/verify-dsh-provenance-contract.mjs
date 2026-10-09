@@ -5,7 +5,7 @@ import { copyFile, mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } 
 import os from "node:os";
 import path from "node:path";
 import { dshProvenanceContractVersion, serializeDshProvenanceEvidence, validateDshAcquisitionEvidence, validateDshSourceIdentity } from "../agent-integration/scripts/dsh-source-validator.mjs";
-import { createOfflineDshRunBinding, generateOfflineDshPackage, materializeOfflineDshPackage, readOfflineDshArchive, validateOfflineDshMaterialization } from "../agent-integration/scripts/dsh-offline-package.mjs";
+import { createOfflineDshRunBinding, generateOfflineDshPackage, materializeOfflineDshGitCheckout, materializeOfflineDshPackage, readOfflineDshArchive, validateOfflineDshGitCheckout, validateOfflineDshMaterialization } from "../agent-integration/scripts/dsh-offline-package.mjs";
 import { bindDshConstructorProvenance } from "./windows-release-constructor.mjs";
 
 const upstream = "https://github.com/deepseek-ai/deepseek-harness.git";
@@ -86,6 +86,14 @@ function tarEntry(name, { type = "0", target = "" } = {}) {
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "ued-dsh-provenance-contract-"));
 const root = await realpath(temporaryRoot);
 try {
+  const sourceOnlyRoot = path.join(root, "source-only");
+  const sourceOnlyScripts = path.join(sourceOnlyRoot, "agent-integration", "scripts");
+  await mkdir(sourceOnlyScripts, { recursive: true });
+  await mkdir(path.join(sourceOnlyRoot, "scripts"), { recursive: true });
+  for (const relative of ["agent-integration/scripts/dsh-offline-package.mjs", "agent-integration/scripts/dsh-source-validator.mjs", "scripts/archive-member-contract.mjs"]) await copyFile(path.join(process.cwd(), relative), path.join(sourceOnlyRoot, relative));
+  const sourceOnlyModule = path.join(sourceOnlyScripts, "dsh-offline-package.mjs");
+  const importModule = "await import(" + JSON.stringify(new URL("file://" + sourceOnlyModule.replaceAll("\\", "/")).href) + ")";
+  execFileSync(process.execPath, ["--input-type=module", "-e", importModule], { cwd: sourceOnlyRoot, env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" } });
   const staged = path.join(root, "staged");
   await mkdir(staged);
   const contract = await createFixture(staged);
@@ -145,17 +153,23 @@ try {
   const offlinePackage = await generateOfflineDshPackage({ sourceDir: staged, outputDir: path.join(root, "offline-package"), expected: contract });
   assert.equal(offlinePackage.entries.filter((entry) => entry.type === "symlink").length, 1);
   const offlineRoot = path.join(root, "offline-materialized");
-  const offlineMaterialized = await materializeOfflineDshPackage({ archivePath: offlinePackage.archivePath, manifestPath: offlinePackage.manifestPath, provenancePath: offlinePackage.provenancePath, expected: contract, outputDir: offlineRoot });
+  const offlineMaterialized = await materializeOfflineDshPackage({ archivePath: offlinePackage.archivePath, bundlePath: offlinePackage.bundlePath, manifestPath: offlinePackage.manifestPath, provenancePath: offlinePackage.provenancePath, expected: contract, outputDir: offlineRoot });
+  const checkoutRoot = path.join(root, "offline-git-checkout");
+  const checkout = await materializeOfflineDshGitCheckout({ packageResult: offlinePackage, outputDir: checkoutRoot, expected: contract });
+  assert.equal(checkout.identity.commit, contract.sourceCommit);
+  assert.equal(checkout.identity.tree, contract.sourceTree);
+  await assert.doesNotReject(validateOfflineDshGitCheckout({ packageResult: offlinePackage, outputDir: checkoutRoot, expected: contract }));
   const runBindingPath = path.join(root, "offline-run-binding.json");
   const runBinding = await createOfflineDshRunBinding({ packageResult: offlinePackage, targetRunId: "g029-fixture", materializedRootIdentity: offlineMaterialized.materializedIdentity.materializedRootIdentity, outputPath: runBindingPath });
-  const offlineEvidence = evidenceFor(contract, offlinePackage.identity, { archiveSha256: offlinePackage.archiveSha256, manifestSha256: offlinePackage.manifestSha256, materializationMode: "validated-dereference", packageSchemaVersion: 1, runBindingSha256: runBinding.bindingSha256, sourceMemberCount: offlinePackage.sourceMemberCount }, "offline-package");
+  const offlineEvidence = evidenceFor(contract, offlinePackage.identity, { archiveSha256: offlinePackage.archiveSha256, bundleSha256: offlinePackage.bundleSha256, bundleSize: offlinePackage.bundleSize, manifestSha256: offlinePackage.manifestSha256, materializationMode: "validated-dereference", packageSchemaVersion: 2, requiredCommit: offlinePackage.sourceCommit, runBindingSha256: runBinding.bindingSha256, sourceMemberCount: offlinePackage.sourceMemberCount }, "offline-package");
   const offlineEvidencePath = await writeEvidence(evidenceRoot, "offline.json", offlineEvidence);
-  const offlineInput = { archivePath: offlinePackage.archivePath, manifestPath: offlinePackage.manifestPath, provenancePath: offlinePackage.provenancePath, runBindingPath, targetRunId: "g029-fixture" };
+  const offlineInput = { archivePath: offlinePackage.archivePath, bundlePath: offlinePackage.bundlePath, manifestPath: offlinePackage.manifestPath, provenancePath: offlinePackage.provenancePath, runBindingPath, targetRunId: "g029-fixture" };
   const offlineIdentity = await validateDshAcquisitionEvidence({ evidencePath: offlineEvidencePath, offlinePackage: offlineInput, stagedSourceDir: offlineRoot, expected: contract });
   const offlineConstructorIdentity = await bindDshConstructorProvenance({ dshRoot: offlineRoot, dshContract: { ...contract, version: contract.sourceVersion }, dshVersion: contract.sourceVersion, dshCommit: contract.sourceCommit, evidencePath: offlineEvidencePath, offlinePackage: offlineInput });
   assert.deepEqual(offlineIdentity, offlineConstructorIdentity);
   await assert.doesNotReject(validateOfflineDshMaterialization({ packageResult: offlinePackage, outputDir: offlineRoot }));
   await assert.rejects(validateDshAcquisitionEvidence({ evidencePath: offlineEvidencePath, stagedSourceDir: offlineRoot, expected: contract }));
+  await assert.rejects(validateDshAcquisitionEvidence({ evidencePath: offlineEvidencePath, offlinePackage: { ...offlineInput, bundlePath: path.join(root, "missing.bundle") }, stagedSourceDir: offlineRoot, expected: contract }));
   await assert.rejects(validateDshAcquisitionEvidence({ evidencePath: offlineEvidencePath, offlinePackage: { ...offlineInput, targetRunId: "other-run" }, stagedSourceDir: offlineRoot, expected: contract }));
   const wrongBindingPath = path.join(root, "wrong-binding.json");
   const wrongBinding = JSON.parse(await readFile(runBindingPath, "utf8")); wrongBinding.packageArchiveSha256 = "0".repeat(64); const wrongBindingBytes = Buffer.from(`${JSON.stringify(wrongBinding)}\n`); await writeFile(wrongBindingPath, wrongBindingBytes); await writeFile(`${wrongBindingPath}.sha256`, `${createHash("sha256").update(wrongBindingBytes).digest("hex")}  wrong-binding.json\n`);
@@ -167,6 +181,10 @@ try {
   await copyFile(offlinePackage.archivePath, tamperedArchive);
   await writeFile(tamperedArchive, Buffer.concat([await readFile(tamperedArchive), Buffer.from("x")]));
   await assert.rejects(validateDshAcquisitionEvidence({ evidencePath: offlineEvidencePath, offlinePackage: { ...offlineInput, archivePath: tamperedArchive }, stagedSourceDir: offlineRoot, expected: contract }));
+  const tamperedOfflineBundle = path.join(root, "tampered-dsh-source.bundle");
+  await copyFile(offlinePackage.bundlePath, tamperedOfflineBundle);
+  await writeFile(tamperedOfflineBundle, Buffer.concat([await readFile(tamperedOfflineBundle), Buffer.from("x")]));
+  await assert.rejects(validateDshAcquisitionEvidence({ evidencePath: offlineEvidencePath, offlinePackage: { ...offlineInput, bundlePath: tamperedOfflineBundle }, stagedSourceDir: offlineRoot, expected: contract }));
   const tamperedManifest = path.join(root, "tampered-dsh-source.manifest.json");
   const manifest = JSON.parse(await readFile(offlinePackage.manifestPath, "utf8")); manifest.sourceMemberCount += 1; await writeFile(tamperedManifest, `${JSON.stringify(manifest)}\n`);
   await assert.rejects(validateDshAcquisitionEvidence({ evidencePath: offlineEvidencePath, offlinePackage: { ...offlineInput, manifestPath: tamperedManifest }, stagedSourceDir: offlineRoot, expected: contract }));
@@ -179,7 +197,7 @@ try {
   await assert.rejects(validateOfflineDshMaterialization({ packageResult: offlinePackage, outputDir: offlineRoot }));
   await rm(path.join(offlineRoot, "unexpected.txt"));
   const nativeRoot = path.join(root, "offline-native");
-  await assert.rejects(materializeOfflineDshPackage({ archivePath: offlinePackage.archivePath, manifestPath: offlinePackage.manifestPath, provenancePath: offlinePackage.provenancePath, expected: contract, outputDir: nativeRoot, mode: "native" }));
+  await assert.rejects(materializeOfflineDshPackage({ archivePath: offlinePackage.archivePath, bundlePath: offlinePackage.bundlePath, manifestPath: offlinePackage.manifestPath, provenancePath: offlinePackage.provenancePath, expected: contract, outputDir: nativeRoot, mode: "native" }));
   await writeFile(path.join(offlineRoot, "package.json"), "tampered\n");
   await assert.rejects(validateDshAcquisitionEvidence({ evidencePath: offlineEvidencePath, offlinePackage: offlineInput, stagedSourceDir: offlineRoot, expected: contract }));
   console.log("[DSH Provenance] bundle, HTTPS, sidecar, staged binding, and forged evidence cases: PASS");

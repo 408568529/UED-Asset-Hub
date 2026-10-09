@@ -3,6 +3,8 @@ param(
   [string]$RuntimeDir,
   [Parameter(Mandatory = $true)]
   [string]$DshSourceDir,
+  [Parameter(Mandatory = $true)]
+  [string]$DshRuntimeSourceDir,
   [int]$Port = 3080
 )
 
@@ -10,6 +12,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\\.."))
 $runtimePath = [IO.Path]::GetFullPath($RuntimeDir)
 $dshSourcePath = [IO.Path]::GetFullPath($DshSourceDir)
+$dshRuntimeSourcePath = [IO.Path]::GetFullPath($DshRuntimeSourceDir)
 $expectedCommit = "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"
 
 if ($runtimePath.StartsWith($repoRoot, [StringComparison]::OrdinalIgnoreCase)) {
@@ -19,6 +22,13 @@ if ($runtimePath.StartsWith($repoRoot, [StringComparison]::OrdinalIgnoreCase)) {
 if (-not (Test-Path (Join-Path $dshSourcePath ".git"))) {
   throw "未找到独立 DSH 源码目录。请先运行 setup-dsh.ps1。"
 }
+
+if ($dshRuntimeSourcePath.StartsWith($dshSourcePath, [StringComparison]::OrdinalIgnoreCase) -or $dshSourcePath.StartsWith($dshRuntimeSourcePath, [StringComparison]::OrdinalIgnoreCase) -or (Test-Path (Join-Path $dshRuntimeSourcePath ".git"))) {
+  throw "DSH runtime source 必须与 authoritative DSH checkout 隔离，且不得包含 .git。"
+}
+
+node (Join-Path $repoRoot "scripts\verify-dsh-runtime-source.mjs") $dshSourcePath $dshRuntimeSourcePath
+if ($LASTEXITCODE -ne 0) { throw "DSH runtime source 无法验证为 authoritative checkout 的受控派生。" }
 
 $actualCommit = (git -C $dshSourcePath rev-parse HEAD).Trim()
 if ($actualCommit -ne $expectedCommit) {
@@ -51,7 +61,7 @@ if (-not $env:ASSET_HUB_MCP_URL) {
 
 Write-Host "Starting DeepSeek Harness 0.1.1-rc.2 on 127.0.0.1:$Port"
 Write-Host "DSH_HOME: $env:DSH_HOME"
-Push-Location $dshSourcePath
+Push-Location $dshRuntimeSourcePath
 try {
   pnpm dsh web --patch $restrictedProfile --host 127.0.0.1 --port $Port
 } finally {

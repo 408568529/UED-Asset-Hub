@@ -2,13 +2,14 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
-import { dshPayloadFiles, runtimeScripts, servicePayloadFiles, assertPayloadPath } from "./windows-release-payload.mjs";
+import { dshPayloadFiles, servicePayloadFiles, assertPayloadPath } from "./windows-release-payload.mjs";
+import { deriveHostRuntimeModuleClosure } from "./host-runtime-module-closure.mjs";
 import { isReleaseSourceExcluded } from "./create-controlled-source-snapshot.mjs";
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const compareUtf8 = (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b));
 const applicationRequired = ["src/app/haldur-design-skill/page.tsx", "src/app/api/haldur-design-skill/route.ts", "src/app/api/haldur-design-skill/directories/route.ts", "src/app/api/haldur-design-skill/files/route.ts", "src/app/api/haldur-design-skill/files/content/route.ts", "src/app/api/haldur-design-skill/download/route.ts", "src/app/api/haldur-design-skill/admin/audit/route.ts", "src/app/api/haldur-design-skill/admin/recovery/route.ts", "src/app/api/haldur-design-skill/admin/runtime/route.ts", "src/components/haldur/HaldurDesignSkillWorkbench.tsx", "src/components/haldur/HaldurMarkdownDocumentPanel.tsx", "src/config/modules.ts"];
-export const sourceRequired = ["package.json", ...runtimeScripts, ...dshPayloadFiles, ...servicePayloadFiles].map(assertPayloadPath);
+export const sourceRequired = ["package.json", ...dshPayloadFiles, ...servicePayloadFiles].map(assertPayloadPath);
 
 function canonicalPath(value) {
   if (typeof value !== "string") throw new Error("baseline path is invalid.");
@@ -17,9 +18,10 @@ function canonicalPath(value) {
   return normalized;
 }
 
-function membershipFor(relativePath) {
+function membershipFor(relativePath, runtimeModules) {
   const values = ["SNAPSHOT_REQUIRED"];
-  if (sourceRequired.includes(relativePath)) values.push("SOURCE_REQUIRED");
+  if (sourceRequired.includes(relativePath) || runtimeModules.has(relativePath)) values.push("SOURCE_REQUIRED");
+  if (runtimeModules.has(relativePath)) values.push("HOST_RUNTIME_CLOSURE");
   if (applicationRequired.includes(relativePath)) values.push("APPLICATION_REQUIRED");
   if (relativePath.startsWith("src/")) values.push("APPLICATION_SOURCE");
   if (relativePath.startsWith("agent-integration/dsh/") || relativePath === "agent-integration/scripts/dsh-source-validator.mjs") values.push("DSH_SOURCE");
@@ -32,6 +34,9 @@ function list(root, args, collector) {
 }
 
 export async function collectBaselineRecords(root) {
+  const runtimeClosure = await deriveHostRuntimeModuleClosure(root);
+  const runtimeModules = new Set(runtimeClosure.modules.map((module) => module.path));
+  const requiredSourcePaths = [...new Set([...sourceRequired, ...runtimeModules])];
   const raw = [
     ...list(root, ["--cached"], "git-cached"),
     ...list(root, ["--modified"], "git-modified"),
@@ -53,12 +58,12 @@ export async function collectBaselineRecords(root) {
     if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink > 1) throw new Error(`baseline member is not a regular single-link file: ${canonical}`);
     const bytes = await readFile(absolute); const identity = { sha256: sha256(bytes), size: bytes.length, physicalPath };
     provenance.push({ relativePath: canonical, occurrenceCount: entries.length, collectors: entries.map((entry) => entry.collector).sort(compareUtf8), ...identity });
-    records.push({ relativePath: canonical, sha256: identity.sha256, size: identity.size, lifecycle: sourceRequired.includes(canonical) ? (canonical.endsWith("node-22.23.2-x64.artifact.json") ? "SOURCE_IDENTITY_INPUT" : "SOURCE_PAYLOAD") : canonical.startsWith("src/") ? "APPLICATION_SOURCE" : "RELEASE_SOURCE_INPUT", closureMembership: membershipFor(canonical) });
+    records.push({ relativePath: canonical, sha256: identity.sha256, size: identity.size, lifecycle: sourceRequired.includes(canonical) || runtimeModules.has(canonical) ? (canonical.endsWith("node-22.23.3-x64.artifact.json") ? "SOURCE_IDENTITY_INPUT" : "SOURCE_PAYLOAD") : canonical.startsWith("src/") ? "APPLICATION_SOURCE" : "RELEASE_SOURCE_INPUT", closureMembership: membershipFor(canonical, runtimeModules) });
   }
   records.sort((a, b) => compareUtf8(a.relativePath, b.relativePath));
   const paths = new Set(records.map((record) => record.relativePath));
-  for (const required of [...sourceRequired, ...applicationRequired]) if (!paths.has(required)) throw new Error(`required baseline source missing: ${required}`);
-  return { records, provenance: provenance.filter((item) => item.occurrenceCount > 1).sort((a, b) => compareUtf8(a.relativePath, b.relativePath)) };
+  for (const required of [...requiredSourcePaths, ...applicationRequired]) if (!paths.has(required)) throw new Error(`required baseline source missing: ${required}`);
+  return { records, runtimeClosure, provenance: provenance.filter((item) => item.occurrenceCount > 1).sort((a, b) => compareUtf8(a.relativePath, b.relativePath)) };
 }
 
 export function canonicalizeFixtures(entries) {

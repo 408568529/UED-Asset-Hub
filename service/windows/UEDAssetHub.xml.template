@@ -1,15 +1,30 @@
 <!-- WinSW 2.12.0 x64. Render {{UED_ROOT}} during controlled Windows deployment. Never put a secret in this file. -->
 <service>
-  <id>UEDAssetHub</id>
+  <id>{{UED_SERVICE_NAME}}</id>
   <name>UED Asset Hub</name>
   <description>UED Asset Hub Host Supervisor</description>
-  <executable>{{UED_ROOT}}\service\node\22.23.2\node.exe</executable>
+  <startmode>Manual</startmode>
+  <executable>{{UED_ROOT}}\service\node\22.23.3\node.exe</executable>
   <startarguments>{{UED_ROOT}}\current\scripts\start-host.mjs</startarguments>
-  <stopexecutable>{{UED_ROOT}}\service\node\22.23.2\node.exe</stopexecutable>
+  <stopexecutable>{{UED_ROOT}}\service\node\22.23.3\node.exe</stopexecutable>
   <stoparguments>{{UED_ROOT}}\current\scripts\windows-managed-shutdown-client.mjs 90000</stoparguments>
   <workingdirectory>{{UED_ROOT}}\current</workingdirectory>
   <env name="UED_WINDOWS_SERVICE_MODE" value="true" />
-  <env name="UED_WINSW_EXECUTABLE" value="{{UED_ROOT}}\service\UEDAssetHub.exe" />
+  <env name="UED_WINDOWS_SERVICE_NAME" value="{{UED_SERVICE_NAME}}" />
+  <env name="UED_B4B_RUN_ID" value="{{UED_B4B_RUN_ID}}" />
+  <env name="UED_WINSW_EXECUTABLE" value="{{UED_ROOT}}\service\{{UED_SERVICE_NAME}}.exe" />
+  <env name="NODE_ENV" value="production" />
+  <env name="DATA_DIR" value="{{UED_ROOT}}\runtime-data" />
+  <env name="ASSET_HUB_RUNTIME_DIR" value="{{UED_ROOT}}\asset-hub-runtime" />
+  <env name="AGENT_RUNTIME_DIR" value="{{UED_ROOT}}\agent-runtime" />
+  <env name="TRAINING_MEDIA_DIR" value="{{UED_ROOT}}\training-media" />
+  <env name="DSH_SOURCE_DIR" value="{{UED_ROOT}}\dsh-git-authority-v2" />
+  <env name="DSH_RUNTIME_SOURCE_DIR" value="{{UED_ROOT}}\dsh-runtime-v2" />
+  <env name="DSH_BASE_URL" value="http://127.0.0.1:3080" />
+  <env name="UED_CREDENTIAL_BUNDLE_PATH" value="{{UED_ROOT}}\credentials\{{UED_SERVICE_NAME}}.credentials.dpapi" />
+  <env name="PUBLIC_ORIGIN" value="https://asset-hub.test" />
+  <env name="ADMIN_SESSION_SECURE" value="true" />
+  <env name="AGENT_ENABLED" value="true" />
   <env name="HOST_BIND_HOST" value="127.0.0.1" />
   <stoptimeout>120 sec</stoptimeout>
   <onfailure action="restart" delay="30 sec" />

@@ -55,14 +55,14 @@ async function main() {
     await rm(path.join(root, "untracked-release.txt"));
 
     const malformed = { ...snapshot.manifest, sourceClassification: "SNAPSHOT_WITH_UNCOMMITTED_CHANGES" };
-    await expectDenied(async () => validateSourceSnapshotManifest(await valuesFor(malformed, output, "wrong-classification.json")), /identity does not match/);
-    await expectDenied(() => validateSourceSnapshotManifest({ ...values, "creation-run-id": "different-run" }), /identity does not match/);
-    await expectDenied(() => validateSourceSnapshotManifest({ ...values, "source-archive-sha256": "a".repeat(64) }), /identity does not match/);
-    await expectDenied(async () => validateSourceSnapshotManifest(await valuesFor({ ...snapshot.manifest, productionEligible: false }, output, "not-eligible.json")), /identity does not match/);
+    await expectDenied(async () => validateSourceSnapshotManifest(await valuesFor(malformed, output, "wrong-classification.json")), /creation receipt or authority identity/);
+    assert.equal((await validateSourceSnapshotManifest({ ...values, "creation-run-id": "different-run" })).snapshot.creationRunId, snapshot.manifest.creationRunId);
+    await expectDenied(() => validateSourceSnapshotManifest({ ...values, "source-archive-sha256": "a".repeat(64) }), /creation receipt or authority identity/);
+    await expectDenied(async () => validateSourceSnapshotManifest(await valuesFor({ ...snapshot.manifest, productionEligible: false }, output, "not-eligible.json")), /creation receipt or authority identity/);
     await expectDenied(async () => validateSourceSnapshotManifest(await valuesFor({ ...snapshot.manifest, trackedDiffSha256: "a".repeat(64) }, output, "dirty-diff.json")), /clean source classification requires/);
-    await expectDenied(async () => validateSourceSnapshotManifest(await valuesFor({ ...snapshot.manifest, untrackedInventorySha256: "b".repeat(64) }, output, "untracked.json")), /clean source classification requires/);
+    await expectDenied(async () => validateSourceSnapshotManifest(await valuesFor({ ...snapshot.manifest, untrackedInventorySha256: "b".repeat(64) }, output, "untracked.json")), /untracked inventory identity/);
     await expectDenied(async () => validateSourceSnapshotManifest(await valuesFor({ ...snapshot.manifest, workingTreeManifestSha256: "c".repeat(64) }, output, "wrong-working-tree.json")), /working tree manifest identity/);
-    await expectDenied(async () => validateSourceSnapshotManifest(await valuesFor({ ...snapshot.manifest, sourceRootIdentity: "" }, output, "missing-root.json")), /missing sourceRootIdentity/);
+    await expectDenied(async () => validateSourceSnapshotManifest(await valuesFor({ ...snapshot.manifest, sourceRootIdentity: "" }, output, "missing-root.json")), /manifest hashes are invalid/);
     console.log("[G-023] COMMITTED_CLEAN_SOURCE generator, constructor validator compatibility, and negative cases: PASS");
   } finally { await rm(root, { recursive: true, force: true }); await rm(output, { recursive: true, force: true }); }
 }

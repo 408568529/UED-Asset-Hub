@@ -1,20 +1,38 @@
+import { assertDshBundleAuthorityConsumption } from "./dsh-bundle-authority-consumption.mjs";
+import { inventoryHistoricalRoots, assertHistoricalPreservation, assertExecutionRootsPreserveHistory } from "./release-history-inventory.mjs";
+import { withReleaseJournalLock, appendProtectedReleaseJournal } from "./release-journal-lock.mjs";
+import { assertReleaseReceiptProjections } from "./release-receipt-contract.mjs";
+import { assertNativeBuildReceiptSet, inspectNativeExecutable } from "./native-build-authority.mjs";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { access, cp, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, cp, lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { calculateNativeSourceInputs, createNativeBuildId, nativeSourceIdentity, validateNativeSetRunBindingFile, verifyFrozenNativeSet } from "./native-artifact-contract.mjs";
+import { calculateNativeSourceInputs, nativeBuildIdForManifest, nativeSourceIdentity, validateNativeSetRunBindingFile, verifyFrozenNativeSet } from "./native-artifact-contract.mjs";
 import { calculateReleaseArtifactSet, canonicalJson } from "./release-artifact-tree.mjs";
-import { createDeploymentManifest, preflightDeploymentManifest, writeDeploymentManifest } from "./windows-deployment-contract.mjs";
-import { componentPaths, dshPayloadFiles, nativePayloadMap, releasePayloadSchemaVersion, runtimeScripts, servicePayloadFiles } from "./windows-release-payload.mjs";
+import { createDeploymentManifest, preflightDeploymentManifest, verifyRelease, writeDeploymentManifest } from "./windows-deployment-contract.mjs";
+import { componentPaths, dshPayloadFiles, nativePayloadMap, releasePayloadSchemaVersion, servicePayloadFiles, sourceReleaseComponentPaths } from "./windows-release-payload.mjs";
+import { validateArchiveMemberPath as validateArchiveMemberPathContract } from "./archive-member-contract.mjs";
+import { deriveHostRuntimeModuleClosure, verifyCandidateHostRuntimeClosure } from "./host-runtime-module-closure.mjs";
+import { requiredCandidateRuntimeFiles, verifyRequiredCandidateRuntimeFiles } from "./candidate-runtime-closure.mjs";
+import { assertCandidateRuntimeClosureManifest, createCandidateRuntimeClosureManifest, deriveCandidateRuntimeClosureSourcePaths } from "./candidate-runtime-closure-manifest.mjs";
+import { assertHostRuntimeClosureBinding, createHostRuntimeClosureBinding } from "./release-runtime-closure-contract.mjs";
+import { loadProtectedReleaseSecuritySet, materializeNextSecurityCache, releaseSecuritySetMetadata, secureReleaseSecurityDirectory, verifyNextSecurityAdoption } from "./release-security-set.mjs";
+import { normalizeNextManifestTree } from "./next-manifest-normalizer.mjs";
+import { assertExecutionEvidenceOutsideCandidate, createCandidateExecutionEvidence, createCandidateProvenance, serializeCandidateExecutionEvidence, serializeCandidateProvenance } from "./release-provenance.mjs";
+import { loadTrustedReleaseSelection, loadProtectedHistoricalRoots } from "./release-approval-store.mjs";
+import { parseStrictJson } from "./release-json-contract.mjs";
+import { validateFrozenSourceManifest } from "./frozen-source-authority.mjs";
+import { assertExecutionBinding } from "./release-execution-binding.mjs";
+import { calculateCompleteByteTreeInventory } from "./release-byte-comparison.mjs";
 
 export const buildContract = Object.freeze({
   version: "ued-asset-hub-next-build-v1",
-  nodeVersion: "22.23.2",
-  nodeArtifactSha256: "0d0f5e39f9f3d9587bc19f73eab3c2c9c4903fd02d6dbf9c853dd81b3d95fad4",
-  npmVersion: "10.9.8",
-  lockfileSha256: "94da6e178dd5f8ea8b715abb430ad4bc47bfb5eb5be46a142f67cb17a863a5e0",
+  nodeVersion: "22.23.3",
+  nodeArtifactSha256: "9c9245166b4a8e182e0b797da9c20136117ff24368eaff1fec8343a123c8db0e",
+  npmVersion: "10.9.9",
+  lockfileSha256: "5a34f95705fc4c3dcc0289c434f9abdb90ed6dc0fa0c62f78881d356ab06121b",
   nextVersion: "15.5.19",
   reactVersion: "19.2.7",
   reactDomVersion: "19.2.7",
@@ -33,10 +51,25 @@ export const sourceClassificationPolicy = Object.freeze({
 });
 
 
-const required = ["staging-root", "creation-run-id", "source-archive", "source-commit", "source-archive-sha256", "source-classification", "dsh-source-root", "dsh-version", "dsh-commit", "dsh-provenance-evidence", "native-set-root", "native-build-id", "native-set-digest", "native-set-run-binding", "node-root", "output-dir", "temp-dir"];
+const required = ["staging-root", "execution-run-id", "experiment-id", "candidate-label", "phase", "phase-journal", "authority-root", "approval-identity", "execution-plan-identity", "execution-binding", "receipt-files", "source-archive", "source-commit", "source-archive-sha256", "source-classification", "source-snapshot-manifest", "source-snapshot-manifest-sha256", "dsh-source-root", "dsh-version", "dsh-commit", "dsh-provenance-evidence", "native-set-root", "native-build-id", "native-set-digest", "native-set-run-binding", "node-root", "output-dir", "temp-dir", "evidence-root", "security-set", "security-set-id", "security-set-authorization-id"];
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const hashFile = async (file) => sha256(await readFile(file));
 const compareUtf8 = (left, right) => Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+
+export function assertApprovedNodeArtifactSha256(actual) {
+  if (actual !== buildContract.nodeArtifactSha256) throw new Error("staged node.exe SHA-256 mismatch.");
+}
+
+export function assertApprovedNodeNpmVersions(nodeVersion, npmVersion) {
+  if (nodeVersion !== buildContract.nodeVersion || npmVersion !== buildContract.npmVersion) throw new Error("staged Node/npm version mismatch.");
+}
+
+export async function assertPackageLockContract(lockfilePath, expectedLockfileSha256 = buildContract.lockfileSha256) {
+  const bytes = await readFile(lockfilePath);
+  const lockfile = JSON.parse(bytes.toString("utf8"));
+  if (lockfile.lockfileVersion !== 3 || sha256(bytes) !== expectedLockfileSha256) throw new Error("package-lock contract mismatch.");
+  return sha256(bytes);
+}
 
 function parseArgs(argv) {
   const values = {};
@@ -88,12 +121,32 @@ export async function validateSourceSnapshotManifest(values, sourceManifest = nu
   const bytes = await readFile(path.resolve(values["source-snapshot-manifest"]));
   if (sha256(bytes) !== values["source-snapshot-manifest-sha256"]) throw new Error("source snapshot manifest SHA-256 mismatch.");
   const snapshot = JSON.parse(bytes.toString("utf8"));
-  const requiredSnapshotFields = ["sourceClassification", "productionEligible", "sourceCommit", "workingTreeManifestSha256", "trackedDiffSha256", "untrackedInventorySha256", "sourceArchiveSha256", "creationRunId", "createdAt", "sourceRootIdentity", "files"];
-  for (const key of requiredSnapshotFields) if (snapshot[key] === undefined || snapshot[key] === null || snapshot[key] === "") throw new Error(`source snapshot manifest is missing ${key}.`);
-  if (snapshot.sourceClassification !== values["source-classification"] || snapshot.productionEligible !== policy.productionEligible || snapshot.sourceCommit !== values["source-commit"] || snapshot.sourceArchiveSha256 !== values["source-archive-sha256"] || snapshot.creationRunId !== values["creation-run-id"]) throw new Error("source snapshot manifest identity does not match constructor input.");
-  if (!/^[a-f0-9]{64}$/.test(snapshot.workingTreeManifestSha256) || !/^[a-f0-9]{64}$/.test(snapshot.trackedDiffSha256) || !/^[a-f0-9]{64}$/.test(snapshot.untrackedInventorySha256)) throw new Error("source snapshot manifest hashes are invalid.");
+  if (snapshot.frozenSourceIdentity !== undefined) {
+    if (!values["source-archive"]) throw new Error("Frozen source archive required for full derivation.");
+    const { projection } = validateFrozenSourceManifest(bytes, await readFile(values["source-archive"]));
+    if (projection.sourceCommit !== values["source-commit"] || projection.sourceArchiveSha256 !== values["source-archive-sha256"] || projection.sourceClassification !== values["source-classification"] || projection.productionEligible !== policy.productionEligible) throw new Error("Frozen source selection mismatch.");
+    if (sourceManifest && canonicalJson(sourceManifest.files.map(({ path: relativePath, size, sha256 }) => ({ relativePath, size, sha256 }))) !== canonicalJson(snapshot.files.map(({ relativePath, size, sha256 }) => ({ relativePath, size, sha256 })))) throw new Error("Frozen source extracted inventory mismatch.");
+    return { policy, snapshot, expectedLockfileSha256: projection.lockfileSha256 };
+  }
+  requireExactObject(snapshot, ["schemaVersion", "sourceClassification", "productionEligible", "sourceCommit", "sourceArchiveSha256", "workingTreeManifestSha256", "trackedDiffSha256", "untrackedInventorySha256", "creationRunId", "createdAt", "sourceRootIdentity", "files", "exclusions"], "source snapshot manifest");
+  if (snapshot.schemaVersion !== 1 || !Array.isArray(snapshot.files) || !Array.isArray(snapshot.exclusions)) throw new Error("source snapshot manifest schema is unsupported.");
+  if (snapshot.sourceClassification !== values["source-classification"] || snapshot.productionEligible !== policy.productionEligible || snapshot.sourceCommit !== values["source-commit"] || snapshot.sourceArchiveSha256 !== values["source-archive-sha256"] || typeof snapshot.creationRunId !== "string" || !/^[A-Za-z0-9-]+$/u.test(snapshot.creationRunId) || !Number.isFinite(Date.parse(snapshot.createdAt))) throw new Error("source snapshot creation receipt or authority identity is invalid.");
+  for (const key of ["sourceArchiveSha256", "workingTreeManifestSha256", "trackedDiffSha256", "untrackedInventorySha256", "sourceRootIdentity"]) if (!/^[a-f0-9]{64}$/u.test(snapshot[key] || "")) throw new Error("source snapshot manifest hashes are invalid.");
+  let previousPath = "";
+  for (const file of snapshot.files) {
+    requireExactObject(file, ["relativePath", "fileType", "size", "sha256", "classification", "includedReason"], "source snapshot file");
+    if (typeof file.relativePath !== "string" || file.relativePath.normalize("NFC") !== file.relativePath || file.relativePath <= previousPath || file.fileType !== "file" || !Number.isSafeInteger(file.size) || file.size < 0 || !/^[a-f0-9]{64}$/u.test(file.sha256 || "") || !["tracked", "untracked"].includes(file.classification) || file.includedReason !== "release-relevant-worktree") throw new Error("source snapshot file entry is invalid.");
+    previousPath = file.relativePath;
+  }
+  for (const item of snapshot.exclusions) {
+    requireExactObject(item, ["relativePath", "reason"], "source snapshot exclusion");
+    if (typeof item.relativePath !== "string" || item.relativePath.normalize("NFC") !== item.relativePath || item.reason !== "policy-excluded") throw new Error("source snapshot exclusion is invalid.");
+  }
+  if (snapshot.exclusions.map((item) => item.relativePath).some((item, index, all) => index > 0 && item <= all[index - 1])) throw new Error("source snapshot exclusions must be uniquely sorted.");
   const workingTreeManifestSha256 = sha256(Buffer.from(canonicalJson(snapshot.files.map(({ relativePath, size, sha256: fileSha, classification }) => ({ relativePath, size, sha256: fileSha, classification }))), "utf8"));
   if (snapshot.workingTreeManifestSha256 !== workingTreeManifestSha256) throw new Error("source snapshot working tree manifest identity is invalid.");
+  const untrackedInventorySha256 = sha256(Buffer.from(canonicalJson(snapshot.files.filter((file) => file.classification === "untracked").map(({ relativePath, size, sha256: fileSha }) => ({ relativePath, size, sha256: fileSha }))), "utf8"));
+  if (snapshot.sourceClassification === "COMMITTED_CLEAN_SOURCE" ? snapshot.untrackedInventorySha256 !== sha256(Buffer.from("[]", "utf8")) : snapshot.untrackedInventorySha256 !== untrackedInventorySha256) throw new Error("source snapshot untracked inventory identity is invalid.");
   const lockfile = snapshot.files.find((file) => file.relativePath === "package-lock.json" && file.fileType === "file");
   if (!lockfile || !/^[a-f0-9]{64}$/.test(lockfile.sha256)) throw new Error("source snapshot manifest does not bind package-lock.json.");
   if (values["source-classification"] === "COMMITTED_CLEAN_SOURCE") {
@@ -112,13 +165,13 @@ export function deterministicBuildId(commit, archiveSha) {
   return `rb1-${sha256(`ued-asset-hub-next-build-v1\n${commit}\n${archiveSha}\n`)}`;
 }
 
-function assertContained(root, candidate, label) {
+export function assertContained(root, candidate, label) {
   const relative = path.relative(root, candidate);
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(`${label} must be a strict child of the staging root.`);
 }
 
 export function resolveFrozenNativeSetPath(stagingRoot, nativeBuildId) {
-  if (!/^nb2-[a-f0-9]{16}-[a-f0-9]{16}-[a-f0-9]{16}$/.test(nativeBuildId)) throw new Error("native build ID is invalid.");
+  if (!/^(?:nb1-[a-f0-9]{12}-[a-f0-9]{32}|nb2-[a-f0-9]{16}(?:-[a-f0-9]{16}){2}|nb3-[a-f0-9]{64})$/.test(nativeBuildId)) throw new Error("native build ID is invalid.");
   const root = path.resolve(stagingRoot);
   const directory = path.resolve(root, "frozen", "native-components", nativeBuildId);
   assertContained(root, directory, "Native Set");
@@ -130,8 +183,9 @@ export async function assertFrozenNativeSetBinding({ stagingRoot, nativeBuildId,
   const directory = resolveFrozenNativeSetPath(stagingRoot, nativeBuildId);
   if (path.resolve(nativeSetRoot) !== directory) throw new Error("native set root does not exactly match the frozen native build ID binding.");
   if (!native || !sourceRoot || !sourceCommit || !sourceArchiveSha256) throw new Error("native set provenance inputs are incomplete.");
+  const verified = await verifyFrozenNativeSet(directory, { sourceRoot, sourceCommit, sourceArchiveSha256, toolchain: native.manifest.toolchain, configuration: "release-native" });
   const inputs = await calculateNativeSourceInputs(sourceRoot); const identity = nativeSourceIdentity(inputs);
-  if (nativeSetDigest !== native.set.digest || native.manifest.sourceCommit !== sourceCommit || native.manifest.sourceArchiveSha256 !== sourceArchiveSha256 || native.manifest.nativeSourceIdentity !== identity || canonicalJson(native.manifest.nativeSourceInputs) !== canonicalJson(inputs) || native.manifest.nativeBuildId !== nativeBuildId || nativeBuildId !== createNativeBuildId(identity, native.manifest.toolchain)) throw new Error("native set identity or authoritative binding mismatch.");
+  if (nativeSetDigest !== native.set.digest || native.set.digest !== verified.set.digest || native.manifest.sourceCommit !== sourceCommit || native.manifest.sourceArchiveSha256 !== sourceArchiveSha256 || native.manifest.nativeSourceIdentity !== identity || canonicalJson(native.manifest.nativeSourceInputs) !== canonicalJson(inputs) || native.manifest.nativeBuildId !== nativeBuildId || nativeBuildId !== nativeBuildIdForManifest(native.manifest)) throw new Error("native set identity or authoritative binding mismatch.");
   return directory;
 }
 
@@ -161,12 +215,13 @@ async function assertRegularTree(root, relative = "") {
   }
 }
 
-async function treeManifest(root, relative = "") {
+async function treeManifest(root, relative = "", include = () => true) {
   const files = [];
   async function visit(directory, prefix) {
     const entries = await readdir(directory, { withFileTypes: true });
     for (const entry of entries) {
       const child = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (!include(child)) continue;
       const absolute = path.join(root, ...child.split("/"));
       const details = await lstat(absolute);
       if (details.isSymbolicLink() || (!details.isDirectory() && details.nlink > 1)) throw new Error(`links are not allowed in manifest input: ${child}`);
@@ -178,6 +233,30 @@ async function treeManifest(root, relative = "") {
   await visit(path.join(root, ...relative.split("/").filter(Boolean)), relative);
   files.sort((left, right) => compareUtf8(left.path, right.path));
   return { files, digest: sha256(Buffer.from(canonicalJson(files), "utf8")) };
+}
+
+export function includeCandidateDependencyPath(relativePath) {
+  return relativePath !== ".bin" && !relativePath.startsWith(".bin/");
+}
+
+export async function candidateDependencyProjection(nodeModulesRoot) {
+  return treeManifest(nodeModulesRoot, "", includeCandidateDependencyPath);
+}
+
+export async function copyCandidateDependencyTree(nodeModulesRoot, destination) {
+  await cp(nodeModulesRoot, destination, {
+    recursive: true,
+    filter: (source) => {
+      const relative = path.relative(nodeModulesRoot, source).replaceAll("\\", "/");
+      return !relative || includeCandidateDependencyPath(relative);
+    },
+  });
+}
+
+export async function verifyCandidateDependencyTree(expected, candidateRoot) {
+  const actual = await treeManifest(candidateRoot);
+  if (canonicalJson(actual.files) !== canonicalJson(expected.files)) throw new Error("Candidate node_modules differ from the verified runtime dependency artifact.");
+  return actual;
 }
 
 export async function archiveEntries(archive) {
@@ -222,14 +301,7 @@ export async function archiveMembers(archive) {
   return (await archiveEntries(archive)).filter((entry) => entry.type === "0").map((entry) => entry.path).sort(compareUtf8);
 }
 
-export function validateArchiveMemberPath(member) {
-  const reserved = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu;
-  if (!member || path.win32.isAbsolute(member) || path.posix.isAbsolute(member) || member.includes("\\")) throw new Error("source archive tree is unsafe.");
-  for (const part of member.split("/")) {
-    if (!part || part === "." || part === ".." || /[<>:"|?*\x00-\x1f]/u.test(part) || /[. ]$/u.test(part) || reserved.test(part)) throw new Error("source archive tree is unsafe.");
-  }
-  return member;
-}
+export const validateArchiveMemberPath = validateArchiveMemberPathContract;
 
 export async function findDotenvFiles(root) {
   const matches = [];
@@ -420,10 +492,106 @@ async function copyRequired(source, destination, files) {
   }
 }
 
+const authorityReceiptKeys = ["sourceManifestSha256", "sourceCreationReceiptSha256", "toolchainReceiptSha256", "environmentReceiptSha256", "dependencyReceiptSha256", "nativeManifestSha256", "nativeCreationReceiptSha256", "dshBundleAuthoritySha256", "dshProvenanceSha256", "securityProtectedArtifactSha256"];
+function requireExactObject(value, keys, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || canonicalJson(Object.keys(value).sort(compareUtf8)) !== canonicalJson([...keys].sort(compareUtf8))) throw new Error(label + " has unknown or missing fields.");
+}
+function sameResolvedPath(left, right, label) {
+  if (path.resolve(left).toLowerCase() !== path.resolve(right).toLowerCase()) throw new Error(label + " does not match ExecutionBinding locator.");
+}
+export function parseReleasePhaseJournal(journalBytes, selection) {
+  const journalLines = journalBytes.toString("utf8").split(/\r?\n/u).filter(Boolean).map((line) => parseStrictJson(Buffer.from(line)));
+  if (!journalLines.length) throw new Error("append-only phase journal is empty.");
+  const journalHeader = journalLines.shift();
+  requireExactObject(journalHeader, ["schemaVersion", "identity", "experimentId", "labelBudget", "experimentPermissionDigest"], "phase journal header");
+  if (journalHeader.schemaVersion !== 1 || journalHeader.experimentId !== selection.experimentId || !Number.isSafeInteger(journalHeader.labelBudget) || journalHeader.labelBudget < 1 || !/^[a-f0-9]{64}$/u.test(journalHeader.experimentPermissionDigest || "") || !/^[a-f0-9]{64}$/u.test(journalHeader.identity || "") || sha256(Buffer.from(canonicalJson({ schemaVersion: 1, experimentId: journalHeader.experimentId, labelBudget: journalHeader.labelBudget, experimentPermissionDigest: journalHeader.experimentPermissionDigest }), "utf8")) !== journalHeader.identity) throw new Error("phase journal header identity is invalid.");
+  let previousSha256 = journalHeader.identity;
+  const journalEntries = [];
+  for (const entry of journalLines) {
+    requireExactObject(entry, ["schemaVersion", "sequence", "event", "executionRunId", "candidateLabel", "phase", "previousSha256", "entrySha256"], "phase journal entry");
+    const { entrySha256, ...entryBody } = entry;
+    if (entry.schemaVersion !== 1 || entry.sequence !== journalEntries.length + 1 || !["started", "completed"].includes(entry.event) || entry.previousSha256 !== previousSha256 || !["A", "B", "single", "pre-r3"].includes(entry.candidateLabel) || typeof entry.executionRunId !== "string" || typeof entry.phase !== "string" || sha256(Buffer.from(canonicalJson(entryBody), "utf8")) !== entrySha256) throw new Error("phase journal chain is invalid.");
+    previousSha256 = entrySha256;
+    journalEntries.push(entry);
+  }
+  const usedBudget = journalEntries.filter((entry) => entry.event === "started" && entry.candidateLabel === selection.candidateLabel).length;
+  const currentEntries = journalEntries.filter((entry) => entry.executionRunId === selection.executionRunId);
+  const lastCurrent = currentEntries.at(-1);
+  const journal = { identity: journalHeader.identity, experimentId: journalHeader.experimentId, executionRunId: selection.executionRunId, completedPhase: lastCurrent?.event === "completed" ? lastCurrent.phase : null, usedBudget };
+  return { journalHeader, journalEntries, previousSha256, journal };
+}
+export function assertReleaseJournalHead(bytes, admission) {
+  const lines = bytes.toString("utf8").split(/\r?\n/u).filter(Boolean);
+  if (!lines.length) throw new Error("Journal head missing");
+  const latest = parseStrictJson(Buffer.from(lines.at(-1)));
+  if ((latest.entrySha256 ?? latest.identity) !== admission.previousJournalEntrySha256 || lines.length !== admission.journalEntries.length + 1) throw new Error("Journal head changed; concurrent/replayed execution claim rejected");
+}
+
+export async function validateAuthorityAdmission(values, paths) {
+  const authorityBytes = await readFile(path.resolve(values["authority-root"]));
+  const bindingBytes = await readFile(path.resolve(values["execution-binding"]));
+  const receiptPaths = parseStrictJson(await readFile(path.resolve(values["receipt-files"])));
+  requireExactObject(receiptPaths, authorityReceiptKeys, "receipt file map");
+  const receiptBytes = {};
+  for (const key of authorityReceiptKeys) {
+    const receiptPath = path.resolve(receiptPaths[key]);
+    assertContained(paths.stagingRoot, receiptPath, "approved receipt " + key);
+    const details = await lstat(receiptPath);
+    if (!details.isFile() || details.isSymbolicLink() || details.nlink !== 1) throw new Error("approved receipt file type: " + key);
+    receiptBytes[key] = await readFile(receiptPath);
+  }
+  const admissionContext = await loadTrustedReleaseSelection({ approvalIdentity: values["approval-identity"], planIdentity: values["execution-plan-identity"], authorityBytes, receiptBytes, bindingBytes, executionRunId: values["execution-run-id"], candidateLabel: values["candidate-label"], phase: values["phase"] });
+  const { authority, binding } = admissionContext;
+  sameResolvedPath(values["phase-journal"], admissionContext.journalPath, "protected phase journal");
+  const executionBindingSha256 = sha256(bindingBytes);
+  const { journalHeader, journalEntries, previousSha256, journal } = parseReleasePhaseJournal(await readFile(path.resolve(values["phase-journal"])), { experimentId: values["experiment-id"], executionRunId: values["execution-run-id"], candidateLabel: values["candidate-label"] });
+  requireExactObject(authority.receipts, authorityReceiptKeys, "authority receipts");
+  requireExactObject(binding.receipts, authorityReceiptKeys, "binding receipts");
+  if (canonicalJson(authority.receipts) !== canonicalJson(binding.receipts)) throw new Error("ExecutionBinding does not bind the selected authority receipts.");
+  for (const key of authorityReceiptKeys) {
+    const receiptPath = path.resolve(receiptPaths[key]);
+    assertContained(paths.stagingRoot, receiptPath, "approved receipt " + key);
+    const details = await lstat(receiptPath);
+    if (!details.isFile() || details.isSymbolicLink() || details.nlink > 1 || await hashFile(receiptPath) !== authority.receipts[key]) throw new Error("approved receipt bytes mismatch: " + key);
+  }
+  if (authority.source.sourceCommit !== values["source-commit"] || authority.source.sourceArchiveSha256 !== values["source-archive-sha256"] || authority.source.sourceClassification !== values["source-classification"] || authority.dsh.commit !== values["dsh-commit"] || authority.dsh.version !== values["dsh-version"] || authority.native.nativeSetId !== values["native-build-id"] || authority.native.setDigest !== values["native-set-digest"] || authority.security.securitySetId !== values["security-set-id"] || authority.security.authorizationId !== values["security-set-authorization-id"]) throw new Error("Constructor input diverges from LogicalReleaseAuthority.");
+  const locators = binding.locators;
+  sameResolvedPath(locators.stagingRoot, paths.stagingRoot, "stagingRoot");
+  sameResolvedPath(locators.canonicalWorkspace, path.join(paths.tempRoot, "workspace"), "canonicalWorkspace");
+  sameResolvedPath(locators.tempRoot, paths.tempRoot, "tempRoot");
+  sameResolvedPath(locators.outputRoot, paths.outputDir, "outputRoot");
+  sameResolvedPath(locators.evidenceRoot, paths.evidenceRoot, "evidenceRoot");
+  sameResolvedPath(locators.sourceArtifact, paths.archive, "sourceArtifact");
+  sameResolvedPath(locators.nativeRoot, path.resolve(values["native-set-root"]), "nativeRoot");
+  sameResolvedPath(locators.dshMaterializationRoot, path.resolve(values["dsh-source-root"]), "dshMaterializationRoot");
+  sameResolvedPath(locators.toolchainRoot, paths.nodeRoot, "toolchainRoot");
+  sameResolvedPath(locators.securityArtifact, paths.securitySetPath, "securityArtifact");
+  if (binding.inputAuthorityIdentity !== authority.inputAuthorityIdentity) throw new Error("ExecutionBinding core identity mismatch.");
+  if (values["source-snapshot-manifest-sha256"] !== authority.receipts.sourceManifestSha256) throw new Error("Source manifest is not the approved authority receipt.");
+  const expected = { experimentId: values["experiment-id"], executionRunId: values["execution-run-id"], candidateLabel: values["candidate-label"], inputAuthorityIdentity: authority.inputAuthorityIdentity, phase: values["phase"], receipts: authority.receipts, bindings: binding.bindings, journal: { identity: journal.identity, executionRunId: journal.executionRunId, completedPhase: journal.completedPhase, usedBudget: journal.usedBudget } };
+  assertExecutionBinding(binding, expected);
+  if (binding.permission.experimentPermissionDigest !== journalHeader.experimentPermissionDigest || binding.permission.labelBudget !== journalHeader.labelBudget) throw new Error("Execution permission is not selected by the append-only phase journal.");
+  const currentRunUsed = journalEntries.some((entry) => entry.executionRunId === values["execution-run-id"]);
+  if (currentRunUsed) throw new Error("Execution Run has already been claimed; completed or interrupted phase replay is prohibited.");
+  return { authority, binding, approvalIdentity: admissionContext.approval.approvalIdentity, admissionContext, receiptBytes, receiptPaths, executionBindingSha256, phaseJournal: journal, journalPath: path.resolve(values["phase-journal"]), journalEntries, previousJournalEntrySha256: previousSha256 };
+}
+
 function validateValues(values) {
   for (const key of required) if (!values[key]) throw new Error(`missing --${key}`);
-  if (!/^[a-f0-9]{40}$/.test(values["source-commit"]) || !/^[a-f0-9]{64}$/.test(values["source-archive-sha256"]) || !/^[a-f0-9]{40}$/.test(values["dsh-commit"]) || !/^[a-f0-9]{64}$/.test(values["native-set-digest"]) || !/^nb2-[a-f0-9]{16}-[a-f0-9]{16}-[a-f0-9]{16}$/.test(values["native-build-id"])) throw new Error("constructor identity argument is invalid.");
+  if (values["creation-run-id"] || values["authority-root-sha256"] || values["execution-binding-sha256"]) throw new Error("Legacy caller authority/creation inputs cannot enter live admission.");
+  if (!/^[a-f0-9]{40}$/.test(values["source-commit"]) || !/^[a-f0-9]{64}$/.test(values["source-archive-sha256"]) || !/^[a-f0-9]{40}$/.test(values["dsh-commit"]) || !/^[a-f0-9]{64}$/.test(values["native-set-digest"]) || !/^(?:nb1-[a-f0-9]{12}-[a-f0-9]{32}|nb2-[a-f0-9]{16}(?:-[a-f0-9]{16}){2}|nb3-[a-f0-9]{64})$/.test(values["native-build-id"])) throw new Error("constructor identity argument is invalid.");
   validateSourceClassificationInput(values);
+}
+
+async function appendPhaseJournal(admission, { event, runId, label, phase }) {
+  return withReleaseJournalLock(admission.journalPath, async () => {
+  assertReleaseJournalHead(await readFile(admission.journalPath), admission);
+  const entryBody = { schemaVersion: 1, sequence: admission.journalEntries.length + 1, event, executionRunId: runId, candidateLabel: label, phase, previousSha256: admission.previousJournalEntrySha256 };
+  const entry = { ...entryBody, entrySha256: sha256(Buffer.from(canonicalJson(entryBody), "utf8")) };
+  await appendProtectedReleaseJournal(admission.journalPath, Buffer.from(canonicalJson(entry) + "\n"));
+  admission.journalEntries.push(entry);
+  admission.previousJournalEntrySha256 = entry.entrySha256;
+  });
 }
 
 export async function prepareWindowsRelease(values, diagnostic = {}) {
@@ -437,20 +605,47 @@ export async function prepareWindowsRelease(values, diagnostic = {}) {
   const tempRoot = path.resolve(values["temp-dir"]);
   const nodeRoot = path.resolve(values["node-root"]);
   const snapshotManifest = values["source-snapshot-manifest"] ? path.resolve(values["source-snapshot-manifest"]) : null;
-  for (const [candidate, label] of [[archive, "source archive"], [outputDir, "output directory"], [tempRoot, "temporary directory"], [nodeRoot, "staged Node root"], [path.resolve(values["dsh-source-root"]), "DSH source"], [path.resolve(values["native-set-root"]), "Native Set"], ...(snapshotManifest ? [[snapshotManifest, "source snapshot manifest"]] : [])]) assertContained(stagingRoot, candidate, label);
-  await rm(tempRoot, { recursive: true, force: true });
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(tempRoot, { recursive: true });
-  await checkpoint("BUILD_TEMP_READY");
-  await writeFile(path.join(tempRoot, ".ued-r3-owner.json"), `${canonicalJson({ block: "B3R-B2B-R3", creationRunId: values["creation-run-id"], testOnly: true })}\n`, "utf8");
-  await checkpoint("OWNER_MARKER_WRITTEN");
-  await checkpoint("SOURCE_ARCHIVE_SHA_BEGIN");
-  if (await hashFile(archive) !== values["source-archive-sha256"]) throw new Error("source archive SHA-256 mismatch.");
-  await checkpoint("SOURCE_ARCHIVE_SHA_COMPLETE");
+  const securitySetPath = path.resolve(values["security-set"]);
+  const evidenceRoot = path.resolve(values["evidence-root"]);
+  const paths = { stagingRoot, archive, outputDir, tempRoot, nodeRoot, securitySetPath, evidenceRoot };
+  for (const [candidate, label] of [[archive, "source archive"], [outputDir, "output directory"], [tempRoot, "temporary directory"], [nodeRoot, "staged Node root"], [evidenceRoot, "evidence root"], [path.resolve(values["dsh-source-root"]), "DSH source"], [path.resolve(values["native-set-root"]), "Native Set"], [securitySetPath, "Release Security Set"], ...(snapshotManifest ? [[snapshotManifest, "source snapshot manifest"]] : [])]) assertContained(stagingRoot, candidate, label);
+  for (const locator of [stagingRoot, ...Object.values(paths).slice(1), path.resolve(values["native-set-root"]), path.resolve(values["dsh-source-root"]), path.resolve(values["receipt-files"]), path.resolve(values["authority-root"]), path.resolve(values["execution-binding"])]) {
+    let cursor = locator;
+    while (true) {
+      try { const details = await lstat(cursor); if (details.isSymbolicLink() || (details.isFile() && details.nlink !== 1)) throw new Error("Execution locator crosses a link"); } catch (error) { if (error.code !== "ENOENT") throw error; }
+      const parent = path.dirname(cursor); if (parent === cursor) break; cursor = parent;
+    }
+  }
+  const volume = path.parse(stagingRoot).root[0];
+  const { stdout: filesystem } = await (await import("node:util")).promisify((await import("node:child_process")).execFile)("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `(Get-Volume -DriveLetter '${volume}').FileSystemType.ToString()`], { windowsHide: true });
+  if (filesystem.trim() !== "NTFS") throw new Error("Approved staging filesystem must be NTFS");
+  assertContained(stagingRoot, await realpath(securitySetPath), "Resolved Release Security Set");
+  const admission = await validateAuthorityAdmission(values, paths);
+  assertExecutionRootsPreserveHistory(admission.binding, await loadProtectedHistoricalRoots());
+  const receiptProjections = assertReleaseReceiptProjections(admission.authority, admission.receiptBytes, await readFile(archive));
+  admission.receiptProjections = receiptProjections;
+  const approvedNativeManifest = parseStrictJson(admission.receiptBytes.nativeManifestSha256);
+  const frozenNative = await verifyFrozenNativeSet(path.resolve(values["native-set-root"]));
+  if (frozenNative.set.digest !== admission.authority.native.setDigest || await hashFile(path.join(values["native-set-root"], "native-components.manifest.json")) !== admission.authority.receipts.nativeManifestSha256) throw new Error("Native original aggregate raw bytes mismatch");
+  if (approvedNativeManifest.nativeBuildId !== admission.authority.native.nativeSetId || approvedNativeManifest.nativeSourceIdentity !== admission.authority.native.nativeSourceIdentity || sha256(Buffer.from(canonicalJson(approvedNativeManifest.toolchain))) !== admission.authority.native.toolchainIdentity) throw new Error("Native approved manifest projection");
+  const nativeMembers = [];
+  const { nativeComponentDefinitions } = await import("./native-artifact-contract.mjs");
+  for (const role of nativeComponentDefinitions) {
+    const bytes = await readFile(path.join(path.resolve(values["native-set-root"]), ...role.executableRelativePath.split("/")));
+    const inspection = inspectNativeExecutable(bytes);
+    nativeMembers.push({ path: role.executableRelativePath, size: bytes.length, sha256: inspection.observedSha256, inspection });
+  }
+  assertNativeBuildReceiptSet(admission.receiptBytes.nativeCreationReceiptSha256, { approvedSha256: admission.authority.receipts.nativeCreationReceiptSha256, nativeManifest: approvedNativeManifest, actualMembers: nativeMembers, sourceInputs: approvedNativeManifest.nativeSourceInputs });
+  for (const input of approvedNativeManifest.nativeSourceInputs) { const frozen = receiptProjections.frozen.manifest.files.find((file) => file.relativePath === input.relativePath); if (!frozen || frozen.sha256 !== input.sha256 || frozen.size !== input.size) throw new Error("Native frozen source member mismatch"); }
+
+  const securitySet = await loadProtectedReleaseSecuritySet(securitySetPath, { sourceCommit: values["source-commit"], sourceArchiveSha256: values["source-archive-sha256"], authorizationId: values["security-set-authorization-id"], now: Date.now(), nextVersion: buildContract.nextVersion });
+  if (securitySet.securitySetId !== values["security-set-id"] || securitySet.securitySetId !== admission.authority.security.securitySetId || securitySet.nextVersion !== admission.authority.security.nextVersion || sha256(Buffer.from(canonicalJson(securitySet.epoch), "utf8")) !== admission.authority.security.epochId || await hashFile(securitySetPath) !== admission.authority.receipts.securityProtectedArtifactSha256) throw new Error("SECURITY_SET_AUTHORITY_MISMATCH");
+  const securitySetMetadata = releaseSecuritySetMetadata(securitySet, { sourceCommit: values["source-commit"], sourceArchiveSha256: values["source-archive-sha256"], authorizationId: values["security-set-authorization-id"], now: Date.now(), nextVersion: buildContract.nextVersion });
   const nodeExe = path.join(nodeRoot, "node.exe");
   const npmCli = path.join(nodeRoot, "node_modules", "npm", "bin", "npm-cli.js");
+  const npmRoot = path.join(nodeRoot, "node_modules", "npm");
   await checkpoint("NODE_ARTIFACT_SHA_BEGIN");
-  if (await hashFile(nodeExe) !== buildContract.nodeArtifactSha256) throw new Error("staged node.exe SHA-256 mismatch.");
+  assertApprovedNodeArtifactSha256(await hashFile(nodeExe));
   await checkpoint("NODE_ARTIFACT_SHA_COMPLETE");
   await checkpoint("CLEAN_OS_ENV_BEGIN");
   const osEnv = cleanOsEnvironment();
@@ -458,10 +653,28 @@ export async function prepareWindowsRelease(values, diagnostic = {}) {
   await checkpoint("NODE_VERSION_BEGIN");
   const nodeVersion = (await run(nodeExe, ["--version"], { env: osEnv })).toString("utf8").trim().replace(/^v/, "");
   await checkpoint("NODE_VERSION_COMPLETE");
+  if (await hashFile(path.join(npmRoot, "package.json")) !== admission.authority.toolchain.npmPackageJsonSha256 || await hashFile(path.join(npmRoot, "node_modules", "tar", "package.json")) !== admission.authority.toolchain.bundledTarPackageSha256 || parseStrictJson(await readFile(path.join(npmRoot, "node_modules", "tar", "package.json"))).version !== admission.authority.toolchain.bundledTarVersion) throw new Error("approved npm/tar package bytes mismatch");
+  if (await hashFile(npmCli) !== admission.authority.toolchain.npmCliSha256) throw new Error("approved npm CLI SHA-256 mismatch.");
+  if ((await calculateCompleteByteTreeInventory(npmRoot)).sha256 !== admission.authority.toolchain.npmDistributionSha256) throw new Error("approved npm distribution byte identity mismatch.");
   await checkpoint("NPM_VERSION_BEGIN");
   const npmVersion = (await run(nodeExe, [npmCli, "--version"], { env: osEnv })).toString("utf8").trim();
   await checkpoint("NPM_VERSION_COMPLETE");
-  if (nodeVersion !== buildContract.nodeVersion || npmVersion !== buildContract.npmVersion) throw new Error("staged Node/npm version mismatch.");
+  assertApprovedNodeNpmVersions(nodeVersion, npmVersion);
+  await appendPhaseJournal(admission, { event: "started", runId: values["execution-run-id"], label: values["candidate-label"], phase: values["phase"] });
+  for (const directory of [tempRoot, outputDir]) {
+    try { await lstat(directory); } catch (error) { if (error.code === "ENOENT") continue; throw error; }
+    throw new Error("Fresh execution directory already exists; retained outputs cannot be replaced");
+  }
+  await mkdir(tempRoot, { recursive: true });
+  await mkdir(outputDir, { recursive: true });
+  await secureReleaseSecurityDirectory(tempRoot);
+  await secureReleaseSecurityDirectory(outputDir);
+  await checkpoint("BUILD_TEMP_READY");
+  await writeFile(path.join(tempRoot, ".ued-r3-owner.json"), `${canonicalJson({ schemaVersion: 2, block: "V2.1.0.13", executionRunId: values["execution-run-id"], testOnly: false })}\n`, "utf8");
+  await checkpoint("OWNER_MARKER_WRITTEN");
+  await checkpoint("SOURCE_ARCHIVE_SHA_BEGIN");
+  if (await hashFile(archive) !== values["source-archive-sha256"]) throw new Error("source archive SHA-256 mismatch.");
+  await checkpoint("SOURCE_ARCHIVE_SHA_COMPLETE");
   const sourceRoot = path.join(tempRoot, "source");
   const workspace = path.join(tempRoot, "workspace");
   await checkpoint("ARCHIVE_MATERIALIZE_BEGIN");
@@ -469,8 +682,7 @@ export async function prepareWindowsRelease(values, diagnostic = {}) {
   await checkpoint("ARCHIVE_MATERIALIZE_COMPLETE");
   const sourceProvenance = await validateSourceSnapshotManifest(values, source);
   await checkpoint("LOCKFILE_VALIDATE_BEGIN");
-  const lockfile = JSON.parse(await readFile(path.join(workspace, "package-lock.json"), "utf8"));
-  if (lockfile.lockfileVersion !== 3 || await hashFile(path.join(workspace, "package-lock.json")) !== sourceProvenance.expectedLockfileSha256) throw new Error("package-lock contract mismatch.");
+  await assertPackageLockContract(path.join(workspace, "package-lock.json"), sourceProvenance.expectedLockfileSha256);
   await checkpoint("LOCKFILE_VALIDATE_COMPLETE");
   const buildId = deterministicBuildId(values["source-commit"], values["source-archive-sha256"]);
   await checkpoint("ISOLATED_BUILD_ENV_BEGIN");
@@ -479,17 +691,22 @@ export async function prepareWindowsRelease(values, diagnostic = {}) {
   const envEvidence = environmentEvidence(buildEnvironment.env, tempRoot);
   await checkpoint("ISOLATED_BUILD_ENV_COMPLETE");
   await checkpoint("BEFORE_NPM_CI");
-  if (diagnostic.stopBeforeNpmCi === true) return { values, stagingRoot, archive, outputDir, tempRoot, sourceRoot, workspace, source, sourceProvenance, nodeRoot, nodeExe, npmCli, buildId, buildEnvironment, envEvidence, dependencies: null, diagnostic: { stoppedBeforeNpmCi: true }, toolchain: { contractVersion: buildContract.version, os: os.version(), release: os.release(), arch: process.arch, filesystem: "NTFS", nodeVersion, nodeArtifactSha256: await hashFile(nodeExe), npmVersion, backend: buildContract.backend } };
+  if (diagnostic.stopBeforeNpmCi === true) return { ...admission, values, stagingRoot, archive, outputDir, tempRoot, sourceRoot, workspace, source, sourceProvenance, securitySet, securitySetMetadata, nodeRoot, nodeExe, npmCli, buildId, buildEnvironment, envEvidence, dependencies: null, diagnostic: { stoppedBeforeNpmCi: true }, toolchain: { contractVersion: buildContract.version, os: os.version(), release: os.release(), arch: process.arch, filesystem: "NTFS", nodeVersion, nodeArtifactSha256: await hashFile(nodeExe), npmVersion, backend: buildContract.backend } };
   await run(nodeExe, [npmCli, "ci", "--include=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: workspace, env: buildEnvironment.env });
   if (await hashFile(path.join(workspace, "package-lock.json")) !== sourceProvenance.expectedLockfileSha256) throw new Error("npm ci mutated package-lock.json.");
   const dependencies = await dependencyEvidence({ workspace, nodeExe, npmCli, env: buildEnvironment.env, nodeVersion, npmVersion, expectedLockfileSha256: sourceProvenance.expectedLockfileSha256, onNpmTree: diagnostic.onNpmTree });
-  return { values, stagingRoot, archive, outputDir, tempRoot, sourceRoot, workspace, source, sourceProvenance, nodeRoot, nodeExe, npmCli, buildId, buildEnvironment, envEvidence, dependencies, toolchain: { contractVersion: buildContract.version, os: os.version(), release: os.release(), arch: process.arch, filesystem: "NTFS", nodeVersion, nodeArtifactSha256: await hashFile(nodeExe), npmVersion, backend: buildContract.backend } };
+  if (dependencies.npmTreeDigest !== admission.authority.dependency.graphIdentity) throw new Error("approved dependency graph identity mismatch.");
+  return { ...admission, values, stagingRoot, archive, outputDir, tempRoot, sourceRoot, workspace, source, sourceProvenance, securitySet, securitySetMetadata, nodeRoot, nodeExe, npmCli, buildId, buildEnvironment, envEvidence, dependencies, toolchain: { contractVersion: buildContract.version, os: os.version(), release: os.release(), arch: process.arch, filesystem: "NTFS", nodeVersion, nodeArtifactSha256: await hashFile(nodeExe), npmVersion, backend: buildContract.backend } };
 }
 
 export async function runWindowsNextBuild(prepared, diagnostic = null) {
   assertNoForbiddenEnvironment(prepared.buildEnvironment.env);
   const buildEnv = { ...prepared.buildEnvironment.env, NODE_ENV: "production" };
   const nextArguments = [path.join(prepared.workspace, "node_modules", "next", "dist", "bin", "next"), "build"];
+  const actualNextVersion = prepared.dependencies?.versions?.nextVersion ?? buildContract.nextVersion;
+  if (actualNextVersion !== buildContract.nextVersion) throw new Error("SECURITY_SET_NEXT_VERSION_UNSUPPORTED");
+  const securitySetOptions = { sourceCommit: prepared.values["source-commit"], sourceArchiveSha256: prepared.values["source-archive-sha256"], authorizationId: prepared.values["security-set-authorization-id"], now: Date.now(), nextVersion: actualNextVersion };
+  await materializeNextSecurityCache({ workspace: prepared.workspace, securitySet: prepared.securitySet, nextVersion: securitySetOptions.nextVersion, sourceCommit: securitySetOptions.sourceCommit, sourceArchiveSha256: securitySetOptions.sourceArchiveSha256, authorizationId: securitySetOptions.authorizationId, now: securitySetOptions.now });
   if (diagnostic) {
     if (diagnostic.kind === "r3b2d-env" || diagnostic.kind === "r3b2d") {
       if (!path.isAbsolute(diagnostic.observerPath) || !path.isAbsolute(diagnostic.evidenceDir) || !/^[a-z0-9-]+$/i.test(diagnostic.label) || !/^P(?:0b|[1-9])$/.test(diagnostic.rung || "")) throw new Error("R3B2D diagnostic observation arguments are invalid.");
@@ -532,7 +749,16 @@ export async function runWindowsNextBuild(prepared, diagnostic = null) {
     buildEnv.NODE_OPTIONS = "--require=" + (diagnostic.preloadPath.includes(" ") ? JSON.stringify(diagnostic.preloadPath) : diagnostic.preloadPath);
     }
   }
-  await run(prepared.nodeExe, nextArguments, { cwd: prepared.workspace, env: buildEnv });
+  try {
+    await run(prepared.nodeExe, nextArguments, { cwd: prepared.workspace, env: buildEnv });
+  } catch {
+    throw new Error("NEXT_BUILD_FAILED_WITH_RELEASE_SECURITY_SET");
+  }
+  prepared.securitySetAdoption = await verifyNextSecurityAdoption({ workspace: prepared.workspace, securitySet: prepared.securitySet, options: securitySetOptions });
+  prepared.manifestNormalization = {
+    buildOutput: await normalizeNextManifestTree(path.join(prepared.workspace, ".next")),
+    standaloneOutput: await normalizeNextManifestTree(path.join(prepared.workspace, ".next", "standalone", ".next")),
+  };
   const rawNext = await treeManifest(prepared.workspace, ".next");
   const serverReferencePath = path.join(prepared.workspace, ".next", "server", "server-reference-manifest.json");
   let serverActions = "ABSENT";
@@ -548,21 +774,28 @@ export async function runWindowsNextBuild(prepared, diagnostic = null) {
   return rawNext;
 }
 
-export async function finalizeWindowsRelease(prepared) {
+export async function finalizeWindowsRelease(prepared, { candidateLabel = prepared.values["candidate-label"], executionEvidencePath: requestedEvidencePath = null } = {}) {
   if (!prepared.rawNext || !prepared.native || !prepared.dsh) throw new Error("verified bindings and Next build are required before payload finalization.");
   const { values, workspace, sourceRoot, nodeExe, npmCli, buildEnvironment } = prepared;
   await run(nodeExe, [npmCli, "prune", "--omit=dev", "--ignore-scripts"], { cwd: workspace, env: buildEnvironment.env });
   if (await hashFile(path.join(sourceRoot, "package-lock.json")) !== prepared.sourceProvenance.expectedLockfileSha256) throw new Error("frozen source package-lock.json mutated during dependency assembly.");
   const postPruneTree = normalizeNpmTree(JSON.parse((await run(nodeExe, [npmCli, "ls", "--all", "--omit=dev", "--json"], { cwd: workspace, env: buildEnvironment.env })).toString("utf8")));
   const postPruneDependencyDigest = sha256(Buffer.from(canonicalJson(postPruneTree), "utf8"));
-  await rm(path.join(workspace, "node_modules", ".bin"), { recursive: true, force: true });
-  const runtimeDependencyArtifact = await treeManifest(path.join(workspace, "node_modules"));
+  if (postPruneDependencyDigest !== prepared.receiptProjections.dependency.postPruneGraphIdentity) throw new Error("approved post-prune graph mismatch");
+  const runtimeDependencyArtifact = await candidateDependencyProjection(path.join(workspace, "node_modules"));
+  if (runtimeDependencyArtifact.digest !== prepared.authority.dependency.byteTreeIdentity) throw new Error("approved dependency byte-tree identity mismatch.");
+  const sourceRuntimeClosure = await deriveHostRuntimeModuleClosure(workspace);
   const destination = path.join(prepared.outputDir, "candidate");
   await mkdir(destination, { recursive: true });
   await cp(path.join(workspace, ".next", "standalone"), destination, { recursive: true, filter: (item) => path.basename(item) !== ".bin" });
   await cp(path.join(workspace, ".next", "static"), path.join(destination, ".next", "static"), { recursive: true });
-  await cp(path.join(workspace, "node_modules"), path.join(destination, "node_modules"), { recursive: true, filter: (item) => path.basename(item) !== ".bin" });
-  await copyRequired(workspace, destination, ["package.json", ...runtimeScripts, ...dshPayloadFiles, ...servicePayloadFiles]);
+  await copyCandidateDependencyTree(path.join(workspace, "node_modules"), path.join(destination, "node_modules"));
+  const allRuntimeSourcePaths = await deriveCandidateRuntimeClosureSourcePaths(workspace);
+  const requiredPayload = [...new Set(["package.json", ...sourceRuntimeClosure.modules.map((module) => module.path), ...allRuntimeSourcePaths, ...requiredCandidateRuntimeFiles.filter((relative) => relative !== "server.js"), ...dshPayloadFiles, ...servicePayloadFiles, ...sourceReleaseComponentPaths()])];
+  await copyRequired(workspace, destination, requiredPayload);
+  await verifyRequiredCandidateRuntimeFiles({ sourceRoot: workspace, candidateRoot: destination });
+  await verifyCandidateHostRuntimeClosure({ sourceRoot: workspace, candidateRoot: destination, environment: {} });
+  const runtimeClosure = createHostRuntimeClosureBinding({ entrypoint: sourceRuntimeClosure.entrypoint, modules: sourceRuntimeClosure.modules, edges: sourceRuntimeClosure.edges, sourceCommit: values["source-commit"], sourceArchiveSha256: values["source-archive-sha256"] });
   try { await cp(path.join(workspace, "public"), path.join(destination, "public"), { recursive: true }); } catch (error) { if (error.code !== "ENOENT") throw error; }
   for (const [from, to] of Object.entries(nativePayloadMap)) {
     const source = path.join(path.resolve(values["native-set-root"]), ...from.split("/"));
@@ -573,10 +806,27 @@ export async function finalizeWindowsRelease(prepared) {
   }
   const { native, dsh } = prepared;
   const dshProvenance = { version: dsh.version, commit: dsh.commit, sourceFingerprint: dsh.fingerprint };
-  if (dsh.method === "offline-package") dshProvenance.acquisition = { archiveSha256: dsh.packageArchiveSha256, manifestSha256: dsh.packageManifestSha256, materializationMode: dsh.materializationMode, materializedRootIdentity: dsh.materializedRootIdentity, method: "verified-offline", repository: dsh.repository, sourceRef: dsh.sourceRef, runBindingSha256: dsh.runBindingSha256 };
-  const provenance = { schemaVersion: 2, constructor: { version: buildContract.version, creationRunId: values["creation-run-id"], createdAt: new Date().toISOString() }, source: { classification: values["source-classification"], productionEligible: prepared.sourceProvenance.policy.productionEligible, commit: values["source-commit"], archiveSha256: values["source-archive-sha256"], lockfileSha256: prepared.sourceProvenance.expectedLockfileSha256, snapshotManifestSha256: values["source-snapshot-manifest-sha256"] ?? null, snapshot: prepared.sourceProvenance.snapshot ? { workingTreeManifestSha256: prepared.sourceProvenance.snapshot.workingTreeManifestSha256, trackedDiffSha256: prepared.sourceProvenance.snapshot.trackedDiffSha256, untrackedInventorySha256: prepared.sourceProvenance.snapshot.untrackedInventorySha256, sourceRootIdentity: prepared.sourceProvenance.snapshot.sourceRootIdentity } : null }, dsh: dshProvenance, native: { buildId: values["native-build-id"], setDigest: native.set.digest, aggregateManifestSha256: await hashFile(path.join(path.resolve(values["native-set-root"]), "native-components.manifest.json")), members: native.set.files.map((file) => ({ ...file, releasePath: nativePayloadMap[file.path] })) }, build: { contractVersion: buildContract.version, nodeVersion: prepared.toolchain.nodeVersion, nodeArtifactSha256: prepared.toolchain.nodeArtifactSha256, npmVersion: prepared.toolchain.npmVersion, backend: buildContract.backend, packageManager: "node.exe npm-cli.js ci --include=dev --ignore-scripts --no-audit --no-fund; node.exe npm-cli.js prune --omit=dev --ignore-scripts", deterministicBuildId: prepared.buildId, derivationVersion: 1, runtimeDependencyArtifact: { npmTreeDigest: postPruneDependencyDigest, nodeModulesManifestSha256: runtimeDependencyArtifact.digest, fileCount: runtimeDependencyArtifact.files.length } }, payloadSchemaVersion: releasePayloadSchemaVersion };
-  await writeFile(path.join(destination, "release.provenance.json"), `${canonicalJson(provenance)}\n`);
+  if (dsh.method === "offline-package") dshProvenance.acquisition = { archiveSha256: dsh.packageArchiveSha256, manifestSha256: dsh.packageManifestSha256, materializationMode: dsh.materializationMode, materializedRootIdentity: dsh.materializedRootIdentity, method: "verified-offline", repository: dsh.repository, sourceRef: dsh.sourceRef };
+  const candidateNextOutput = await treeManifest(destination, ".next");
+  const candidateNodeModules = await verifyCandidateDependencyTree(runtimeDependencyArtifact, path.join(destination, "node_modules"));
+  const runtimeArtifacts = { nextOutput: { digest: candidateNextOutput.digest, fileCount: candidateNextOutput.files.length }, nodeModules: { digest: candidateNodeModules.digest, fileCount: candidateNodeModules.files.length } };
+  const candidateRuntimeClosure = await createCandidateRuntimeClosureManifest({ sourceRoot: workspace, candidateRoot: destination, sourceCommit: values["source-commit"], sourceArchiveSha256: values["source-archive-sha256"], buildId: prepared.buildId, nextOutput: candidateNextOutput, nodeModules: candidateNodeModules });
+  const provenance = createCandidateProvenance({
+    inputAuthorityIdentity: prepared.authority.inputAuthorityIdentity,
+    constructorVersion: buildContract.version,
+    source: { classification: values["source-classification"], productionEligible: prepared.sourceProvenance.policy.productionEligible, commit: values["source-commit"], archiveSha256: values["source-archive-sha256"], lockfileSha256: prepared.sourceProvenance.expectedLockfileSha256, snapshot: prepared.sourceProvenance.snapshot ? { workingTreeManifestSha256: prepared.sourceProvenance.snapshot.workingTreeManifestSha256, trackedDiffSha256: prepared.sourceProvenance.snapshot.trackedDiffSha256, untrackedInventorySha256: prepared.sourceProvenance.snapshot.untrackedInventorySha256 } : null },
+    authorizationId: prepared.securitySet.authority.authorizationId,
+    securitySetId: prepared.securitySet.securitySetId,
+    runtimeClosure,
+    candidateRuntimeClosure,
+    dsh: dshProvenance,
+    native: { buildId: values["native-build-id"], setDigest: native.set.digest, aggregateManifestSha256: await hashFile(path.join(path.resolve(values["native-set-root"]), "native-components.manifest.json")), members: native.set.files.map((file) => ({ ...file, releasePath: nativePayloadMap[file.path] })) },
+    build: { contractVersion: buildContract.version, nodeVersion: prepared.toolchain.nodeVersion, nodeArtifactSha256: prepared.toolchain.nodeArtifactSha256, npmVersion: prepared.toolchain.npmVersion, backend: buildContract.backend, packageManager: "node.exe npm-cli.js ci --include=dev --no-audit --no-fund; node.exe npm-cli.js prune --omit=dev --ignore-scripts", deterministicBuildId: prepared.buildId, derivationVersion: 1, nextOutputArtifact: runtimeArtifacts.nextOutput, runtimeDependencyArtifact: { npmTreeDigest: postPruneDependencyDigest, nodeModulesManifestSha256: runtimeArtifacts.nodeModules.digest, fileCount: runtimeArtifacts.nodeModules.fileCount } },
+  });
+  await writeFile(path.join(destination, "release.provenance.json"), serializeCandidateProvenance(provenance), "utf8");
   const calculatedArtifactSet = await calculateReleaseArtifactSet(destination);
+  assertHostRuntimeClosureBinding({ runtimeClosure, artifactSet: calculatedArtifactSet, sourceCommit: values["source-commit"], sourceArchiveSha256: values["source-archive-sha256"] });
+  await assertCandidateRuntimeClosureManifest({ manifest: candidateRuntimeClosure, candidateRoot: destination, artifactSet: calculatedArtifactSet, sourceCommit: values["source-commit"], sourceArchiveSha256: values["source-archive-sha256"], runtimeArtifacts });
   const artifactSet = { ...calculatedArtifactSet, files: calculatedArtifactSet.files.map((file) => ({ ...file, component: Object.entries(componentPaths).find(([, relative]) => relative === file.path)?.[0] ?? "assetHub" })) };
   const version = JSON.parse(await readFile(path.join(workspace, "package.json"), "utf8")).version;
   const components = Object.fromEntries(Object.entries(componentPaths).map(([name, relative]) => {
@@ -585,10 +835,34 @@ export async function finalizeWindowsRelease(prepared) {
     return [name, { path: relative, sha256: file.sha256, version: name.startsWith("windows") ? "frozen-native" : "release" }];
   }));
   const manifest = createDeploymentManifest({ version, commit: values["source-commit"], sourceArchiveSha256: values["source-archive-sha256"], artifactSet, dsh: { version: dsh.version, commit: dsh.commit, sourceFingerprint: dsh.fingerprint }, components, buildId: prepared.buildId, runtimeMetadataSchemaVersion: "3", operationalStorageSchemaVersion: "1", formalDataContractVersion: "1", requiredEvidenceTypes: ["windows-native-staging", "formal-data-hash"] });
-  preflightDeploymentManifest(manifest, dsh);
+  preflightDeploymentManifest(manifest, { version: dsh.version, commit: dsh.commit, sourceFingerprint: dsh.fingerprint });
   await writeDeploymentManifest(destination, manifest);
+  const verifiedRelease = await verifyRelease(destination, { version: dsh.version, commit: dsh.commit, sourceFingerprint: dsh.fingerprint }, { authority: prepared.authority, admissionContext: prepared.admissionContext, requireLiveAuthority: true });
+  if (verifiedRelease.manifest.artifactSet.digest !== manifest.artifactSet.digest) throw new Error("final Candidate verification changed the artifact-set binding.");
   if (await hashFile(prepared.archive) !== values["source-archive-sha256"]) throw new Error("constructor changed source archive.");
-  return { destination, manifest, provenance, postPruneDependencyDigest };
+  const snapshot = prepared.sourceProvenance.snapshot;
+  const executionEvidencePath = assertExecutionEvidenceOutsideCandidate(destination, requestedEvidencePath ?? path.join(prepared.binding.locators.evidenceRoot, "candidate-execution-evidence-" + values["execution-run-id"] + ".json"));
+  if (candidateLabel !== values["candidate-label"]) throw new Error("candidate label differs from ExecutionBinding.");
+  const completeInventory = await calculateCompleteByteTreeInventory(destination);
+  const runtimeNextInventory = await calculateCompleteByteTreeInventory(path.join(workspace, ".next"));
+  const runtimeDependencyInventory = await calculateCompleteByteTreeInventory(path.join(workspace, "node_modules"));
+  const runtimeInventorySha256 = sha256(Buffer.from(canonicalJson({ next: runtimeNextInventory.sha256, dependencies: runtimeDependencyInventory.sha256 }), "utf8"));
+  const evidenceRelative = path.relative(prepared.binding.locators.evidenceRoot, executionEvidencePath);
+  if (!evidenceRelative || evidenceRelative.startsWith("..") || path.isAbsolute(evidenceRelative)) throw new Error("execution evidence escapes its ExecutionBinding evidence root.");
+  const approvalSelection = { approvalIdentity: prepared.approvalIdentity, logicalReleaseAuthoritySha256: prepared.admissionContext.approval.logicalReleaseAuthoritySha256, executionPlanIdentity: prepared.admissionContext.plan.planIdentity, experimentPermissionDigest: prepared.binding.permission.experimentPermissionDigest, journalIdentity: prepared.binding.permission.journalIdentity };
+  const executionEvidence = createCandidateExecutionEvidence({
+    approval: approvalSelection,
+    artifactCreation: { sourceManifestSha256: values["source-snapshot-manifest-sha256"], sourceCreationReceiptSha256: prepared.authority.receipts.sourceCreationReceiptSha256, creatorRunId: snapshot.creationRunId, createdAt: snapshot.createdAt },
+    execution: { experimentId: values["experiment-id"], executionRunId: values["execution-run-id"], candidateLabel, inputAuthorityIdentity: prepared.authority.inputAuthorityIdentity, executionBindingSha256: prepared.executionBindingSha256, phase: prepared.binding.permission.expectedPhase, receiptHashes: prepared.binding.receipts, nativeRunBindingSha256: prepared.binding.bindings.nativeRunBindingSha256, dshMode: prepared.binding.bindings.dshMode, dshRunBindingSha256: prepared.binding.bindings.dshRunBindingSha256 },
+    observations: { createdAt: new Date().toISOString(), evidencePath: executionEvidencePath, hostname: os.hostname(), account: process.env.USER || process.env.USERNAME || "unknown", workspace: prepared.workspace, attempt: prepared.phaseJournal.usedBudget + 1, exitCode: 0, stdoutSha256: null, stderrSha256: null, diagnosticsSha256: null, observerSha256: null, candidateInventorySha256: completeInventory.sha256, runtimeInventorySha256 },
+    logicalRelease: { releaseIdentity: provenance.releaseIdentity, authorizationId: provenance.security.authorizationId, securitySetId: provenance.security.securitySetId },
+    candidate: { artifactDigest: manifest.artifactSet.digest },
+    expected: { ...approvalSelection, experimentId: values["experiment-id"], executionRunId: values["execution-run-id"], candidateLabel, inputAuthorityIdentity: prepared.authority.inputAuthorityIdentity, executionBindingSha256: prepared.executionBindingSha256, phase: prepared.binding.permission.expectedPhase, receiptHashes: prepared.binding.receipts, nativeRunBindingSha256: prepared.binding.bindings.nativeRunBindingSha256, dshMode: prepared.binding.bindings.dshMode, dshRunBindingSha256: prepared.binding.bindings.dshRunBindingSha256, sourceCreationReceiptSha256: prepared.authority.receipts.sourceCreationReceiptSha256, creatorRunId: snapshot.creationRunId, releaseIdentity: provenance.releaseIdentity, authorizationId: provenance.security.authorizationId, securitySetId: provenance.security.securitySetId, candidateDigest: manifest.artifactSet.digest },
+  });
+  await mkdir(path.dirname(executionEvidencePath), { recursive: true });
+  await writeFile(executionEvidencePath, serializeCandidateExecutionEvidence(executionEvidence), { encoding: "utf8", flag: "wx" });
+  await appendPhaseJournal(prepared, { event: "completed", runId: values["execution-run-id"], label: candidateLabel, phase: prepared.binding.permission.expectedPhase });
+  return { destination, manifest, provenance, executionEvidence, executionEvidencePath, postPruneDependencyDigest };
 }
 
 export async function bindWindowsReleaseInputs(prepared) {
@@ -596,12 +870,19 @@ export async function bindWindowsReleaseInputs(prepared) {
   const nativeRoot = resolveFrozenNativeSetPath(values["staging-root"], values["native-build-id"]);
   const native = await verifyFrozenNativeSet(nativeRoot);
   await assertFrozenNativeSetBinding({ stagingRoot: values["staging-root"], nativeBuildId: values["native-build-id"], nativeSetDigest: values["native-set-digest"], nativeSetRoot: nativeRoot, native, sourceRoot: prepared.sourceRoot, sourceCommit: values["source-commit"], sourceArchiveSha256: values["source-archive-sha256"] });
-  await validateNativeSetRunBindingFile({ bindingPath: values["native-set-run-binding"], runId: values["creation-run-id"], sourceCommit: values["source-commit"], sourceArchiveSha256: values["source-archive-sha256"], nativeSetManifestSha256: await hashFile(path.join(nativeRoot, "native-components.manifest.json")), nativeSourceIdentity: native.manifest.nativeSourceIdentity, nativeBuildId: values["native-build-id"] });
+  if (await hashFile(values["native-set-run-binding"]) !== prepared.binding.bindings.nativeRunBindingSha256) throw new Error("Native current run binding raw SHA mismatch");
+  prepared.nativeRunBinding = await validateNativeSetRunBindingFile({ bindingPath: values["native-set-run-binding"], runId: values["execution-run-id"], sourceCommit: values["source-commit"], sourceArchiveSha256: values["source-archive-sha256"], nativeSetManifestSha256: await hashFile(path.join(nativeRoot, "native-components.manifest.json")), nativeSourceIdentity: native.manifest.nativeSourceIdentity, nativeBuildId: values["native-build-id"] });
   const dshRoot = path.resolve(values["dsh-source-root"]);
   const dshVersion = JSON.parse(await readFile(path.join(dshRoot, "package.json"), "utf8")).version;
   const dshContract = JSON.parse(await readFile(path.join(prepared.workspace, "agent-integration", "dsh", "version.json"), "utf8"));
-  const offlinePackage = values["dsh-offline-package-archive"] ? { archivePath: values["dsh-offline-package-archive"], manifestPath: values["dsh-offline-package-manifest"], provenancePath: values["dsh-offline-package-provenance"], runBindingPath: values["dsh-offline-run-binding"], targetRunId: values["creation-run-id"] } : null;
+  const offlinePackage = values["dsh-offline-package-archive"] ? { archivePath: values["dsh-offline-package-archive"], bundlePath: values["dsh-offline-package-bundle"], manifestPath: values["dsh-offline-package-manifest"], provenancePath: values["dsh-offline-package-provenance"], runBindingPath: values["dsh-offline-run-binding"], targetRunId: values["execution-run-id"] } : null;
+  if ((offlinePackage ? "offline" : "bundle") !== prepared.binding.bindings.dshMode) throw new Error("DSH binding mode mismatch");
+  if (offlinePackage && await hashFile(offlinePackage.runBindingPath) !== prepared.binding.bindings.dshRunBindingSha256) throw new Error("DSH current run binding raw SHA mismatch");
+  const actualBundle = offlinePackage?.bundlePath ?? values["dsh-acquisition-artifact"];
+  if (!actualBundle || await hashFile(actualBundle) !== prepared.authority.dsh.bundleSha256) throw new Error("DSH approved immutable bundle mismatch");
   const dsh = await bindDshConstructorProvenance({ dshRoot, dshContract, dshVersion, dshCommit: values["dsh-commit"], evidencePath: values["dsh-provenance-evidence"], bundlePath: values["dsh-acquisition-artifact"] ?? null, offlinePackage });
+  if (dshContract.sourceTree !== prepared.authority.dsh.tree || dshContract.sourceFingerprint !== prepared.authority.dsh.fingerprint) throw new Error("DSH approved tree/fingerprint projection mismatch");
+  await assertDshBundleAuthorityConsumption({ authority: prepared.receiptProjections.dsh.authority, dsh: prepared.authority.dsh, bundlePath: actualBundle, sourceDir: dshRoot });
   prepared.native = native;
   prepared.dsh = dsh;
   return prepared;
@@ -615,10 +896,16 @@ export async function bindDshConstructorProvenance({ dshRoot, dshContract, dshVe
 }
 
 export async function constructWindowsRelease(values) {
-  const prepared = await prepareWindowsRelease(values);
-  await bindWindowsReleaseInputs(prepared);
-  await runWindowsNextBuild(prepared);
-  return finalizeWindowsRelease(prepared);
+  const roots = await loadProtectedHistoricalRoots();
+  const before = await inventoryHistoricalRoots(roots);
+  try {
+    const prepared = await prepareWindowsRelease(values);
+    await bindWindowsReleaseInputs(prepared);
+    await runWindowsNextBuild(prepared);
+    return await finalizeWindowsRelease(prepared);
+  } finally {
+    assertHistoricalPreservation(before, await inventoryHistoricalRoots(roots));
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -629,4 +916,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
   }
+}
+
+export async function loadWindowsExecutionSelection(values) {
+  validateValues(values); assertBuildPlatform();
+  const paths = { stagingRoot: path.resolve(values["staging-root"]), archive: path.resolve(values["source-archive"]), outputDir: path.resolve(values["output-dir"]), tempRoot: path.resolve(values["temp-dir"]), nodeRoot: path.resolve(values["node-root"]), securitySetPath: path.resolve(values["security-set"]), evidenceRoot: path.resolve(values["evidence-root"]) };
+  return validateAuthorityAdmission(values, paths);
 }

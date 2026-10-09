@@ -82,11 +82,12 @@ async function waitForExit(child, timeoutMs = 15_000) {
   ]);
 }
 
-async function configuredDshSource() {
+async function configuredDshSources() {
   loadEnvConfig(projectDir);
   const source = process.env.DSH_SOURCE_DIR?.trim();
-  if (!source) throw new Error("DSH Source is not configured for E2E.");
-  return realpath(path.resolve(source));
+  const runtimeSource = process.env.DSH_RUNTIME_SOURCE_DIR?.trim();
+  if (!source || !runtimeSource) throw new Error("DSH authoritative source and runtime source are required for E2E.");
+  return Promise.all([realpath(path.resolve(source)), realpath(path.resolve(runtimeSource))]);
 }
 
 async function runDshProbe(environment) {
@@ -117,7 +118,7 @@ async function materializeIsolatedRuntimeWorkspace(testRoot) {
 async function main() {
   mark("preflight", "preflight_failed");
   await access(path.join(projectDir, ".next", "BUILD_ID"));
-  const sourceDir = await configuredDshSource();
+  const [sourceDir, runtimeSourceDir] = await configuredDshSources();
   await assertPortAvailable(3080);
   const testRoot = await mkdtemp(path.join(os.tmpdir(), "ued-host-security-e2e-"));
   let host = null;
@@ -140,6 +141,7 @@ async function main() {
       AGENT_RUNTIME_DIR: agentRuntimeDir,
       TRAINING_MEDIA_DIR: trainingMediaDir,
       DSH_SOURCE_DIR: sourceDir,
+      DSH_RUNTIME_SOURCE_DIR: runtimeSourceDir,
       DSH_BASE_URL: "http://127.0.0.1:3080",
       HOST_BIND_HOST: "127.0.0.1",
       HOST_PORT: String(publicPort),

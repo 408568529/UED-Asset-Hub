@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { calculateNativeSourceInputs, canonicalManifestBytes, commandFingerprint, createNativeBuildId, createNativeSetManifestV2, createNativeSetRunBinding, nativeSourceIdentity, validateNativeSetManifest, validateNativeSetRunBindingFile, verifyFrozenNativeSet, writeCanonicalManifest } from "./native-artifact-contract.mjs";
+import { calculateNativeSourceInputs, canonicalManifestBytes, commandFingerprint, createNativeBuildId, createNativeSetManifestV2, createNativeSetRunBinding, nativeSourceIdentity, nativeSourceInputs, promoteNativeCandidate, validateNativeSetManifest, validateNativeSetRunBindingFile, verifyFrozenNativeSet, writeCanonicalManifest } from "./native-artifact-contract.mjs";
 import { assertFrozenNativeSetBinding, resolveFrozenNativeSetPath } from "./windows-release-constructor.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
@@ -16,7 +16,12 @@ let cases = 0; let passed = 0;
 async function rejects(action) { cases += 1; await assert.rejects(action); passed += 1; }
 function rejectsSync(action) { cases += 1; assert.throws(action); passed += 1; }
 async function source(root, marker = "base") {
-  for (const relative of ["native/windows-job-helper/ued_windows_job_helper.cpp", "native/windows-pipe-security-adapter/ued_windows_pipe_security_adapter.cpp", "native/windows-dpapi-credential-helper/ued_windows_dpapi_credential_helper.cpp", "scripts/build-windows-job-helper.mjs", "scripts/build-windows-pipe-security-adapter.mjs", "scripts/build-windows-dpapi-credential-helper.mjs", "scripts/native-build-path-contract.mjs"]) { const file = path.join(root, ...relative.split("/")); await mkdir(path.dirname(file), { recursive: true }); await writeFile(file, `${marker}:${relative}`); }
+  for (const relative of new Set(Object.values(nativeSourceInputs).flat())) {
+    const file = path.join(root, ...relative.split("/"));
+    await mkdir(path.dirname(file), { recursive: true });
+    if (relative.endsWith(".mjs")) await copyFile(path.join(import.meta.dirname, "..", ...relative.split("/")), file);
+    else await writeFile(file, `${marker}:${relative}`);
+  }
 }
 function component(name, fileName, bytes, sourceCommit) { const binary = { fileName, imports: ["KERNEL32.dll"], peMachine: "AMD64", runtimeDependencyClassification: "A", sha256: sha(bytes), size: bytes.length }; return { manifestSchemaVersion: 1, version: 1, componentName: name, componentType: "windows-native-helper", assetHubCommit: sourceCommit, architecture: "x64", sha256: binary.sha256, source: { relativePath: `native/${name}/source.cpp`, sha256: sha(name) }, buildScript: { relativePath: `scripts/${name}.mjs`, sha256: sha(`${name}:script`) }, toolchain: { compilerName: "cl.exe", compilerVersion: toolchain.compilerVersion, linkerVersion: toolchain.linkerVersion, windowsSdkVersion: toolchain.windowsSdkVersion }, build: { commandFingerprint: commandFingerprint({ name, fileName }), configuration: "release-native" }, binary, verification: { componentLocalGateVersion: "fixture-v1", passedChecks: ["fixture-pass"], deferredChecks: ["service-context"] } }; }
 async function nativeSet(root, sourceRoot, sourceCommit = commitA, sourceArchiveSha256 = archiveA) {
@@ -36,6 +41,12 @@ try {
   for (const target of [path.join(a.candidate, "job-helper", "ued-windows-job-helper.exe"), path.join(a.candidate, "job-helper", "unexpected.exe")]) { if (target.endsWith("unexpected.exe")) await writeFile(target, "extra"); else await rm(target); await rejects(() => verifyFrozenNativeSet(a.candidate, { requireDirectoryIdentity: false })); if (target.endsWith("unexpected.exe")) await rm(target); else await writeFile(target, "binary:job-helper"); }
   const sameA = nativeSourceIdentity(await calculateNativeSourceInputs(sourceA)); const sameB = nativeSourceIdentity(await calculateNativeSourceInputs(sourceB)); assert.equal(sameA, sameB); assert.equal(createNativeBuildId(sameA, toolchain), createNativeBuildId(sameB, toolchain)); await rejects(() => validateNativeSetRunBindingFile({ bindingPath: binding, runId: "r2g-fixture-b", sourceCommit: commitB, sourceArchiveSha256: archiveB, nativeSetManifestSha256: manifestSha, nativeSourceIdentity: sameB, nativeBuildId: a.nativeBuildId }));
   const changed = path.join(sourceB, "native", "windows-job-helper", "ued_windows_job_helper.cpp"); await writeFile(changed, "one-byte-change"); const changedIdentity = nativeSourceIdentity(await calculateNativeSourceInputs(sourceB)); assert.notEqual(changedIdentity, sameA); assert.notEqual(createNativeBuildId(changedIdentity, toolchain), a.nativeBuildId); await utimes(changed, new Date(0), new Date(0)); assert.equal(nativeSourceIdentity(await calculateNativeSourceInputs(sourceB)), changedIdentity);
-  const staging = path.join(root, "staging"); const exact = resolveFrozenNativeSetPath(staging, a.nativeBuildId); const native = { set: a.set, manifest: a.manifest }; await assertFrozenNativeSetBinding({ stagingRoot: staging, nativeBuildId: a.nativeBuildId, nativeSetDigest: a.set.digest, nativeSetRoot: exact, native, sourceRoot: sourceA, sourceCommit: commitA, sourceArchiveSha256: archiveA }); await rejects(() => assertFrozenNativeSetBinding({ stagingRoot: staging, nativeBuildId: a.nativeBuildId, nativeSetDigest: a.set.digest, nativeSetRoot: exact, native, sourceRoot: sourceB, sourceCommit: commitA, sourceArchiveSha256: archiveA })); await rejects(() => assertFrozenNativeSetBinding({ stagingRoot: staging, nativeBuildId: "nb1-5932a1dff20b-c9f4e7ea1bc84836ae7f87ebb3640324", nativeSetDigest: a.set.digest, nativeSetRoot: exact, native, sourceRoot: sourceA, sourceCommit: commitA, sourceArchiveSha256: archiveA }));
+  const staging = path.join(root, "staging"); const exact = resolveFrozenNativeSetPath(staging, a.nativeBuildId);
+  const promoted = await promoteNativeCandidate({ candidateDirectory: a.candidate, frozenRoot: path.join(staging, "frozen", "native-components") });
+  assert.equal(promoted.directory, exact);
+  const native = await verifyFrozenNativeSet(promoted.directory);
+  assert.equal(native.set.digest, a.set.digest);
+  assert.deepEqual(native.manifest, a.manifest);
+  await assertFrozenNativeSetBinding({ stagingRoot: staging, nativeBuildId: a.nativeBuildId, nativeSetDigest: a.set.digest, nativeSetRoot: exact, native, sourceRoot: sourceA, sourceCommit: commitA, sourceArchiveSha256: archiveA }); await rejects(() => assertFrozenNativeSetBinding({ stagingRoot: staging, nativeBuildId: a.nativeBuildId, nativeSetDigest: a.set.digest, nativeSetRoot: exact, native, sourceRoot: sourceB, sourceCommit: commitA, sourceArchiveSha256: archiveA })); await rejects(() => assertFrozenNativeSetBinding({ stagingRoot: staging, nativeBuildId: "nb1-5932a1dff20b-c9f4e7ea1bc84836ae7f87ebb3640324", nativeSetDigest: a.set.digest, nativeSetRoot: exact, native, sourceRoot: sourceA, sourceCommit: commitA, sourceArchiveSha256: archiveA }));
   console.log(JSON.stringify({ result: "PASS", FAIL_CLOSED_CASE_COUNT: cases, FAIL_CLOSED_PASS_COUNT: passed, FAIL_CLOSED_FAILURE_COUNT: cases - passed, NATIVE_OUTPUT_EXACT_SET: "PASS", RECOMPUTED_NATIVE_AUTHORITY: "PASS", SAME_NATIVE_SOURCE_REGRESSION: "PASS", SOURCE_INPUT_CHANGE_REGRESSION: "PASS", NATIVE_IDENTITY_DETERMINISM: "PASS", HISTORICAL_SET_REGRESSION: "PASS" }));
 } finally { await rm(root, { recursive: true, force: true }); }
