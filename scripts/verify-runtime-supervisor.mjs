@@ -465,7 +465,9 @@ async function testWindowsJobOwnershipFailsClosed() {
 
 async function testGracefulPipeCapability() {
   const root = await mkdtemp(path.join(os.tmpdir(), "ued-graceful-pipe-"));
-  const endpoint = path.join(root, "graceful.sock");
+  const endpoint = process.platform === "win32"
+    ? `\\\\.\\pipe\\ued-asset-hub-graceful-test-${process.pid}-${Date.now()}`
+    : path.join(root, "graceful.sock");
   let calls = 0;
   const capability = createGracefulCapability({ endpoint, token: "t".repeat(32), runtimeInstanceId: "runtime-a", component: "dsh", generation: 4, onShutdown: () => { calls += 1; } });
   await capability.start();
