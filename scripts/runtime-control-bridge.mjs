@@ -98,7 +98,7 @@ export function createRuntimeControlBridge({ endpoint, token, inspect, ensureRea
         const state = request.operation === "status" ? await inspect() : await ensureReady();
         const result = publicRuntimeState(state);
         try { onEvent({ operation: request.operation, status: result.status, reasonCode: result.reasonCode, generation: result.generation }); } catch {}
-        write(socket, { ok: true, runtime: result });
+        write(socket, { ok: true, runtime: result, shutdownBinding: shutdownBinding() });
       } catch {
         try { onEvent({ operation: request.operation, status: "error", reasonCode: "runtime_control_failed", generation: null }); } catch {}
         write(socket, { ok: false, reasonCode: "runtime_control_failed" });

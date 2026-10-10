@@ -285,7 +285,7 @@ export async function main() {
     }
   });
   const specifications = {
-    assetHub: { command: process.execPath, args: ["server.js"], cwd: projectDir, env: runtimeEnvironmentProfiles.assetHub(securityEnvironment, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, HOSTNAME: "127.0.0.1", PORT: String(internalPort) }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(internalPort, "内部 Asset Hub") } }
+    assetHub: { command: process.execPath, args: ["server.js"], cwd: projectDir, env: runtimeEnvironmentProfiles.assetHub(securityEnvironment, { ADMIN_USERNAME: securityConfig.username, ADMIN_PASSWORD: securityConfig.password, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, HOSTNAME: "127.0.0.1", PORT: String(internalPort), UED_STAGING_SHUTDOWN_ENABLED: securityEnvironment.UED_STAGING_SHUTDOWN_ENABLED === "true" ? "true" : "false" }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(internalPort, "内部 Asset Hub") } }
   };
   const rpc = async (method, payload) => {
     if (method === "session.list") return probeDshSessionList({ baseUrl: runtimeUrl });

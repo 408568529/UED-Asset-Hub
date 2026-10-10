@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { acceptsSameOriginJsonMutation } from "../src/lib/runtimeControl.ts";
+import { acceptsSameOriginJsonMutation, invokeRuntimeControl, invokeRuntimeShutdown } from "../src/lib/runtimeControl.ts";
 import { createRuntimeControlBridge, requestRuntimeControl, runtimeControlEndpoint } from "./runtime-control-bridge.mjs";
 
 const ready = { status: "ready", phase: null, reasonCode: null, operationId: null, startedAt: null, generation: 7, credentialStatus: "configured", retryable: false, shell: "ready", operation: null };
@@ -37,6 +37,29 @@ async function testStatusReadOnly() {
   assert.equal(JSON.stringify(fixture.events).includes("never-return-this"), false, "credential contents are excluded from log events");
   await fixture.bridge.stop();
   await rm(fixture.root, { recursive: true, force: true });
+}
+
+async function testApplicationStatusAllowsSlowWindowsHealthCheck() {
+  const previousEndpoint = process.env.RUNTIME_CONTROL_ENDPOINT;
+  const previousToken = process.env.RUNTIME_CONTROL_TOKEN;
+  let shutdownCalls = 0;
+  const binding = { supervisorInstanceId: "supervisor", runtimeInstanceId: "runtime", generation: 7 };
+  const fixture = await createFixture({ inspect: async () => { await new Promise((resolve) => setTimeout(resolve, 5_500)); return ready; }, shutdownBinding: () => binding, shutdown: async () => { shutdownCalls += 1; } });
+  process.env.RUNTIME_CONTROL_ENDPOINT = fixture.endpoint;
+  process.env.RUNTIME_CONTROL_TOKEN = "control-token";
+  try {
+    const state = await invokeRuntimeControl("status");
+    assert.equal(state.status, "ready", "read-only Windows health inspection can exceed the former five-second deadline");
+    await invokeRuntimeShutdown();
+    assert.equal(shutdownCalls, 1, "graceful shutdown obtains its binding after a slow read-only status inspection");
+  } finally {
+    if (previousEndpoint === undefined) delete process.env.RUNTIME_CONTROL_ENDPOINT;
+    else process.env.RUNTIME_CONTROL_ENDPOINT = previousEndpoint;
+    if (previousToken === undefined) delete process.env.RUNTIME_CONTROL_TOKEN;
+    else process.env.RUNTIME_CONTROL_TOKEN = previousToken;
+    await fixture.bridge.stop();
+    await rm(fixture.root, { recursive: true, force: true });
+  }
 }
 
 async function testStartConcurrencyAndFailures() {
@@ -171,6 +194,7 @@ async function testRetryabilityContract() {
 
 async function main() {
   await testStatusReadOnly();
+  await testApplicationStatusAllowsSlowWindowsHealthCheck();
   await testStartConcurrencyAndFailures();
   await testAbortDoesNotCancelLifecycle();
   await testBridgeShutdownBarrier();

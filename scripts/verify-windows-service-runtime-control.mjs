@@ -63,12 +63,13 @@ async function testNativeAdapterScope() {
 }
 
 async function testServiceShutdownBoundary() {
-  const [host, client, discovery, control, routes] = await Promise.all([
+  const [host, client, discovery, control, routes, stagingShutdown] = await Promise.all([
     readFile(path.join(root, "scripts", "host-supervisor.mjs"), "utf8"),
     readFile(path.join(root, "scripts", "windows-managed-shutdown-client.mjs"), "utf8"),
     readFile(path.join(root, "scripts", "windows-stop-discovery.mjs"), "utf8"),
     readFile(path.join(root, "scripts", "runtime-control-bridge.mjs"), "utf8"),
-    readdir(path.join(root, "src", "app", "api", "runtime"))
+    readdir(path.join(root, "src", "app", "api", "runtime")),
+    readFile(path.join(root, "src", "app", "api", "staging-shutdown", "route.ts"), "utf8")
   ]);
   assert.match(host, /serviceMode \? "127\.0\.0\.1"/, "Windows service edge cannot bind LAN");
   assert.match(host, /resolveWindowsServiceIdentity/, "Host resolves one service identity authority");
@@ -82,6 +83,10 @@ async function testServiceShutdownBoundary() {
   assert.doesNotMatch(client, /taskkill|TerminateJob|exec\(|spawn\(|readFile|writeFile/i, "shutdown client cannot manage processes or persist data");
   assert.doesNotMatch(discovery, /writeFile|readFile|exec\(|spawnSync|child\.kill/i, "discovery never persists capability or kills a process");
   assert.equal(routes.includes("shutdown"), false, "no public Runtime shutdown API exists");
+  assert.match(stagingShutdown, /UED_STAGING_SHUTDOWN_ENABLED !== "true"/, "staging maintenance shutdown is disabled unless explicitly enabled");
+  assert.match(stagingShutdown, /isAdminRequest\(request\)/, "staging maintenance shutdown requires an admin session");
+  assert.match(stagingShutdown, /acceptsSameOriginJsonMutation\(request\)/, "staging maintenance shutdown rejects cross-origin requests");
+  assert.match(stagingShutdown, /invokeRuntimeShutdown\(\)/, "staging maintenance shutdown reuses the bound Supervisor lifecycle");
 }
 
 async function testB4aB4bBoundary() {

@@ -17,6 +17,9 @@ export type RuntimeState = {
   operation: { operationId: string | null; startedAt: string | null; phase: string | null; generation: number } | null;
 };
 
+type ShutdownBinding = { supervisorInstanceId: string; runtimeInstanceId: string; generation: number };
+type RuntimeControlResponse = { ok?: unknown; runtime?: unknown; shutdownBinding?: unknown; shutdown?: { status?: unknown } };
+
 function requireControlConfig() {
   const endpoint = process.env.RUNTIME_CONTROL_ENDPOINT;
   const token = process.env.RUNTIME_CONTROL_TOKEN;
@@ -33,27 +36,52 @@ function isRuntimeState(value: unknown): value is RuntimeState {
     && ["ready", "unavailable"].includes(String(state.shell));
 }
 
-export async function invokeRuntimeControl(operation: "status" | "start"): Promise<RuntimeState> {
-  const { endpoint, token } = requireControlConfig();
+function isShutdownBinding(value: unknown): value is ShutdownBinding {
+  if (!value || typeof value !== "object") return false;
+  const binding = value as Partial<ShutdownBinding>;
+  return typeof binding.supervisorInstanceId === "string" && binding.supervisorInstanceId.length > 0
+    && typeof binding.runtimeInstanceId === "string" && binding.runtimeInstanceId.length > 0
+    && Number.isInteger(binding.generation);
+}
+
+function sendControlRequest(endpoint: string, token: string, operation: "status" | "start" | "shutdown", binding?: ShutdownBinding, timeoutMs = 5_000): Promise<RuntimeControlResponse> {
   return new Promise((resolve, reject) => {
     let output = "";
     let settled = false;
-    const succeed = (value: RuntimeState) => { if (settled) return; settled = true; clearTimeout(timeout); resolve(value); };
+    const succeed = (value: RuntimeControlResponse) => { if (settled) return; settled = true; clearTimeout(timeout); resolve(value); };
     const fail = (error: Error) => { if (settled) return; settled = true; clearTimeout(timeout); reject(error); };
     const socket = createConnection(endpoint);
-    const timeout = setTimeout(() => { socket.destroy(); fail(new Error("Runtime control timed out.")); }, 5_000);
+    const timeout = setTimeout(() => { socket.destroy(); fail(new Error("Runtime control timed out.")); }, timeoutMs);
     socket.setEncoding("utf8");
-    socket.once("connect", () => socket.write(`${JSON.stringify({ token, operation })}\n`));
-    socket.on("data", (chunk) => { output += chunk; if (Buffer.byteLength(output) > maximumResponseBytes) socket.destroy(); });
+    socket.once("connect", () => socket.write(`${JSON.stringify(operation === "shutdown" ? { token, operation, binding } : { token, operation })}\n`));
+    socket.on("data", (chunk) => {
+      output += chunk;
+      if (Buffer.byteLength(output) > maximumResponseBytes) { socket.destroy(); fail(new Error("Runtime control response is invalid.")); }
+    });
     socket.once("error", () => fail(new Error("Runtime control is unavailable.")));
     socket.once("end", () => {
       try {
-        const body = JSON.parse(output) as { ok?: unknown; runtime?: unknown };
-        if (body.ok !== true || !isRuntimeState(body.runtime)) throw new Error("Runtime control failed.");
-        succeed(body.runtime);
+        const body = JSON.parse(output) as RuntimeControlResponse;
+        if (body.ok !== true) throw new Error("Runtime control failed.");
+        succeed(body);
       } catch { fail(new Error("Runtime control failed.")); }
     });
   });
+}
+
+export async function invokeRuntimeControl(operation: "status" | "start"): Promise<RuntimeState> {
+  const { endpoint, token } = requireControlConfig();
+  const body = await sendControlRequest(endpoint, token, operation, undefined, operation === "status" ? 15_000 : 5_000);
+  if (!isRuntimeState(body.runtime)) throw new Error("Runtime control failed.");
+  return body.runtime;
+}
+
+export async function invokeRuntimeShutdown() {
+  const { endpoint, token } = requireControlConfig();
+  const status = await sendControlRequest(endpoint, token, "status", undefined, 15_000);
+  if (!isRuntimeState(status.runtime) || !isShutdownBinding(status.shutdownBinding)) throw new Error("Runtime shutdown binding is unavailable.");
+  const result = await sendControlRequest(endpoint, token, "shutdown", status.shutdownBinding, 90_000);
+  if (result.shutdown?.status !== "terminal") throw new Error("Runtime shutdown failed.");
 }
 
 export class RuntimeDiagnosticsError extends Error {

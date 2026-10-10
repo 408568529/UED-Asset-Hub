@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { Header } from "@/components/layout/Header";
-import { Footer } from "@/components/layout/Footer";
+import { AppChrome } from "@/components/layout/AppChrome";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
 import "./globals.css";
@@ -13,11 +12,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="zh-CN">
-      <body className="flex min-h-screen flex-col">
-        <Header />
-        <div className="flex-1">{children}</div>
-        <Footer />
-      </body>
+      <body><AppChrome>{children}</AppChrome></body>
     </html>
   );
 }

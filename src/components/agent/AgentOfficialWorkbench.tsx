@@ -14,12 +14,15 @@ type RuntimeState = {
 
 type WorkbenchState =
   | { status: "loading" }
-  | { status: "ready"; url: string }
+  | { status: "ready"; url: string; generation: number }
   | { status: "starting"; runtime: RuntimeState | null }
-  | { status: "reconnecting"; url: string }
+  | { status: "reconnecting"; url: string; generation: number }
   | { status: "error"; kind: "agent-unavailable" | "runtime-action" | "runtime-waiting" | "runtime-admin" | "status-failed" | "configuration-required"; runtime: RuntimeState | null };
 
 type RequestScope = { sequence: number; controller: AbortController };
+type CachedWorkbench = { url: string; generation: number; checkedAt: number };
+
+let cachedWorkbench: CachedWorkbench | null = null;
 
 const runtimeStatuses = new Set<RuntimeState["status"]>(["unavailable", "starting", "shutting_down", "ready", "configuration_required", "error"]);
 const credentialStatuses = new Set<RuntimeState["credentialStatus"]>(["configured", "missing", "unknown"]);
@@ -58,7 +61,8 @@ function configurationMessage(runtime: RuntimeState) {
 }
 
 export function AgentOfficialWorkbench() {
-  const [state, setState] = useState<WorkbenchState>({ status: "loading" });
+  const initialCache = useRef<CachedWorkbench | null>(cachedWorkbench && Date.now() - cachedWorkbench.checkedAt < 60_000 ? cachedWorkbench : null);
+  const [state, setState] = useState<WorkbenchState>(() => initialCache.current ? { status: "ready", url: initialCache.current.url, generation: initialCache.current.generation } : { status: "loading" });
   const [frameKey, setFrameKey] = useState(0);
   const mountedRef = useRef(false);
   const actionLockRef = useRef(false);
@@ -97,7 +101,7 @@ export function AgentOfficialWorkbench() {
     return payload.runtime;
   }, []);
 
-  const reconnectWorkbench = useCallback(async (scope: RequestScope) => {
+  const reconnectWorkbench = useCallback(async (scope: RequestScope, runtime: RuntimeState) => {
     try {
       const [workbenchResponse, healthResponse] = await Promise.all([
         fetch("/api/agent/workbench", { cache: "no-store", signal: scope.controller.signal }),
@@ -109,7 +113,8 @@ export function AgentOfficialWorkbench() {
       if (!isCurrent(scope)) return;
       setFrameKey((value) => value + 1);
       frameSequenceRef.current = scope.sequence;
-      setState({ status: "reconnecting", url: payload.url });
+      cachedWorkbench = null;
+      setState({ status: "reconnecting", url: payload.url, generation: runtime.generation });
       frameLoadTimerRef.current = window.setTimeout(() => {
         if (!isCurrent(scope)) return;
         actionLockRef.current = false;
@@ -127,9 +132,11 @@ export function AgentOfficialWorkbench() {
     if (runtime.status === "ready") {
       clearPollTimer();
       actionLockRef.current = false;
-      await reconnectWorkbench(scope);
+      await reconnectWorkbench(scope, runtime);
       return;
     }
+
+    cachedWorkbench = null;
     if (runtime.status === "starting") {
       setState({ status: "starting", runtime });
       clearPollTimer();
@@ -160,15 +167,33 @@ export function AgentOfficialWorkbench() {
     setState({ status: "error", kind: runtime.status === "unavailable" ? "runtime-waiting" : "runtime-admin", runtime });
   }, [clearPollTimer, isCurrent, reconnectWorkbench, requestRuntimeStatus]);
 
-  const refreshRuntimeStatus = useCallback(() => {
+  const refreshRuntimeStatus = useCallback((background = false) => {
+    const previous = cachedWorkbench;
     const scope = beginRequestScope();
-    setState({ status: "loading" });
+    if (!background) {
+      cachedWorkbench = null;
+      setState({ status: "loading" });
+    }
     void (async () => {
       try {
         const runtime = await requestRuntimeStatus(scope.controller.signal);
+        if (background && runtime.status === "ready" && previous && runtime.generation === previous.generation) {
+          const [workbenchResponse, healthResponse] = await Promise.all([
+            fetch("/api/agent/workbench", { cache: "no-store", signal: scope.controller.signal }),
+            fetch("/agent-runtime/healthz", { cache: "no-store", signal: scope.controller.signal })
+          ]);
+          const payload = await workbenchResponse.json().catch(() => null) as { url?: unknown } | null;
+          if (workbenchResponse.ok && healthResponse.ok && isWorkbenchUrl(payload?.url) && payload.url === previous.url && isCurrent(scope)) {
+            cachedWorkbench = { ...previous, checkedAt: Date.now() };
+            setState({ status: "ready", url: previous.url, generation: previous.generation });
+            return;
+          }
+        }
+        if (background) cachedWorkbench = null;
         await resolveRuntimeState(scope, runtime);
       } catch {
         if (!isCurrent(scope)) return;
+        cachedWorkbench = null;
         actionLockRef.current = false;
         setState({ status: "error", kind: "status-failed", runtime: null });
       }
@@ -178,6 +203,7 @@ export function AgentOfficialWorkbench() {
   const startRuntime = useCallback(() => {
     if (actionLockRef.current) return;
     actionLockRef.current = true;
+    cachedWorkbench = null;
     const scope = beginRequestScope();
     setState({ status: "starting", runtime: null });
     void (async () => {
@@ -213,7 +239,7 @@ export function AgentOfficialWorkbench() {
 
   useEffect(() => {
     mountedRef.current = true;
-    refreshRuntimeStatus();
+    refreshRuntimeStatus(initialCache.current !== null);
     return () => {
       mountedRef.current = false;
       requestSequenceRef.current += 1;
@@ -222,6 +248,8 @@ export function AgentOfficialWorkbench() {
       clearFrameLoadTimer();
     };
   }, [clearFrameLoadTimer, clearPollTimer, refreshRuntimeStatus]);
+
+  const readyGeneration = state.status === "ready" ? state.generation : null;
 
   useEffect(() => {
     if (state.status !== "ready") return;
@@ -234,31 +262,41 @@ export function AgentOfficialWorkbench() {
         const response = await fetch("/agent-runtime/healthz", { cache: "no-store", signal: controller.signal });
         if (!response.ok) throw new Error("Agent Proxy is unavailable.");
       } catch {
-        if (!disposed && !controller.signal.aborted) setState({ status: "error", kind: "agent-unavailable", runtime: null });
+        if (!disposed && !controller.signal.aborted) {
+          cachedWorkbench = null;
+          setState({ status: "error", kind: "agent-unavailable", runtime: null });
+        }
         return;
       }
-      if (!disposed) timer = window.setTimeout(checkHealth, 5_000);
+      if (!disposed) {
+        if (cachedWorkbench && readyGeneration !== null && cachedWorkbench.generation === readyGeneration) cachedWorkbench = { ...cachedWorkbench, checkedAt: Date.now() };
+        timer = window.setTimeout(checkHealth, 15_000);
+      }
     };
-    timer = window.setTimeout(checkHealth, 5_000);
+    timer = window.setTimeout(checkHealth, 15_000);
     return () => {
       disposed = true;
       controller?.abort();
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [state.status]);
+  }, [state.status, readyGeneration]);
 
   const handleFrameLoad = () => {
     if (!mountedRef.current || frameSequenceRef.current !== requestSequenceRef.current || requestControllerRef.current?.signal.aborted) return;
     clearFrameLoadTimer();
-    setState((current) => current.status === "reconnecting" ? { status: "ready", url: current.url } : current);
+    setState((current) => {
+      if (current.status !== "reconnecting") return current;
+      cachedWorkbench = { url: current.url, generation: current.generation, checkedAt: Date.now() };
+      return { status: "ready", url: current.url, generation: current.generation };
+    });
   };
 
   if (state.status === "starting") {
-    return <main className="grid min-h-[calc(100dvh-4.5rem)] place-items-center bg-[#101216] p-8 text-sm text-white/65">正在启动 Agent Runtime{state.runtime?.phase ? `：${state.runtime.phase}` : "…"}</main>;
+    return <main className="grid min-h-0 flex-1 place-items-center bg-[#101216] p-8 text-sm text-white/65">正在启动 Agent Runtime{state.runtime?.phase ? `：${state.runtime.phase}` : "…"}</main>;
   }
 
   if (state.status === "loading") {
-    return <main className="grid min-h-[calc(100dvh-4.5rem)] place-items-center bg-[#101216] p-8 text-sm text-white/65">正在检查 Agent Runtime…</main>;
+    return <main className="grid min-h-0 flex-1 place-items-center bg-[#101216] p-8 text-sm text-white/65">正在检查 Agent Runtime…</main>;
   }
 
   if (state.status === "error") {
@@ -279,15 +317,15 @@ export function AgentOfficialWorkbench() {
               ? "当前 Runtime 状态不能由浏览器安全恢复。请由主机管理员检查运行配置与受管服务。"
               : "Agent Runtime 未能恢复。可以再次执行受管恢复。";
     return (
-      <main className="grid min-h-[calc(100dvh-4.5rem)] place-items-center bg-[#101216] p-8 text-sm text-white/65">
+      <main className="grid min-h-0 flex-1 place-items-center bg-[#101216] p-8 text-sm text-white/65">
         <div className="max-w-md space-y-3 border border-white/15 bg-white/[0.03] p-6">
           <p className="text-base font-medium text-white">{title}</p>
           <p>{message}</p>
           <div className="flex flex-wrap gap-3">
             {modelSettingsRequired ? <Link href="/agent/settings" className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">前往模型设置</Link> : null}
-            {state.kind === "agent-unavailable" ? <button type="button" onClick={refreshRuntimeStatus} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">重新连接</button> : null}
+            {state.kind === "agent-unavailable" ? <button type="button" onClick={() => refreshRuntimeStatus()} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">重新连接</button> : null}
             {state.kind === "runtime-action" ? <button type="button" onClick={startRuntime} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">{actionLabel}</button> : null}
-            {state.kind === "status-failed" || configurationRequired || state.kind === "runtime-waiting" || state.kind === "runtime-admin" ? <button type="button" onClick={refreshRuntimeStatus} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">重新检查</button> : null}
+            {state.kind === "status-failed" || configurationRequired || state.kind === "runtime-waiting" || state.kind === "runtime-admin" ? <button type="button" onClick={() => refreshRuntimeStatus()} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">重新检查</button> : null}
           </div>
         </div>
       </main>
@@ -295,9 +333,9 @@ export function AgentOfficialWorkbench() {
   }
 
   return (
-    <main className="relative min-h-[calc(100dvh-4.5rem)] bg-[#101216]">
-      {state.status === "reconnecting" ? <div className="absolute z-10 grid min-h-[calc(100dvh-4.5rem)] w-full place-items-center bg-[#101216] p-8 text-sm text-white/65">正在重新连接官方 DSH 工作台…</div> : null}
-      <iframe key={frameKey} title="悠鼎 Agent 工作台" src={state.url} onLoad={handleFrameLoad} className="block min-h-[calc(100dvh-4.5rem)] w-full border-0 bg-[#101216]" />
+    <main className="relative flex min-h-0 flex-1 flex-col bg-[#101216]">
+      {state.status === "reconnecting" ? <div className="absolute inset-0 z-10 grid place-items-center bg-[#101216] p-8 text-sm text-white/65">正在重新连接官方 DSH 工作台…</div> : null}
+      <iframe key={frameKey} title="悠鼎 Agent 工作台" src={state.url} onLoad={handleFrameLoad} className="block h-full min-h-0 w-full flex-1 border-0 bg-[#101216]" />
     </main>
   );
 }

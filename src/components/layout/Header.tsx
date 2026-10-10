@@ -12,7 +12,7 @@ export function Header() {
   const dark = home || agent;
 
   return (
-    <header className={`sticky top-0 z-40 border-b backdrop-blur-xl ${dark ? "agent-header border-white/10 bg-[#080b0a]/90 text-[#eef1e8]" : "border-border bg-[hsl(var(--background)/0.94)]"}`}>
+    <header className={`sticky top-0 z-40 shrink-0 border-b backdrop-blur-xl ${dark ? "agent-header border-white/10 bg-[#080b0a]/90 text-[#eef1e8]" : "border-border bg-[hsl(var(--background)/0.94)]"}`}>
       <div className="page-shell grid min-h-[4.5rem] grid-cols-[auto_1fr_auto] items-center gap-5 lg:gap-8">
         <Link href="/" className="group flex items-center gap-3" aria-label="返回 UED Asset Hub 首页">
           <span className={`relative flex h-10 w-10 items-center justify-center border text-sm font-bold ${dark ? "border-white/65 bg-[#eef1e8] text-[#080b0a]" : "border-foreground bg-foreground text-white"}`}>
