@@ -45,6 +45,6 @@ try {
 }
 
 const record = publicLifecycleRecord({ operationId: "operation", phase: "phase", component: "component", token: marker, password: marker, status: "configuration_required", reasonCode: "runtime_configuration_invalid" });
-assert.deepEqual(Object.keys(record).sort(), ["component", "dshCommit", "exitCode", "exitSignal", "generation", "health", "operation", "operationId", "ownership", "phase", "pid", "reasonCode", "recoveryCount", "restartCount", "status", "timestamp"].sort());
+assert.deepEqual(Object.keys(record).sort(), ["component", "dshCommit", "exitCode", "exitSignal", "generation", "health", "operation", "operationId", "ownership", "phase", "pid", "reasonCode", "recoveryCount", "restartCount", "status", "stderrRef", "timestamp"].sort());
 assert.equal(JSON.stringify(record).includes(marker), false, "public lifecycle records must not include secrets");
 console.log("[Host Security] Configuration validation and redaction verification passed.");

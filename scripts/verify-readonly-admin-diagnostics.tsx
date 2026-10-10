@@ -60,8 +60,11 @@ async function testUnsupportedMethod() {
     throw new Error("method_405_unavailable");
   } finally {
     if (child.exitCode === null) child.kill("SIGTERM");
-    const code = child.exitCode ?? await new Promise<number | null>((resolve) => child.once("exit", (value) => resolve(value)));
-    assert.equal(code, 0, "isolated Next method fixture must shut down normally");
+    const exit = child.exitCode !== null || child.signalCode !== null
+      ? { code: child.exitCode, signal: child.signalCode }
+      : await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => child.once("exit", (code, signal) => resolve({ code, signal })));
+    if (process.platform === "win32") assert.equal(exit.signal, "SIGTERM", "isolated Next method fixture must stop on Windows");
+    else assert.equal(exit.code, 0, "isolated Next method fixture must shut down normally");
     await (await import("node:fs/promises")).rm(root, { recursive: true, force: true });
   }
 }

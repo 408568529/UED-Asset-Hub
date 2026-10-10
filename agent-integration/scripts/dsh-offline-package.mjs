@@ -235,6 +235,7 @@ export async function materializeOfflineDshGitCheckout({ packageResult, outputDi
   if (!packageResult.bundlePath) throw new Error("offline DSH Git checkout requires a verified bundle path.");
   await assertFreshOutput(outputDir);
   run(outputDir, ["init", "-q"]);
+  run(outputDir, ["config", "core.autocrlf", "false"]);
   run(outputDir, ["config", "core.symlinks", "true"]);
   run(outputDir, ["bundle", "unbundle", path.resolve(packageResult.bundlePath)]);
   run(outputDir, ["checkout", "--detach", "-q", verified.sourceCommit]);
