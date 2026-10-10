@@ -33,6 +33,7 @@ async function createFixture(directory, version = "0.1.1-rc.2") {
   }
   await symlink("package.json", path.join(directory, "linked-package.json"));
   git(directory, ["init", "-q"]);
+  git(directory, ["config", "core.autocrlf", "false"]);
   git(directory, ["config", "user.name", "UED Fixture"]);
   git(directory, ["config", "user.email", "fixture@example.invalid"]);
   git(directory, ["add", "."]);
