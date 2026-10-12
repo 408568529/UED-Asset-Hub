@@ -66,6 +66,8 @@ $release = Join-Path $install 'releases\<internal-version>-<12-char-commit>'
 
 The start command runs the packaged Host Supervisor in the current terminal. Use its supported graceful-stop command or Ctrl+C and verify the Supervisor result before starting it again. These scripts do not create or manage Windows services, scheduled tasks, or unrelated processes.
 
+If the Windows host cannot reach GitHub directly, export a Git bundle from the exact official DSH commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`, verify its commit and tree, transfer it through an approved channel, and pass both `-SourceBundlePath` and `-ExpectedSourceBundleSha256` to `install-internal-dsh-runtime.ps1`. The installer verifies the bundle hash and Git object database before checkout. It uses a new isolated npm config/cache and does not inherit the Windows user's package credentials.
+
 ## Update and rollback
 
 Build the next release from its own clean committed source and use a distinct package identity. Install it into the same `InstallRoot`; installation extracts to a new immutable version directory and never overwrites the active version. Then activate and start it:

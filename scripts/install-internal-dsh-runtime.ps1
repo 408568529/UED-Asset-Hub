@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][string]$ReleaseRoot,
-  [Parameter(Mandatory = $true)][string]$ConfigPath
+  [Parameter(Mandatory = $true)][string]$ConfigPath,
+  [string]$SourceBundlePath,
+  [string]$ExpectedSourceBundleSha256
 )
 
 $ErrorActionPreference = 'Stop'
@@ -57,17 +59,38 @@ $corepack = Get-Command corepack.cmd -ErrorAction SilentlyContinue
 if (-not $corepack) { throw 'Corepack is required to install the pinned DSH runtime dependencies.' }
 $env:COREPACK_HOME = Join-Path $parent '.corepack-cache'
 $env:PNPM_STORE_PATH = Join-Path $parent '.pnpm-store'
-foreach ($name in @('DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ADMIN_PASSWORD', 'ADMIN_SESSION_SECRET', 'AGENT_GATEWAY_TOKEN', 'RUNTIME_CONTROL_TOKEN', 'NPM_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'DATA_DIR', 'TRAINING_MEDIA_DIR')) {
+foreach ($name in @('DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ADMIN_PASSWORD', 'ADMIN_SESSION_SECRET', 'AGENT_GATEWAY_TOKEN', 'RUNTIME_CONTROL_TOKEN', 'NPM_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'DATA_DIR', 'TRAINING_MEDIA_DIR', 'NPM_CONFIG_USERCONFIG', 'NPM_CONFIG_GLOBALCONFIG', 'NPM_CONFIG_CACHE', 'NPM_CONFIG_REGISTRY', 'NPM_CONFIG_ALWAYS_AUTH')) {
   Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+}
+$env:NPM_CONFIG_USERCONFIG = Join-Path $parent 'internal-npmrc'
+$env:NPM_CONFIG_GLOBALCONFIG = Join-Path $parent 'internal-global-npmrc'
+$env:NPM_CONFIG_CACHE = Join-Path $parent 'npm-cache'
+$env:NPM_CONFIG_REGISTRY = 'https://registry.npmjs.org/'
+$env:NPM_CONFIG_ALWAYS_AUTH = 'false'
+[System.IO.File]::WriteAllText($env:NPM_CONFIG_USERCONFIG, "registry=https://registry.npmjs.org/`nalways-auth=false`n", [System.Text.UTF8Encoding]::new($false))
+[System.IO.File]::WriteAllText($env:NPM_CONFIG_GLOBALCONFIG, '', [System.Text.UTF8Encoding]::new($false))
+
+$useBundle = -not [string]::IsNullOrWhiteSpace($SourceBundlePath)
+if ($useBundle -ne (-not [string]::IsNullOrWhiteSpace($ExpectedSourceBundleSha256))) { throw 'SourceBundlePath and ExpectedSourceBundleSha256 must be provided together.' }
+if ($useBundle) {
+  if ($ExpectedSourceBundleSha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'ExpectedSourceBundleSha256 must be a SHA-256 digest.' }
+  Assert-NoReparseAncestor ([System.IO.Path]::GetFullPath($SourceBundlePath))
+  $bundleHash = (Get-FileHash -LiteralPath $SourceBundlePath -Algorithm SHA256).Hash
+  if ($bundleHash -ne $ExpectedSourceBundleSha256) { throw 'Pinned DSH source bundle SHA-256 mismatch.' }
+  & git bundle verify ([System.IO.Path]::GetFullPath($SourceBundlePath))
+  if ($LASTEXITCODE -ne 0) { throw 'Pinned DSH source bundle failed Git verification.' }
 }
 
 foreach ($target in @($source, $runtime)) {
-  & git clone --no-checkout $repository $target
+  if ($useBundle) { & git clone --no-checkout ([System.IO.Path]::GetFullPath($SourceBundlePath)) $target }
+  else { & git clone --no-checkout $repository $target }
   if ($LASTEXITCODE -ne 0) { throw 'Official DSH source clone failed.' }
   & git -C $target checkout --detach $commit
   if ($LASTEXITCODE -ne 0) { throw 'Pinned DSH source checkout failed.' }
   $actualCommit = (& git -C $target rev-parse HEAD).Trim()
   if ($actualCommit -ne $commit) { throw 'DSH source commit identity mismatch.' }
+  $actualTree = (& git -C $target rev-parse 'HEAD^{tree}').Trim()
+  if ($actualTree -ne [string]$releaseVersion.sourceTree) { throw 'DSH source tree identity mismatch.' }
   Push-Location $target
   try {
     $package = Get-Content -LiteralPath (Join-Path $target 'package.json') -Raw | ConvertFrom-Json
