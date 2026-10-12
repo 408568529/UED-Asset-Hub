@@ -179,7 +179,14 @@ function Write-UedReleasePointer([string]$InstallRoot, [string]$PointerName, $Po
   $temp = "$path.tmp-$([Guid]::NewGuid().ToString('N'))"
   $json = ConvertTo-Json -InputObject $Pointer -Depth 5
   [System.IO.File]::WriteAllText($temp, "$json`n", [System.Text.UTF8Encoding]::new($false))
-  if (Test-Path -LiteralPath $path -PathType Leaf) { [System.IO.File]::Replace($temp, $path, $null) }
+  if (Test-Path -LiteralPath $path -PathType Leaf) {
+    $backup = "$path.bak-$([Guid]::NewGuid().ToString('N'))"
+    try { [System.IO.File]::Replace($temp, $path, $backup) }
+    finally {
+      if (Test-Path -LiteralPath $backup -PathType Leaf) { Remove-Item -LiteralPath $backup -Force }
+      if (Test-Path -LiteralPath $temp -PathType Leaf) { Remove-Item -LiteralPath $temp -Force }
+    }
+  }
   else { [System.IO.File]::Move($temp, $path) }
 }
 
