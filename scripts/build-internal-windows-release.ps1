@@ -55,7 +55,8 @@ if (-not $nodeChecksumLine) { throw 'Official Node.js checksum entry was not fou
 $expectedNodeSha = (($nodeChecksumLine.Line -split '\s+')[0]).ToLowerInvariant()
 Invoke-WebRequest -UseBasicParsing -Uri "https://nodejs.org/dist/v22.23.2/$nodeArchiveName" -OutFile $nodeArchivePath
 if ((Get-FileHash -LiteralPath $nodeArchivePath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedNodeSha) { throw 'Pinned Node.js archive SHA-256 mismatch.' }
-Expand-Archive -LiteralPath $nodeArchivePath -DestinationPath $toolchainRoot
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::ExtractToDirectory($nodeArchivePath, $toolchainRoot)
 $nodeExe = Join-Path $toolchainRoot 'node-v22.23.2-win-x64\node.exe'
 $systemNpm = Get-Command npm.cmd -ErrorAction SilentlyContinue
 if (-not $systemNpm) { throw 'npm.cmd is required to bootstrap the pinned npm distribution.' }
@@ -149,7 +150,7 @@ $dshInfo = [pscustomobject]@{
   distribution = 'external-pinned-source-install'
 }
 $dshInfoPath = Join-Path $build 'dsh-info.json'
-$dshInfo | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $dshInfoPath -Encoding UTF8
+[System.IO.File]::WriteAllText($dshInfoPath, ($dshInfo | ConvertTo-Json -Depth 5), [System.Text.UTF8Encoding]::new($false))
 
 Invoke-Checked $nodeExe @($npmCli, 'ci', '--ignore-scripts', '--no-audit', '--no-fund') $sourceRoot
 Invoke-Checked $nodeExe @($npmCli, 'run', 'build') $sourceRoot
@@ -196,7 +197,7 @@ foreach ($file in @(Get-ChildItem -LiteralPath $payloadRoot -Force -Recurse -Fil
 $package = Get-Content -LiteralPath (Join-Path $sourceRoot 'package.json') -Raw | ConvertFrom-Json
 $buildInfo = [pscustomobject]@{ node = $nodeVersion; npm = $npmVersion; platform = 'win32-x64'; visualStudio = $vsVersion; msvcCompiler = (Get-Item $compiler.Source).VersionInfo.FileVersion; sourceCommit = $SourceCommit; builtAtUtc = [DateTime]::UtcNow.ToString('o') }
 $buildInfoPath = Join-Path $build 'build-info.json'
-$buildInfo | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $buildInfoPath -Encoding UTF8
+[System.IO.File]::WriteAllText($buildInfoPath, ($buildInfo | ConvertTo-Json -Depth 4), [System.Text.UTF8Encoding]::new($false))
 $releaseVersion = 'internal-{0}-{1}' -f $package.version, $SourceCommit.Substring(0, 12)
 Invoke-Checked $nodeExe @('scripts/internal-release-contract.mjs', 'manifest', '--root', $payloadRoot, '--sourceCommit', $SourceCommit, '--sourceTree', [string]$sourceIdentity.tree, '--releaseVersion', $releaseVersion, '--builtAtUtc', [string]$buildInfo.builtAtUtc, '--buildInfo', $buildInfoPath, '--dshInfo', $dshInfoPath) $sourceRoot
 Invoke-Checked $nodeExe @('scripts/internal-release-contract.mjs', 'verify', '--root', $payloadRoot) $sourceRoot
