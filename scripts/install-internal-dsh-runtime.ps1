@@ -94,6 +94,8 @@ foreach ($target in @($source, $runtime)) {
   if ($useBundle) { & git clone --no-checkout ([System.IO.Path]::GetFullPath($SourceBundlePath)) $target }
   else { & git clone --no-checkout $repository $target }
   if ($LASTEXITCODE -ne 0) { throw 'Official DSH source clone failed.' }
+  & git -C $target config core.symlinks true
+  if ($LASTEXITCODE -ne 0) { throw 'Unable to enable symlink-aware checkout for the pinned DSH source.' }
   & git -C $target checkout --detach $commit
   if ($LASTEXITCODE -ne 0) { throw 'Pinned DSH source checkout failed.' }
   $actualCommit = (& git -C $target rev-parse HEAD).Trim()
