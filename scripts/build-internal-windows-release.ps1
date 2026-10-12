@@ -8,6 +8,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 if ($env:OS -ne 'Windows_NT' -or [Environment]::Is64BitOperatingSystem -ne $true) { throw 'INTERNAL_RELEASE builds require Windows x64.' }
 if ($SourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'SourceCommit must be a full Git SHA.' }
 $build = [System.IO.Path]::GetFullPath($BuildRoot)
@@ -48,11 +49,11 @@ Set-Content -LiteralPath $npmGlobalConfig -Value '' -Encoding ASCII
 $nodeArchiveName = 'node-v22.23.2-win-x64.zip'
 $nodeArchivePath = Join-Path $toolchainRoot $nodeArchiveName
 $nodeChecksumsPath = Join-Path $toolchainRoot 'SHASUMS256.txt'
-Invoke-WebRequest -Uri 'https://nodejs.org/dist/v22.23.2/SHASUMS256.txt' -OutFile $nodeChecksumsPath
+Invoke-WebRequest -UseBasicParsing -Uri 'https://nodejs.org/dist/v22.23.2/SHASUMS256.txt' -OutFile $nodeChecksumsPath
 $nodeChecksumLine = Select-String -LiteralPath $nodeChecksumsPath -Pattern "^[0-9a-f]{64}\s+$([regex]::Escape($nodeArchiveName))$" | Select-Object -First 1
 if (-not $nodeChecksumLine) { throw 'Official Node.js checksum entry was not found.' }
 $expectedNodeSha = (($nodeChecksumLine.Line -split '\s+')[0]).ToLowerInvariant()
-Invoke-WebRequest -Uri "https://nodejs.org/dist/v22.23.2/$nodeArchiveName" -OutFile $nodeArchivePath
+Invoke-WebRequest -UseBasicParsing -Uri "https://nodejs.org/dist/v22.23.2/$nodeArchiveName" -OutFile $nodeArchivePath
 if ((Get-FileHash -LiteralPath $nodeArchivePath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedNodeSha) { throw 'Pinned Node.js archive SHA-256 mismatch.' }
 Expand-Archive -LiteralPath $nodeArchivePath -DestinationPath $toolchainRoot
 $nodeExe = Join-Path $toolchainRoot 'node-v22.23.2-win-x64\node.exe'
@@ -128,7 +129,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not clone the exact source bundle.' }
 Invoke-Checked $git.Source @('checkout', '--detach', $SourceCommit) $sourceRoot
 if ((& $git.Source -C $sourceRoot rev-parse HEAD).Trim() -ne $SourceCommit) { throw 'Checked-out source Commit does not match the requested Commit.' }
 if ((& $git.Source -C $sourceRoot rev-parse 'HEAD^{tree}').Trim() -ne [string]$sourceIdentity.tree) { throw 'Checked-out source Tree does not match source-input.json.' }
-if ((& $git.Source -C $sourceRoot status --porcelain=v1).Trim()) { throw 'Extracted source tree is not clean.' }
+$sourceStatus = ((& $git.Source -C $sourceRoot status --porcelain=v1) -join "`n").Trim()
+if ($sourceStatus) { throw 'Extracted source tree is not clean.' }
 $dotenv = @(Get-ChildItem -LiteralPath $sourceRoot -Force -Recurse -File | Where-Object { $_.Name -match '^\.env(?:\.|$)' -and $_.Name -ine '.env.example' })
 if ($dotenv.Count -gt 0) { throw 'Source commit contains a prohibited dotenv file.' }
 

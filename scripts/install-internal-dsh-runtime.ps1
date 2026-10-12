@@ -79,7 +79,7 @@ foreach ($target in @($source, $runtime)) {
     & $corepack.Source pnpm build
     if ($LASTEXITCODE -ne 0) { throw 'DSH build failed.' }
     if ($target -eq $source) {
-      $status = (& git -C $source status --porcelain=v1).Trim()
+      $status = ((& git -C $source status --porcelain=v1) -join "`n").Trim()
       if ($status) { throw 'DSH build changed tracked source files.' }
     }
     foreach ($requiredFile in @('LICENSE', 'THIRD_PARTY_NOTICES.md')) {
