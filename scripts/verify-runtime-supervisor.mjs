@@ -365,6 +365,62 @@ async function testWindowsAdapterOwnershipAndForcedStop() {
   await rm(root, { recursive: true, force: true });
 }
 
+async function testWindowsJobConvergenceWaitsAndRecordsFailure() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ued-windows-job-convergence-"));
+  const metadataPath = path.join(root, "managed-processes.json");
+  const child = new EventEmitter();
+  child.pid = 72501;
+  child.exitCode = null;
+  const counts = [2, 1, 0, 0, 0];
+  let queryCount = 0;
+  let portChecks = 0;
+  const jobHelper = {
+    spawn: async () => { child.jobOwnership = { jobInstanceId: "job-convergence", rootAssigned: true }; return child; },
+    activeProcessCount: async () => { queryCount += 1; return counts.shift() ?? 0; },
+    terminate: async () => {},
+    shutdown: () => {}
+  };
+  const adapter = new WindowsProcessAdapter({ jobHelper, inspectProcess: async () => null, requestGraceful: async () => {
+    child.exitCode = 0;
+    queueMicrotask(() => child.emit("exit", 0, null));
+    return { acknowledged: true };
+  } });
+  const events = [];
+  const controller = new ManagedProcessController({ supervisorInstanceId: "supervisor-a", runtimeInstanceId: "runtime-a", metadataPath, platform: "win32", adapter, onProcessEvent: (event) => events.push(event) });
+  await controller.start("dsh", { command: "node", args: ["fixture.mjs"], cwd: root, env: {}, convergence: { verify: async () => {
+    portChecks += 1;
+    if (portChecks < 3) {
+      const error = new Error("fixture port remains occupied");
+      error.reasonCode = "managed_component_port_not_released";
+      throw error;
+    }
+  } } });
+  await controller.stop("dsh", { convergenceTimeoutMs: 1_000 });
+  assert.equal(queryCount, 5, "Windows shutdown waits for owned Job descendants and port release");
+  assert.equal(portChecks, 3, "component port is checked after Job convergence until it is released");
+  assert.equal(controller.get("dsh").convergence.activeProcessCount, 0);
+  assert.equal(controller.get("dsh").convergence.verifiedAt !== null, true);
+
+  const stuckChild = new EventEmitter();
+  stuckChild.pid = 72502;
+  stuckChild.exitCode = null;
+  const stuckAdapter = new WindowsProcessAdapter({
+    jobHelper: { spawn: async () => { stuckChild.jobOwnership = { jobInstanceId: "job-stuck", rootAssigned: true }; return stuckChild; }, activeProcessCount: async () => 1, terminate: async () => {}, shutdown: () => {} },
+    inspectProcess: async () => null,
+    requestGraceful: async () => { stuckChild.exitCode = 0; queueMicrotask(() => stuckChild.emit("exit", 0, null)); return { acknowledged: true }; }
+  });
+  const stuckController = new ManagedProcessController({ supervisorInstanceId: "supervisor-a", runtimeInstanceId: "runtime-a", metadataPath, platform: "win32", adapter: stuckAdapter, onProcessEvent: (event) => events.push(event) });
+  await stuckController.start("dsh", { command: "node", args: ["fixture.mjs"], cwd: root, env: {} });
+  await assert.rejects(() => stuckController.stop("dsh", { convergenceTimeoutMs: 20 }), /convergence timed out/);
+  const failure = events.findLast((event) => event.type === "convergence_failed");
+  assert.equal(failure.reasonCode, "windows_job_not_empty", "bounded timeout reports the owned Job state without weakening the check");
+  assert.equal(failure.activeProcessCount, 1);
+  assert.equal(typeof failure.deadlineAt, "string");
+  const saved = JSON.parse(await readFile(metadataPath, "utf8"));
+  assert.equal(saved.processes[0].convergence.activeProcessCount, 1, "failed convergence evidence is persisted");
+  await rm(root, { recursive: true, force: true });
+}
+
 async function testWindowsBootstrapSpecifierContract() {
   const root = await mkdtemp(path.join(os.tmpdir(), "ued-windows-bootstrap-"));
   const bootstrapPath = path.join(root, "中文 bootstrap path", "windows-graceful-bootstrap.mjs");
@@ -503,6 +559,7 @@ await testRuntimePathSafety();
 await testSupervisorLock();
 await testOrphanMetadataFailsClosed();
 await testWindowsAdapterOwnershipAndForcedStop();
+await testWindowsJobConvergenceWaitsAndRecordsFailure();
 await testWindowsBootstrapSpecifierContract();
 await testWindowsProcessIdentityProbeBindsPid();
 await testWindowsIdentityMismatchFailsClosed();

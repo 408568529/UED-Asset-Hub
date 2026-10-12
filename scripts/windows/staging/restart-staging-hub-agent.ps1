@@ -9,7 +9,35 @@ $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
 $credentialHashBefore = (Get-FileHash -LiteralPath $credentialPath -Algorithm SHA256).Hash
 $stopScript = Join-Path $root 'scripts\windows\staging\stop-staging-hub-agent.ps1'
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$evidence = Join-Path $root "logs\agent-ux-supervisor-restart-$stamp.ndjson"
+$evidence = Join-Path $root "logs\tls-supervisor-continuation-20261012\staging-restart-$stamp.ndjson"
+
+function invoke-VerifiedStagingHttpsSessionProbe {
+  $nodePath = Join-Path $root 'toolchains\node-v22.23.3-win-x64\node.exe'
+  $clientPath = Join-Path $PSScriptRoot 'staging-admin-shutdown-client.mjs'
+  $caPath = 'D:\UED-Asset-Hub-Staging\credentials\mkcert-ca\rootCA.pem'
+  if (!(Test-Path -LiteralPath $nodePath) -or !(Test-Path -LiteralPath $clientPath) -or !(Test-Path -LiteralPath $caPath)) { throw 'Staging HTTPS restart probe prerequisites are missing.' }
+  $start = New-Object System.Diagnostics.ProcessStartInfo
+  $start.FileName = $nodePath
+  $start.Arguments = '"' + $clientPath + '" --session-probe'
+  $start.UseShellExecute = $false
+  $start.CreateNoWindow = $true
+  $start.RedirectStandardOutput = $true
+  $start.RedirectStandardError = $true
+  $start.EnvironmentVariables['NODE_EXTRA_CA_CERTS'] = $caPath
+  $start.EnvironmentVariables['UED_STAGING_ORIGIN'] = 'https://172.17.1.100:4443'
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $start
+  if (!$process.Start()) { throw 'Staging HTTPS restart probe could not start.' }
+  $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+  $stderrTask = $process.StandardError.ReadToEndAsync()
+  if (!$process.WaitForExit(30000)) { $process.Kill(); throw 'Staging HTTPS restart probe exceeded its bounded wait.' }
+  foreach ($line in @($stdoutTask.Result -split "`r?`n") + @($stderrTask.Result -split "`r?`n")) {
+    if ($line -match '^(TLS_CA_FILE_SHA256|TLS_CA_FINGERPRINT_SHA256|HTTPS_SESSION_PROBE|STAGING_HTTPS_CLIENT_PHASE|STAGING_HTTPS_CLIENT_ERROR)=') { Write-Output $line }
+  }
+  $exitCode = $process.ExitCode
+  $process.Dispose()
+  if ($exitCode -ne 0) { throw 'Staging HTTPS session probe failed.' }
+}
 
 & $stopScript -TimeoutSeconds 90
 if (Get-NetTCPConnection -State Listen -LocalPort $ports -ErrorAction SilentlyContinue) { throw 'A target port remains occupied after staging stop.' }
@@ -23,14 +51,14 @@ for ($i = 0; $i -lt $TimeoutSeconds; $i++) {
   if (@($ports | Where-Object { $listeners -notcontains $_ }).Count -gt 0) { continue }
   try {
     $origin = 'https://172.17.1.100:4443'
-    $hub = Invoke-WebRequest -Uri "$origin/api/auth/session" -UseBasicParsing -TimeoutSec 3
+    invoke-VerifiedStagingHttpsSessionProbe
     $proxy = Invoke-RestMethod -Uri 'http://127.0.0.1:3081/healthz' -TimeoutSec 3
     $headers = @{ Origin = 'http://127.0.0.1:3080'; Referer = 'http://127.0.0.1:3080/' }
     $sessionBody = @{ type = 'client-request'; rpcId = 'restart-session'; method = 'session.list'; payload = @{} } | ConvertTo-Json -Depth 8 -Compress
     $session = Invoke-RestMethod -Uri 'http://127.0.0.1:3080/api/session.list' -Method Post -Headers $headers -ContentType 'application/json' -Body $sessionBody -TimeoutSec 5
     $credentialBody = @{ type = 'client-request'; rpcId = 'restart-credential'; method = 'credentials.describe'; payload = @{ refs = @('DEEPSEEK_API_KEY') } } | ConvertTo-Json -Depth 8 -Compress
     $credential = Invoke-RestMethod -Uri 'http://127.0.0.1:3080/api/credentials.describe' -Method Post -Headers $headers -ContentType 'application/json' -Body $credentialBody -TimeoutSec 5
-    $result = @{ hub = ($hub.StatusCode -eq 200); proxy = ($proxy.ok -eq $true); dshSession = ($session.result.ok -eq $true); deepseekCredentialConfigured = ($credential.result.value.credentials.DEEPSEEK_API_KEY.configured -eq $true) }
+    $result = @{ hub = $true; proxy = ($proxy.ok -eq $true); dshSession = ($session.result.ok -eq $true); deepseekCredentialConfigured = ($credential.result.value.credentials.DEEPSEEK_API_KEY.configured -eq $true) }
     if (!$result.hub -or !$result.proxy -or !$result.dshSession -or !$result.deepseekCredentialConfigured) { throw 'Post-restart readiness probe failed.' }
     $ready = $true
     break

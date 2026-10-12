@@ -217,12 +217,44 @@ export class WindowsProcessAdapter extends ManagedProcessPlatformAdapter {
     await this.jobHelper.terminate(record);
   }
 
-  async verifyConvergence(record, specification) {
-    await super.verifyConvergence(record, specification);
-    const count = await this.jobHelper.activeProcessCount(record);
-    if (count !== 0) throw new Error(`Windows Job for ${record.component} still has ${count} active processes.`);
-    const observed = await this.inspectProcess(record.pid);
-    if (observed) throw new Error(`已归属的 ${record.component} 进程仍存活，未收敛。`);
+  async verifyConvergence(record, specification, { deadlineAt = Date.now() + 8_000 } = {}) {
+    await super.verifyConvergence(record, {});
+    let activeProcessCount = null;
+    let portReleased = false;
+    let rootProcessPresent = false;
+    while (Date.now() <= deadlineAt) {
+      try {
+        activeProcessCount = await this.jobHelper.activeProcessCount(record);
+        record.convergence.activeProcessCount = activeProcessCount;
+      } catch {
+        const error = new Error(`Windows Job state for ${record.component} could not be queried.`);
+        error.reasonCode = "windows_job_query_failed";
+        throw error;
+      }
+      portReleased = false;
+      rootProcessPresent = false;
+      if (activeProcessCount === 0) {
+        try {
+          await specification?.convergence?.verify?.();
+          portReleased = true;
+        } catch (error) {
+          if (error?.reasonCode !== "managed_component_port_not_released") throw error;
+        }
+        if (portReleased) {
+          rootProcessPresent = Boolean(await this.inspectProcess(record.pid));
+          if (!rootProcessPresent) return;
+        }
+      }
+      if (Date.now() < deadlineAt) await delay(Math.min(100, deadlineAt - Date.now()));
+    }
+    const reasonCode = activeProcessCount !== 0
+      ? "windows_job_not_empty"
+      : !portReleased
+        ? "managed_component_port_not_released"
+        : "managed_root_process_still_present";
+    const error = new Error(`Windows convergence timed out for ${record.component}.`);
+    error.reasonCode = reasonCode;
+    throw error;
   }
 
   async cleanup(record) {

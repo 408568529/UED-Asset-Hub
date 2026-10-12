@@ -7,7 +7,7 @@ $credentialPath = 'D:\UED-Asset-Hub-Staging\credentials\internal-stable-security
 $runtimePorts = @(3037,3038,3080,3081,3082)
 $allPorts = @($runtimePorts + 4443)
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$evidence = Join-Path $root "logs\agent-ux-supervisor-stop-$stamp.ndjson"
+$evidence = Join-Path $root "logs\tls-supervisor-continuation-20261012\controlled-stop-$stamp.ndjson"
 $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
 $agentRuntime = [string]$settings.agentRuntimeDir
 $metadataPath = Join-Path $agentRuntime 'supervisor\managed-processes.json'
@@ -62,26 +62,47 @@ foreach ($component in $components) {
 }
 
 $protected = [IO.File]::ReadAllBytes($credentialPath)
-$plain = $null; $authJson = $null; $auth = $null; $loginBody = ''
+$plain = $null; $authJson = $null; $auth = $null; $process = $null
 try {
   Add-Type -AssemblyName System.Security
   $plain = [Security.Cryptography.ProtectedData]::Unprotect($protected, $null, [Security.Cryptography.DataProtectionScope]::LocalMachine)
   $authJson = [Text.Encoding]::UTF8.GetString($plain)
   $auth = $authJson | ConvertFrom-Json
   if (!$auth.username -or !$auth.password) { throw 'Protected staging admin credential is invalid.' }
-  $web = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-  $origin = 'https://172.17.1.100:4443'
-  $headers = @{ Origin=$origin; Referer="$origin/agent" }
-  $loginBody = @{ username=$auth.username; password=$auth.password } | ConvertTo-Json -Compress
-  $login = Invoke-WebRequest -Uri "$origin/api/auth/login" -Method Post -Headers $headers -ContentType 'application/json' -Body $loginBody -WebSession $web -UseBasicParsing -TimeoutSec 15
-  if ($login.StatusCode -ne 200) { throw 'Staging admin authentication failed.' }
-  $auth.password = ''; $auth = $null; $authJson = $null; $loginBody = ''
-  $shutdown = Invoke-WebRequest -Uri "$origin/api/staging-shutdown" -Method Post -Headers $headers -ContentType 'application/json' -Body '{}' -WebSession $web -UseBasicParsing -TimeoutSec 15
-  if ($shutdown.StatusCode -ne 202) { throw 'Staging Supervisor did not accept the shutdown request.' }
+  $nodePath = Join-Path $root 'toolchains\node-v22.23.3-win-x64\node.exe'
+  $clientPath = Join-Path $PSScriptRoot 'staging-admin-shutdown-client.mjs'
+  $caPath = 'D:\UED-Asset-Hub-Staging\credentials\mkcert-ca\rootCA.pem'
+  if (!(Test-Path -LiteralPath $nodePath) -or !(Test-Path -LiteralPath $clientPath) -or !(Test-Path -LiteralPath $caPath)) { throw 'Staging HTTPS shutdown client prerequisites are missing.' }
+  $start = New-Object System.Diagnostics.ProcessStartInfo
+  $start.FileName = $nodePath
+  $start.Arguments = '"' + $clientPath + '"'
+  $start.UseShellExecute = $false
+  $start.CreateNoWindow = $true
+  $start.RedirectStandardInput = $true
+  $start.RedirectStandardOutput = $true
+  $start.RedirectStandardError = $true
+  $start.EnvironmentVariables['NODE_EXTRA_CA_CERTS'] = $caPath
+  $start.EnvironmentVariables['UED_STAGING_ORIGIN'] = 'https://172.17.1.100:4443'
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $start
+  if (!$process.Start()) { throw 'Staging HTTPS shutdown client could not start.' }
+  $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+  $stderrTask = $process.StandardError.ReadToEndAsync()
+  $process.StandardInput.WriteLine(($auth | ConvertTo-Json -Compress))
+  $process.StandardInput.Close()
+  $auth.password = ''; $auth = $null; $authJson = $null
+  if (!$process.WaitForExit(60000)) { $process.Kill(); throw 'Staging HTTPS shutdown client exceeded its bounded wait.' }
+  $clientOutput = $stdoutTask.Result
+  $clientError = $stderrTask.Result
+  foreach ($line in @($clientOutput -split "`r?`n") + @($clientError -split "`r?`n")) {
+    if ($line -match '^(TLS_CA_FILE_SHA256|TLS_CA_FINGERPRINT_SHA256|HTTPS_ADMIN_LOGIN|SECURE_SESSION_COOKIE|HTTPS_AUTHENTICATED_SESSION|HTTPS_LOGIN_PROBE_ONLY|SUPERVISOR_SHUTDOWN_HTTP|SUPERVISOR_SHUTDOWN_STATUS|STAGING_HTTPS_CLIENT_PHASE|STAGING_HTTPS_CLIENT_ERROR)=') { Write-Output $line }
+  }
+  if ($process.ExitCode -ne 0) { throw 'Staging HTTPS shutdown authorization failed; no shutdown request was accepted.' }
 } finally {
+  if ($process) { $process.Dispose() }
   if ($plain) { [Array]::Clear($plain,0,$plain.Length) }
   if ($protected) { [Array]::Clear($protected,0,$protected.Length) }
-  $loginBody=''; $authJson=$null; $auth=$null
+  $auth = $null; $authJson = $null
 }
 
 $stopped=$false

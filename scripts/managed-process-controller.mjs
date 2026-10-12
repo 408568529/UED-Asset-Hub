@@ -147,7 +147,7 @@ export class ManagedProcessController {
     for (const component of this.restartTimers.keys()) this.cancelRestart(component);
   }
 
-  async stop(component, { timeoutMs = 8_000 } = {}) {
+  async stop(component, { timeoutMs = 8_000, convergenceTimeoutMs = 8_000 } = {}) {
     this.cancelRestart(component);
     const record = this.records.get(component);
     if (!record?.child || record.child.exitCode !== null) return;
@@ -177,7 +177,27 @@ export class ManagedProcessController {
     await record.exitPersistence;
     record.graceful.completedAt = new Date().toISOString();
     record.convergence.rootExited = true;
-    await this.adapter.verifyConvergence(record, specificationFor(record, this.specifications));
+    const convergenceDeadline = Date.now() + convergenceTimeoutMs;
+    record.convergence.deadlineAt = new Date(convergenceDeadline).toISOString();
+    try {
+      await this.adapter.verifyConvergence(record, specificationFor(record, this.specifications), { deadlineAt: convergenceDeadline });
+    } catch (error) {
+      record.convergence.failedAt = new Date().toISOString();
+      record.convergence.failureReasonCode = error?.reasonCode ?? "managed_process_convergence_failed";
+      await this.persistMetadata().catch(() => {});
+      this.onProcessEvent({
+        type: "convergence_failed",
+        component,
+        generation: record.generation,
+        pid: record.pid,
+        code: record.child.exitCode,
+        signal: record.child.signalCode,
+        activeProcessCount: record.convergence.activeProcessCount,
+        deadlineAt: record.convergence.deadlineAt,
+        reasonCode: record.convergence.failureReasonCode
+      });
+      throw error;
+    }
     record.convergence.portsReleased = true;
     record.convergence.pipeClosed = true;
     record.convergence.verifiedAt = new Date().toISOString();
