@@ -19,6 +19,7 @@ import { resolveHostSecurityConfig } from "./host-security-config.mjs";
 import { createRuntimeDiagnosticsState } from "./runtime-diagnostics-state.mjs";
 import { createBoundedNdjsonWriter } from "./bounded-ndjson-writer.mjs";
 import { probeDshSessionList, probeKnowledgeGatewayMcp } from "../agent-integration/scripts/runtime-readiness.mjs";
+import { resolveHostPorts } from "./runtime-ports.mjs";
 
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require("@next/env");
@@ -49,17 +50,15 @@ export function withRuntimeControlEnvironment(environment, { endpoint, token }) 
 function value(name) { return process.env[name]?.trim() || ""; }
 function requiredPath(name) { const raw = value(name); if (!raw) fail(`缺少 ${name}。`); return path.resolve(raw); }
 function optionalPath(name) { const raw = value(name); return raw ? path.resolve(raw) : null; }
-function port(name, fallback) { const parsed = Number.parseInt(value(name) || String(fallback), 10); if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) fail(`${name} 必须是有效端口。`); return parsed; }
-
 function assertNodeVersion() {
   const [major, minor] = process.versions.node.split(".").map(Number);
   if (major < 22 || (major === 22 && minor < 19)) fail(`Node.js ${process.versions.node} 不满足 DSH 需要的 22.19+。`);
   if (windowsServiceMode() && process.versions.node !== "22.23.3") fail(`Windows service mode requires pinned Node.js 22.23.3, received ${process.versions.node}.`);
 }
 
-function dshUrl() {
+function dshUrl(defaultPort = 3080) {
   let parsed;
-  try { parsed = new URL(value("DSH_BASE_URL") || "http://127.0.0.1:3080"); } catch { fail("DSH_BASE_URL 不是有效 URL。"); }
+  try { parsed = new URL(value("DSH_BASE_URL") || `http://127.0.0.1:${defaultPort}`); } catch { fail("DSH_BASE_URL 不是有效 URL。"); }
   if (parsed.protocol !== "http:" || !loopbackHosts.has(parsed.hostname)) fail("DSH_BASE_URL 必须保持本机回环地址。");
   return parsed;
 }
@@ -216,13 +215,8 @@ export async function main() {
   const sourceDir = optionalPath("DSH_SOURCE_DIR");
   const runtimeSourceDir = optionalPath("DSH_RUNTIME_SOURCE_DIR");
   const expectedVersion = JSON.parse(await readFile(path.join(projectDir, "agent-integration/dsh/version.json"), "utf8"));
-  let runtimeUrl = new URL("http://127.0.0.1:3080");
-  const dshPort = 3080;
-  const proxyPort = port("AGENT_PROXY_PORT", 3081);
-  const publicPort = port("HOST_PORT", 3027);
-  const internalPort = port("HOST_INTERNAL_PORT", 3028);
-  const gatewayPort = port("KNOWLEDGE_GATEWAY_MCP_PORT", 3082);
-  if (dshPort !== 3080 || new Set([dshPort, proxyPort, publicPort, internalPort, gatewayPort]).size !== 5) fail("Host Supervisor 端口配置不符合正式运行约束。");
+  const { dsh: dshPort, proxy: proxyPort, publicHub: publicPort, internalHub: internalPort, gateway: gatewayPort } = resolveHostPorts(process.env);
+  let runtimeUrl = new URL(`http://127.0.0.1:${dshPort}`);
   const mediaDir = value("TRAINING_MEDIA_DIR");
   if (mediaDir && isInside(projectDir, path.resolve(mediaDir))) fail("TRAINING_MEDIA_DIR 必须位于 Git 代码目录外。");
   await access(path.join(projectDir, ".next", "BUILD_ID"));
@@ -309,7 +303,7 @@ export async function main() {
   const inspectStatic = async () => {
     try {
       if (!agentRuntimeDir || !sourceDir || !runtimeSourceDir || !securityEnvironment.AGENT_GATEWAY_TOKEN) return { ok: false, reasonCode: "runtime_configuration_invalid" };
-      const configuredUrl = dshUrl();
+      const configuredUrl = dshUrl(dshPort);
       if (Number.parseInt(configuredUrl.port || "3080", 10) !== dshPort) return { ok: false, reasonCode: "runtime_configuration_invalid" };
       await inspectRuntimePaths({ dataDir, agentRuntimeDir });
       const canonicalSource = await resolveAllowedDshSourcePath(projectDir, sourceDir);
