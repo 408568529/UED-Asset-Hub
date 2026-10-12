@@ -14,7 +14,7 @@ function parseArgs(argv) {
   }
   for (const name of ["repo", "commit", "output-dir"]) if (!values[name]) throw new Error(`Missing --${name}.`);
   if (!/^[a-f0-9]{40}$/.test(values.commit)) throw new Error("--commit must be a full Git SHA.");
-  return values;
+  return { repo: values.repo, commit: values.commit, outputDir: values["output-dir"] };
 }
 
 function run(command, args, cwd) {
