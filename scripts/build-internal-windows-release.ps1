@@ -172,8 +172,8 @@ Invoke-Checked $nodeExe @('scripts/internal-release-contract.mjs', 'closure', '-
 $closure = Get-Content -LiteralPath $closurePath -Raw | ConvertFrom-Json
 foreach ($relative in $closure) { Copy-RegularFile (Join-Path $sourceRoot $relative) (Join-Path $payloadRoot ($relative.Replace('/', '\'))) }
 foreach ($relative in @(
-  'scripts/internal-release-contract.mjs', 'scripts/internal-release-preflight.mjs', 'scripts/start-internal-release.ps1', 'scripts/start-current-internal-release.ps1', 'scripts/install-internal-dsh-runtime.ps1', 'scripts/Internal-Release.Common.psm1',
-  'agent-integration/dsh/version.json', 'agent-integration/dsh/asset-hub-agent.overlay.yml', 'agent-integration/dsh/agent-presets/asset-hub-restricted/agent.cordis.yml',
+  'scripts/internal-release-contract.mjs', 'scripts/internal-release-preflight.mjs', 'scripts/start-internal-release.ps1', 'scripts/start-current-internal-release.ps1', 'scripts/install-internal-dsh-runtime.ps1', 'scripts/verify-dsh-runtime-source.mjs', 'scripts/Internal-Release.Common.psm1',
+  'agent-integration/scripts/dsh-source-validator.mjs', 'agent-integration/dsh/version.json', 'agent-integration/dsh/asset-hub-agent.overlay.yml', 'agent-integration/dsh/agent-presets/asset-hub-restricted/agent.cordis.yml',
   'agent-integration/dsh/agent-presets/asset-hub-restricted/preset.yml', 'service/windows/internal-runtime-config.example.psd1', 'INTERNAL-RELEASE-README.md'
 )) { Copy-RegularFile (Join-Path $sourceRoot $relative) (Join-Path $payloadRoot ($relative.Replace('/', '\'))) }
 foreach ($relative in @('service/windows/UEDAssetHub.xml.template','service/windows/UEDAssetHubEdge.web.config.template','service/windows/node-22.23.2-x64.artifact.json','service/windows/winsw-2.12.0-x64.artifact.json','service/windows/security-foundation.contract.json')) {
