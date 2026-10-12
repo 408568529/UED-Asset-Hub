@@ -41,7 +41,7 @@ export async function exportInternalReleaseInputs({ repo, commit, outputDir }) {
   const tree = await run("git", ["rev-parse", `${commit}^{tree}`], repository);
   await mkdir(output, { recursive: true });
   const bundlePath = path.join(output, `ued-asset-hub-${commit}.bundle`);
-  await run("git", ["bundle", "create", bundlePath, commit], repository);
+  await run("git", ["bundle", "create", bundlePath, "HEAD"], repository);
   await run("git", ["bundle", "verify", bundlePath], repository);
   const bundle = await readFile(bundlePath);
   const identity = {
