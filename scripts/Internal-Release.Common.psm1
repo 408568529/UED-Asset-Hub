@@ -25,7 +25,7 @@ function Get-UedArchiveManifest([string]$ZipPath, [string]$ExpectedSha256) {
     $files = @{}
     $directories = @{}
     foreach ($entry in $archive.Entries) {
-      $raw = $entry.FullName
+      $raw = $entry.FullName.Replace('\', '/')
       $isDirectory = $raw.EndsWith('/')
       if ($isDirectory) { $raw = $raw.Substring(0, $raw.Length - 1) }
       if (-not $raw) { Stop-InternalRelease 'ZIP contains an empty path.' }
@@ -111,8 +111,9 @@ function Expand-UedInternalArchive([string]$ZipPath, [string]$Destination) {
   try {
     $rootPrefix = $root.TrimEnd('\') + '\'
     foreach ($entry in $archive.Entries) {
-      if ($entry.FullName.EndsWith('/')) { continue }
-      $relative = ConvertTo-SafeRelativePath $entry.FullName
+      $raw = $entry.FullName.Replace('\', '/')
+      if ($raw.EndsWith('/')) { continue }
+      $relative = ConvertTo-SafeRelativePath $raw
       $target = [System.IO.Path]::GetFullPath((Join-Path $root ($relative.Replace('/', '\'))))
       if (-not $target.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) { Stop-InternalRelease 'archive path escapes release destination.' }
       $parent = Split-Path -Parent $target

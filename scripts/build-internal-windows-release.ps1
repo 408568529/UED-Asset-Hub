@@ -204,7 +204,15 @@ Invoke-Checked $nodeExe @('scripts/internal-release-contract.mjs', 'verify', '--
 
 $zipPath = Join-Path $output "UED-Asset-Hub-$releaseVersion-win-x64.zip"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory($payloadRoot, $zipPath, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+$archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+  $payloadPrefix = [System.IO.Path]::GetFullPath($payloadRoot).TrimEnd('\') + '\'
+  foreach ($file in Get-ChildItem -LiteralPath $payloadRoot -Force -Recurse -File) {
+    if (($file.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw "ZIP input is a link/reparse point: $($file.FullName)" }
+    $entryName = $file.FullName.Substring($payloadPrefix.Length).Replace('\', '/')
+    $null = [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal)
+  }
+} finally { $archive.Dispose() }
 $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 Set-Content -LiteralPath "$zipPath.sha256" -Value "$zipHash  $(Split-Path -Leaf $zipPath)" -Encoding ASCII
 Copy-RegularFile (Join-Path $payloadRoot 'release-manifest.json') (Join-Path $output 'release-manifest.json')
