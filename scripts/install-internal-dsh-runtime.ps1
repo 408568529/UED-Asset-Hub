@@ -57,8 +57,17 @@ if ((Split-Path -Parent $runtime) -ne (Split-Path -Parent $source)) { throw 'DSH
 
 $corepack = Get-Command corepack.cmd -ErrorAction SilentlyContinue
 if (-not $corepack) { throw 'Corepack is required to install the pinned DSH runtime dependencies.' }
+$pnpmShimRoot = Join-Path $parent '.tools'
+$pnpmShim = Join-Path $pnpmShimRoot 'pnpm.cmd'
+if (Test-Path -LiteralPath $pnpmShim) { throw 'A pnpm shim already exists in the isolated DSH tools directory.' }
+$null = [System.IO.Directory]::CreateDirectory($pnpmShimRoot)
+Assert-NoReparseAncestor $pnpmShimRoot
+Assert-UedPrivateAcl $pnpmShimRoot
+[System.IO.File]::WriteAllText($pnpmShim, "@echo off`r`ncall `"$($corepack.Source)`" pnpm %*`r`nexit /b %ERRORLEVEL%`r`n", [System.Text.Encoding]::ASCII)
+$env:Path = $pnpmShimRoot + ';' + $env:Path
 $env:COREPACK_HOME = Join-Path $parent '.corepack-cache'
 $env:PNPM_STORE_PATH = Join-Path $parent '.pnpm-store'
+$env:CI = 'true'
 foreach ($name in @('DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ADMIN_PASSWORD', 'ADMIN_SESSION_SECRET', 'AGENT_GATEWAY_TOKEN', 'RUNTIME_CONTROL_TOKEN', 'NPM_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'DATA_DIR', 'TRAINING_MEDIA_DIR', 'NPM_CONFIG_USERCONFIG', 'NPM_CONFIG_GLOBALCONFIG', 'NPM_CONFIG_CACHE', 'NPM_CONFIG_REGISTRY', 'NPM_CONFIG_ALWAYS_AUTH')) {
   Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
 }
