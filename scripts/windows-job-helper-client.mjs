@@ -61,7 +61,13 @@ export class WindowsJobHelperClient {
     root.exitCode = null;
     root.signalCode = null;
     root.helper = child;
-    root.jobOwnership = { provider: "ued-windows-job-helper", helperVersion: integrity.version, helperSha256: integrity.sha256, helperPid: child.pid ?? null, helperCreationTime: new Date().toISOString(), jobInstanceId, killOnJobClose: true, rootAssigned: true, assignedAt: new Date().toISOString() };
+    root.jobOwnership = { provider: "ued-windows-job-helper", helperVersion: integrity.version, helperSha256: integrity.sha256, helperPath: helper.path, helperPid: child.pid ?? null, supervisorPid: ownership.supervisorPid ?? process.pid, jobInstanceId, killOnJobClose: true, rootAssigned: true, assignedAt: new Date().toISOString() };
+    root.helperExitPromise = child.exitCode !== null
+      ? Promise.resolve({ code: child.exitCode, signal: child.signalCode })
+      : new Promise((resolve) => {
+        child.once("exit", (code, signal) => resolve({ code, signal }));
+        child.once("error", (error) => resolve({ error: error.message }));
+      });
     let helperOutput = "";
     child.stdout?.on("data", (chunk) => {
       helperOutput += chunk.toString("utf8");
@@ -110,5 +116,13 @@ export class WindowsJobHelperClient {
 
   shutdown(record) {
     this.request(record, "shutdown-helper");
+  }
+
+  async waitForHelperExit(record, timeoutMs) {
+    let timer;
+    return Promise.race([
+      record?.child?.helperExitPromise ?? Promise.resolve(null),
+      new Promise((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); })
+    ]).finally(() => clearTimeout(timer));
   }
 }

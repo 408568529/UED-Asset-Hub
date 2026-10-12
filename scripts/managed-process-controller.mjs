@@ -182,27 +182,51 @@ export class ManagedProcessController {
     try {
       await this.adapter.verifyConvergence(record, specificationFor(record, this.specifications), { deadlineAt: convergenceDeadline });
     } catch (error) {
-      record.convergence.failedAt = new Date().toISOString();
-      record.convergence.failureReasonCode = error?.reasonCode ?? "managed_process_convergence_failed";
-      await this.persistMetadata().catch(() => {});
-      this.onProcessEvent({
-        type: "convergence_failed",
-        component,
-        generation: record.generation,
-        pid: record.pid,
-        code: record.child.exitCode,
-        signal: record.child.signalCode,
-        activeProcessCount: record.convergence.activeProcessCount,
-        deadlineAt: record.convergence.deadlineAt,
-        reasonCode: record.convergence.failureReasonCode
-      });
-      throw error;
+      if (error?.reasonCode === "windows_job_not_empty" && typeof this.adapter.safeFallbackAfterJobNotEmpty === "function") {
+        try {
+          const fallback = await this.adapter.safeFallbackAfterJobNotEmpty(record, specificationFor(record, this.specifications), { timeoutMs: convergenceTimeoutMs });
+          record.convergence.activeProcessCount = fallback.activeProcessCountAfter;
+          record.convergence.portsReleased = fallback.portsReleased === true;
+          record.convergence.pipeClosed = true;
+          record.convergence.verifiedAt = fallback.completedAt;
+          await this.persistMetadata();
+          this.onProcessEvent({ type: "safe_fallback_completed", component, generation: record.generation, pid: record.pid, intentional: true, ownership: "strong", operation: "shutdown", reasonCode: fallback.reasonCode, record: this.publicRecord(record) });
+        } catch (fallbackError) {
+          record.convergence.failedAt = new Date().toISOString();
+          const fallbackReasonCode = fallbackError?.reasonCode ?? error?.reasonCode ?? "owned_job_fallback_failed";
+          if (record.convergence.fallback?.outcome === "running") {
+            record.convergence.fallback.outcome = "failed";
+            record.convergence.fallback.failureReasonCode = fallbackReasonCode;
+          }
+          record.convergence.failureReasonCode = fallbackReasonCode;
+          await this.persistMetadata().catch(() => {});
+          this.onProcessEvent({ type: "safe_fallback_failed", component, generation: record.generation, pid: record.pid, intentional: true, ownership: "strong", operation: "shutdown", reasonCode: record.convergence.failureReasonCode, record: this.publicRecord(record) });
+          throw fallbackError;
+        }
+      } else {
+        record.convergence.failedAt = new Date().toISOString();
+        record.convergence.failureReasonCode = error?.reasonCode ?? "managed_process_convergence_failed";
+        await this.persistMetadata().catch(() => {});
+        this.onProcessEvent({
+          type: "convergence_failed",
+          component,
+          generation: record.generation,
+          pid: record.pid,
+          code: record.child.exitCode,
+          signal: record.child.signalCode,
+          activeProcessCount: record.convergence.activeProcessCount,
+          deadlineAt: record.convergence.deadlineAt,
+          reasonCode: record.convergence.failureReasonCode
+        });
+        throw error;
+      }
     }
     record.convergence.portsReleased = true;
     record.convergence.pipeClosed = true;
-    record.convergence.verifiedAt = new Date().toISOString();
+    record.convergence.verifiedAt ??= new Date().toISOString();
     await this.persistMetadata();
     await this.adapter.cleanup(record);
+    if (record.jobOwnership) await this.persistMetadata();
   }
 
   async stopAll(components, specifications = {}) {

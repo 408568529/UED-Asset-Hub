@@ -411,13 +411,64 @@ async function testWindowsJobConvergenceWaitsAndRecordsFailure() {
   });
   const stuckController = new ManagedProcessController({ supervisorInstanceId: "supervisor-a", runtimeInstanceId: "runtime-a", metadataPath, platform: "win32", adapter: stuckAdapter, onProcessEvent: (event) => events.push(event) });
   await stuckController.start("dsh", { command: "node", args: ["fixture.mjs"], cwd: root, env: {} });
-  await assert.rejects(() => stuckController.stop("dsh", { convergenceTimeoutMs: 20 }), /convergence timed out/);
-  const failure = events.findLast((event) => event.type === "convergence_failed");
+  await assert.rejects(() => stuckController.stop("dsh", { convergenceTimeoutMs: 20 }), /identity-verified Windows component/);
+  const failure = events.findLast((event) => event.type === "safe_fallback_failed");
   assert.equal(failure.reasonCode, "windows_job_not_empty", "bounded timeout reports the owned Job state without weakening the check");
-  assert.equal(failure.activeProcessCount, 1);
-  assert.equal(typeof failure.deadlineAt, "string");
   const saved = JSON.parse(await readFile(metadataPath, "utf8"));
   assert.equal(saved.processes[0].convergence.activeProcessCount, 1, "failed convergence evidence is persisted");
+  assert.equal(saved.processes[0].convergence.failureReasonCode, "windows_job_not_empty");
+  assert.equal(saved.processes[0].convergence.fallback, undefined, "unverified ownership cannot create a fallback record");
+  await rm(root, { recursive: true, force: true });
+}
+
+async function testWindowsOwnedJobFallbackIsDistinctAndBounded() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ued-windows-owned-job-fallback-"));
+  const metadataPath = path.join(root, "managed-processes.json");
+  const child = new EventEmitter();
+  child.pid = 72503;
+  child.exitCode = null;
+  const helper = new EventEmitter();
+  helper.pid = 82503;
+  helper.exitCode = null;
+  helper.stdin = { writable: true };
+  const jobInstanceId = "f3f25c89-eec9-4489-83e9-efb0d91ad4a7";
+  child.helper = helper;
+  child.jobOwnership = { provider: "ued-windows-job-helper", helperVersion: 1, helperSha256: "a".repeat(64), helperPath: "C:\\tools\\ued-windows-job-helper.exe", helperPid: helper.pid, supervisorPid: process.pid, jobInstanceId, killOnJobClose: true, rootAssigned: true };
+  const counts = [1, 0];
+  let helperExitResolve;
+  child.helperExitPromise = new Promise((resolve) => { helperExitResolve = resolve; });
+  const jobHelper = {
+    spawn: async () => child,
+    verifyHelper: async () => ({ version: 1, architecture: "x64", sha256: "a".repeat(64) }),
+    terminate: async () => {},
+    activeProcessCount: async () => counts.shift() ?? 0,
+    shutdown: () => { helper.exitCode = 0; helperExitResolve({ code: 0, signal: null }); },
+    waitForHelperExit: async () => child.helperExitPromise
+  };
+  const inspectProcess = async (pid) => {
+    if (pid === child.pid && child.exitCode !== null) return null;
+    if (pid === child.pid) return { pid, processCreationTime: "root-created", executablePath: "C:\\tools\\node.exe", commandLine: '"C:\\tools\\node.exe" fixture.mjs', parentPid: helper.pid };
+    if (pid === helper.pid) return { pid, processCreationTime: "helper-created", executablePath: child.jobOwnership.helperPath, commandLine: `"${child.jobOwnership.helperPath}" --supervisor-pid ${process.pid} --supervisor-instance-id supervisor-safe --runtime-instance-id runtime-safe --generation 1 --job-instance-id ${jobInstanceId} --component dsh`, parentPid: process.pid };
+    return null;
+  };
+  const adapter = new WindowsProcessAdapter({ jobHelper, inspectProcess, requestGraceful: async () => {
+    child.exitCode = 0;
+    queueMicrotask(() => child.emit("exit", 0, null));
+    return { acknowledged: true };
+  } });
+  const events = [];
+  const controller = new ManagedProcessController({ supervisorInstanceId: "supervisor-safe", runtimeInstanceId: "runtime-safe", metadataPath, platform: "win32", adapter, onProcessEvent: (event) => events.push(event) });
+  await controller.start("dsh", { command: "C:\\tools\\node.exe", args: ["fixture.mjs"], cwd: root, env: {}, windowsJobHelper: { path: child.jobOwnership.helperPath, manifestPath: `${child.jobOwnership.helperPath}.manifest.json` }, convergence: { verify: async () => {} } });
+  await controller.stop("dsh", { convergenceTimeoutMs: 20 });
+  const saved = JSON.parse(await readFile(metadataPath, "utf8"));
+  const record = saved.processes[0];
+  assert.equal(record.graceful.outcome, "accepted", "the accepted cooperative request stays separately recorded");
+  assert.equal(record.convergence.fallback.used, true, "owned Job fallback is explicit");
+  assert.equal(record.convergence.fallback.outcome, "completed");
+  assert.equal(record.convergence.fallback.activeProcessCountAfter, 0);
+  assert.equal(record.convergence.portsReleased, true);
+  assert.equal(record.jobOwnership.helperExited, true);
+  assert.equal(events.some((event) => event.type === "safe_fallback_completed"), true);
   await rm(root, { recursive: true, force: true });
 }
 
@@ -560,6 +611,7 @@ await testSupervisorLock();
 await testOrphanMetadataFailsClosed();
 await testWindowsAdapterOwnershipAndForcedStop();
 await testWindowsJobConvergenceWaitsAndRecordsFailure();
+  await testWindowsOwnedJobFallbackIsDistinctAndBounded();
 await testWindowsBootstrapSpecifierContract();
 await testWindowsProcessIdentityProbeBindsPid();
 await testWindowsIdentityMismatchFailsClosed();

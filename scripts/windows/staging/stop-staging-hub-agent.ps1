@@ -34,15 +34,24 @@ $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $allPorts -ErrorAct
 $runtimeListeners = @($listeners | Where-Object { $runtimePorts -contains $_.LocalPort })
 if ($runtimeListeners.Count -eq 0) {
   if (Test-Path -LiteralPath $lockPath) { throw 'Runtime ports are clear, but the Supervisor lock remains.' }
+  $stagingHost = @(Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%start-host.mjs%'" | Where-Object { $_.ExecutablePath.StartsWith((Join-Path $root 'toolchains\node-v22.23.3-win-x64'), [StringComparison]::OrdinalIgnoreCase) -and $_.CommandLine -like "*$root\code\scripts\start-host.mjs*" })
+  if ($stagingHost.Count -gt 0) { throw 'Runtime ports and lock are clear, but a staging Supervisor Host process remains.' }
+  if (Test-Path -LiteralPath $metadataPath) {
+    $priorMetadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+    foreach ($record in @($priorMetadata.processes)) {
+      if ($record.managedState -ne 'exited') { throw "Runtime ports and lock are clear, but $($record.component) is not recorded exited." }
+      foreach ($processId in @($record.pid, $record.jobOwnership.helperPid)) {
+        if ($processId -and (Get-CimInstance Win32_Process -Filter "ProcessId=$processId")) { throw "Runtime ports and lock are clear, but an owned $($record.component) PID remains." }
+      }
+      if ($record.jobOwnership -and $record.jobOwnership.helperExited -ne $true) { throw "Runtime ports and lock are clear, but $($record.component) Job helper exit is not verified." }
+    }
+  }
   $edge = $listeners | Where-Object { $_.LocalPort -eq 4443 } | Select-Object -First 1
   $edgeResult = 'not_listening'
   if ($edge) {
     $edgeProcess = get-OwnedProcess ([int]$edge.OwningProcess)
     if ($edgeProcess.CommandLine -notlike '*runtime\https\https-edge.cjs*') { throw 'Refusing cleanup: port 4443 is not owned by the staging HTTPS edge.' }
-    Stop-Process -Id ([int]$edge.OwningProcess) -Force
-    for ($i=0; $i -lt 10 -and (Get-NetTCPConnection -State Listen -LocalPort 4443 -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Seconds 1 }
-    if (Get-NetTCPConnection -State Listen -LocalPort 4443 -ErrorAction SilentlyContinue) { throw 'Staging HTTPS edge did not release port 4443.' }
-    $edgeResult = 'FORCE_CLEANUP_EXTERNAL_TO_SUPERVISOR'
+    $edgeResult = 'listening_unchanged'
   }
   write-Evidence @{ type='supervisor-stop'; status='ALREADY_STOPPED'; at=(Get-Date).ToUniversalTime().ToString('o'); supervisorGraceful=$false; idempotent=$true; httpsEdge=$edgeResult; httpsEdgeIsOutsideSupervisor=$true }
   return
@@ -117,11 +126,20 @@ $events = @(Get-Content -LiteralPath $lifecyclePath -Tail 300 | ForEach-Object {
 $componentResults = @{}
 foreach ($component in $components) {
   $record = $finalMetadata.processes | Where-Object { $_.component -eq $component } | Select-Object -Last 1
-  $exitEvent = $events | Where-Object { $_.component -eq $component -and $_.status -eq 'exit' -and $_.operation -eq 'shutdown' } | Select-Object -Last 1
-  $componentResults[$component] = @{ pass=[bool]($record.managedState -eq 'exited' -and $record.graceful.outcome -eq 'accepted' -and $record.graceful.completedAt -and $record.convergence.rootExited -and $record.convergence.portsReleased -and $record.convergence.pipeClosed -and $exitEvent -and $exitEvent.exitCode -eq 0); exitCode=$exitEvent.exitCode; exitSignal=$exitEvent.exitSignal; gracefulOutcome=$record.graceful.outcome; completedAt=$record.graceful.completedAt; portsReleased=$record.convergence.portsReleased; pipeClosed=$record.convergence.pipeClosed }
+  $exitEvent = $events | Where-Object { $_.component -eq $component -and $_.status -eq 'exit' -and $_.generation -eq $record.generation } | Select-Object -Last 1
+  $fallback = $record.convergence.fallback
+  $exitZero = [bool]($exitEvent -and $exitEvent.exitCode -eq 0 -and !$exitEvent.exitSignal)
+  $helperStillRunning = [bool]($record.jobOwnership.helperPid -and (Get-CimInstance Win32_Process -Filter "ProcessId=$($record.jobOwnership.helperPid)"))
+  $ownedProcessCleanup = [bool]($record.jobOwnership.helperExited -eq $true -and !$helperStillRunning)
+  $jobCountZero = [bool]($record.convergence.activeProcessCount -eq 0 -and (!$fallback.used -or $fallback.activeProcessCountAfter -eq 0))
+  $gracefulPass = [bool]($record.managedState -eq 'exited' -and $record.graceful.outcome -eq 'accepted' -and $record.graceful.completedAt -and $record.convergence.rootExited -and $record.convergence.portsReleased -and $record.convergence.pipeClosed -and !$fallback.used -and $ownedProcessCleanup -and $jobCountZero -and $exitZero)
+  $fallbackPass = [bool]($record.managedState -eq 'exited' -and $fallback.used -and $fallback.outcome -eq 'completed' -and $fallback.ownershipVerifiedAt -and $fallback.activeProcessCountAfter -eq 0 -and $fallback.helperExited -and $fallback.rootExited -and $fallback.portsReleased -and $ownedProcessCleanup -and $jobCountZero -and $exitZero)
+  $componentResults[$component] = @{ pass=[bool]($gracefulPass -or $fallbackPass); gracefulPass=$gracefulPass; safeFallbackPass=$fallbackPass; jobActiveCountZero=$jobCountZero; ownedProcessCleanupPass=$ownedProcessCleanup; exitCode=$exitEvent.exitCode; exitSignal=$exitEvent.exitSignal; gracefulOutcome=$record.graceful.outcome; fallbackOutcome=$fallback.outcome; fallbackReasonCode=$fallback.reasonCode; completedAt=$record.graceful.completedAt; portsReleased=$record.convergence.portsReleased; pipeClosed=$record.convergence.pipeClosed; activeProcessCount=$record.convergence.activeProcessCount; activeProcessCountAfter=$fallback.activeProcessCountAfter }
 }
 $handshake = [bool](($events | Where-Object { $_.operation -eq 'shutdown' -and $_.phase -eq 'runtime-control:shutdown' -and $_.status -eq 'accepted' }) -and ($events | Where-Object { $_.phase -eq 'managed-shutdown' -and $_.status -eq 'managed-components-converged' }) -and ($events | Where-Object { $_.phase -eq 'managed-shutdown' -and $_.status -eq 'finalization-completed' }))
-$graceful = $handshake -and (@($componentResults.Values | Where-Object { $_.pass -ne $true }).Count -eq 0) -and !(Test-Path -LiteralPath $lockPath)
+$allComponentsStopped = @($componentResults.Values | Where-Object { $_.pass -ne $true }).Count -eq 0
+$graceful = $handshake -and $allComponentsStopped -and @($componentResults.Values | Where-Object { $_.safeFallbackPass }).Count -eq 0 -and !(Test-Path -LiteralPath $lockPath)
+$safeFallback = $handshake -and $allComponentsStopped -and @($componentResults.Values | Where-Object { $_.safeFallbackPass }).Count -gt 0 -and !(Test-Path -LiteralPath $lockPath)
 $edgeResult='not_listening'
 $edgePid = Get-NetTCPConnection -State Listen -LocalPort 4443 -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess
 if ($edgePid) {
@@ -132,6 +150,10 @@ if ($edgePid) {
   if (Get-NetTCPConnection -State Listen -LocalPort 4443 -ErrorAction SilentlyContinue) { throw 'Staging HTTPS edge did not release port 4443.' }
   $edgeResult='FORCE_CLEANUP_EXTERNAL_TO_SUPERVISOR'
 }
-$summary = @{type='supervisor-stop';status=$(if($graceful){'GRACEFUL_SHUTDOWN_PASS'}else{'GRACEFUL_SHUTDOWN_FAIL'});at=(Get-Date).ToUniversalTime().ToString('o');supervisorGraceful=$graceful;shutdownHandshake=$handshake;components=$componentResults;runtimePortsReleased=$true;supervisorLockReleased=!(Test-Path -LiteralPath $lockPath);httpsEdge=$edgeResult;httpsEdgeIsOutsideSupervisor=$true;metadataSha256=(Get-FileHash -LiteralPath $metadataPath -Algorithm SHA256).Hash}
+$summary = @{type='supervisor-stop';status=$(if($graceful){'GRACEFUL_SHUTDOWN_PASS'}elseif($safeFallback){'SAFE_FALLBACK_SHUTDOWN_PASS'}else{'SHUTDOWN_INCOMPLETE'});at=(Get-Date).ToUniversalTime().ToString('o');supervisorGraceful=$graceful;supervisorSafeFallback=$safeFallback;shutdownHandshake=$handshake;components=$componentResults;runtimePortsReleased=$true;supervisorLockReleased=!(Test-Path -LiteralPath $lockPath);httpsEdge=$edgeResult;httpsEdgeIsOutsideSupervisor=$true;metadataSha256=(Get-FileHash -LiteralPath $metadataPath -Algorithm SHA256).Hash}
 write-Evidence $summary
-if (!$graceful) { throw 'Supervisor stopped, but its lifecycle handshake or component convergence checks failed.' }
+Write-Output "SUPERVISOR_GRACEFUL_SHUTDOWN_PASS=$($graceful.ToString().ToLowerInvariant())"
+Write-Output "SUPERVISOR_SAFE_FALLBACK_PASS=$($safeFallback.ToString().ToLowerInvariant())"
+Write-Output "STAGING_JOB_ACTIVE_COUNT_ZERO_VERIFIED=$((@($componentResults.Values | Where-Object { $_.jobActiveCountZero -ne $true }).Count -eq 0).ToString().ToLowerInvariant())"
+Write-Output "STAGING_OWNED_PROCESS_CLEANUP_PASS=$((@($componentResults.Values | Where-Object { $_.ownedProcessCleanupPass -ne $true }).Count -eq 0).ToString().ToLowerInvariant())"
+if (!$graceful -and !$safeFallback) { throw 'Supervisor stopped, but its lifecycle handshake, ownership fallback, or component convergence checks failed.' }

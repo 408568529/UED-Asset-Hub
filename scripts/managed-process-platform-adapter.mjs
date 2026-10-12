@@ -153,7 +153,7 @@ export class WindowsProcessAdapter extends ManagedProcessPlatformAdapter {
     const endpoint = runtimeControlEndpoint({ scope: "graceful", instanceId: randomBytes(18).toString("hex"), platform: "win32" });
     const token = randomBytes(32).toString("base64url");
     const nodeArguments = ["--import", pathToFileURL(this.bootstrapPath).href, ...(specification.args ?? [])];
-    const child = await this.jobHelper.spawn({ ...specification, args: nodeArguments, env: { ...specification.env, UED_GRACEFUL_ENDPOINT: endpoint, UED_GRACEFUL_TOKEN: token, UED_RUNTIME_INSTANCE_ID: ownership.runtimeInstanceId, UED_MANAGED_COMPONENT: ownership.component, UED_MANAGED_GENERATION: String(ownership.generation) } }, ownership);
+    const child = await this.jobHelper.spawn({ ...specification, args: nodeArguments, env: { ...specification.env, UED_GRACEFUL_ENDPOINT: endpoint, UED_GRACEFUL_TOKEN: token, UED_RUNTIME_INSTANCE_ID: ownership.runtimeInstanceId, UED_MANAGED_COMPONENT: ownership.component, UED_MANAGED_GENERATION: String(ownership.generation) } }, { ...ownership, supervisorPid: process.pid });
     this.gracefulCapabilities.set(child, { endpoint, token });
     return child;
   }
@@ -162,6 +162,19 @@ export class WindowsProcessAdapter extends ManagedProcessPlatformAdapter {
     const observed = await this.inspectProcess(context.child?.pid);
     if (!observed?.processCreationTime || !observed.executablePath || !observed.commandLine) {
       return { ...await super.captureIdentity(context), ownershipCapability: "identity_unavailable" };
+    }
+    const helperObserved = await this.inspectProcess(context.child?.helper?.pid);
+    const jobOwnership = context.child?.jobOwnership ?? null;
+    if (jobOwnership && helperObserved?.processCreationTime && helperObserved.executablePath && helperObserved.commandLine) {
+      Object.assign(jobOwnership, {
+        helperIdentity: {
+          pid: helperObserved.pid,
+          processCreationTime: helperObserved.processCreationTime,
+          executablePath: normalizeExecutable(helperObserved.executablePath, "win32"),
+          commandFingerprint: createHash("sha256").update(helperObserved.commandLine).digest("hex"),
+          parentPid: helperObserved.parentPid
+        }
+      });
     }
     return {
       pid: observed.pid,
@@ -174,7 +187,8 @@ export class WindowsProcessAdapter extends ManagedProcessPlatformAdapter {
       supervisorInstanceId: context.supervisorInstanceId,
       runtimeInstanceId: context.runtimeInstanceId,
       generation: context.generation,
-      ownershipCapability: "process_identity"
+      ownershipCapability: "process_identity",
+      jobOwnership
     };
   }
 
@@ -257,8 +271,82 @@ export class WindowsProcessAdapter extends ManagedProcessPlatformAdapter {
     throw error;
   }
 
+  async safeFallbackAfterJobNotEmpty(record, specification, { timeoutMs = 8_000 } = {}) {
+    const job = record?.jobOwnership;
+    const helper = record?.child?.helper;
+    const identity = job?.helperIdentity;
+    if (record?.platform !== "win32" || record?.ownershipCapability !== "process_identity" || record?.graceful?.outcome !== "accepted" || record?.child?.exitCode === null) {
+      throw new Error("Owned Job fallback requires a naturally exited, identity-verified Windows component.");
+    }
+    if (job?.provider !== "ued-windows-job-helper" || job?.rootAssigned !== true || job?.killOnJobClose !== true || !job?.jobInstanceId || !Number.isInteger(job?.helperPid) || !helper || !identity || identity.pid !== job.helperPid || job.supervisorPid !== process.pid) {
+      throw new Error("Owned Job fallback identity is incomplete; refusing to terminate.");
+    }
+    const helperPath = specification?.windowsJobHelper?.path;
+    if (!helperPath || normalizeExecutable(helperPath, "win32") !== normalizeExecutable(job.helperPath, "win32")) {
+      throw new Error("Owned Job fallback helper path does not match the approved staging helper.");
+    }
+    const observed = await this.inspectProcess(job.helperPid);
+    if (!observed || observed.processCreationTime !== identity.processCreationTime || normalizeExecutable(observed.executablePath, "win32") !== identity.executablePath || createHash("sha256").update(observed.commandLine || "").digest("hex") !== identity.commandFingerprint || observed.parentPid !== job.supervisorPid) {
+      throw new Error("Owned Job fallback helper process identity changed; refusing to terminate.");
+    }
+    const commandLine = observed.commandLine || "";
+    for (const binding of [job.jobInstanceId, record.supervisorInstanceId, record.runtimeInstanceId, record.component, String(record.generation)]) {
+      if (!commandLine.includes(binding)) throw new Error("Owned Job fallback helper command binding changed; refusing to terminate.");
+    }
+    await this.jobHelper.verifyHelper({ helperPath: job.helperPath, manifestPath: specification.windowsJobHelper.manifestPath, expectedSha256: job.helperSha256 });
+
+    const deadlineAt = Date.now() + timeoutMs;
+    const fallback = { used: true, outcome: "running", reasonCode: "windows_job_not_empty", ownershipVerifiedAt: new Date().toISOString(), jobInstanceId: job.jobInstanceId, helperPid: job.helperPid, requestedAt: new Date().toISOString(), activeProcessCountBefore: record.convergence.activeProcessCount };
+    record.convergence.fallback = fallback;
+    await this.jobHelper.terminate(record);
+    let activeProcessCount = null;
+    do {
+      activeProcessCount = await this.jobHelper.activeProcessCount(record);
+      if (activeProcessCount === 0) break;
+      if (Date.now() < deadlineAt) await delay(Math.min(100, deadlineAt - Date.now()));
+    } while (Date.now() <= deadlineAt);
+    fallback.activeProcessCountAfter = activeProcessCount;
+    if (activeProcessCount !== 0) {
+      fallback.outcome = "failed";
+      fallback.failureReasonCode = "owned_job_did_not_empty";
+      throw new Error("Owned Windows Job did not reach zero active processes after bounded termination.");
+    }
+
+    this.jobHelper.shutdown(record);
+    const helperExit = await this.jobHelper.waitForHelperExit(record, Math.max(0, deadlineAt - Date.now()));
+    if (!helperExit || helperExit.code !== 0 || helperExit.signal) {
+      fallback.outcome = "failed";
+      fallback.failureReasonCode = "owned_job_helper_exit_unverified";
+      throw new Error("Owned Windows Job helper did not exit cleanly after fallback.");
+    }
+    try {
+      await specification?.convergence?.verify?.();
+      fallback.portsReleased = true;
+    } catch (error) {
+      fallback.outcome = "failed";
+      fallback.failureReasonCode = error?.reasonCode ?? "managed_component_port_not_released";
+      throw error;
+    }
+    if (await this.inspectProcess(record.pid)) {
+      fallback.outcome = "failed";
+      fallback.failureReasonCode = "managed_root_process_still_present";
+      throw new Error("Owned Windows Job fallback left its component root process present.");
+    }
+    fallback.helperExited = true;
+    job.helperExited = true;
+    fallback.rootExited = true;
+    fallback.completedAt = new Date().toISOString();
+    fallback.outcome = "completed";
+    return fallback;
+  }
+
   async cleanup(record) {
-    if (record?.jobOwnership?.jobInstanceId) this.jobHelper.shutdown(record);
+    if (!record?.jobOwnership?.jobInstanceId || record.jobOwnership.helperExited === true) return;
+    if (typeof this.jobHelper.waitForHelperExit !== "function") { this.jobHelper.shutdown(record); return; }
+    this.jobHelper.shutdown(record);
+    const helperExit = await this.jobHelper.waitForHelperExit(record, 2_000);
+    if (!helperExit || helperExit.code !== 0 || helperExit.signal) throw new Error("Owned Windows Job helper did not exit after cleanup.");
+    record.jobOwnership.helperExited = true;
   }
 }
 
