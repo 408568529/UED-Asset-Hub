@@ -91,6 +91,8 @@ export async function createInternalReleaseManifest({ payloadRoot, sourceCommit,
   const files = await regularFiles(payloadRoot);
   if (!files.some((file) => file.path === "server.js")) fail("standalone Hub server.js is missing.");
   if (!files.some((file) => file.path === "scripts/start-host.mjs")) fail("Host Supervisor entrypoint is missing.");
+  if (!files.some((file) => file.path === "scripts/windows-graceful-bootstrap.mjs")) fail("Host child bootstrap entrypoint is missing.");
+  if (!files.some((file) => file.path === "scripts/windows-managed-shutdown-client.mjs")) fail("managed shutdown client entrypoint is missing.");
   if (!files.some((file) => file.path === "scripts/internal-release-preflight.mjs")) fail("runtime path preflight is missing.");
   if (!files.some((file) => file.path === "agent-integration/scripts/start-agent-proxy.mjs")) fail("Agent Proxy entrypoint is missing.");
   if (!files.some((file) => file.path === "agent-integration/scripts/start-knowledge-gateway-mcp.mjs")) fail("Knowledge Gateway entrypoint is missing.");
@@ -154,6 +156,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (action === "closure") {
       const modules = await deriveInternalRuntimeModuleClosure(values.root, [
         "scripts/start-host.mjs",
+        "scripts/windows-graceful-bootstrap.mjs",
+        "scripts/windows-managed-shutdown-client.mjs",
         "agent-integration/scripts/start-agent-proxy.mjs",
         "agent-integration/scripts/start-knowledge-gateway-mcp.mjs"
       ]);

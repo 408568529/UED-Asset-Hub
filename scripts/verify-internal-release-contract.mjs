@@ -21,6 +21,8 @@ try {
   await Promise.all([
     writeFile(path.join(payloadRoot, "server.js"), "process.exit(0);\n"),
     writeFile(path.join(payloadRoot, "scripts", "start-host.mjs"), "export {};\n"),
+    writeFile(path.join(payloadRoot, "scripts", "windows-graceful-bootstrap.mjs"), "export {};\n"),
+    writeFile(path.join(payloadRoot, "scripts", "windows-managed-shutdown-client.mjs"), "export {};\n"),
     writeFile(path.join(payloadRoot, "scripts", "internal-release-preflight.mjs"), "export {};\n"),
     writeFile(path.join(payloadRoot, "agent-integration", "scripts", "start-agent-proxy.mjs"), "export {};\n"),
     writeFile(path.join(payloadRoot, "agent-integration", "scripts", "start-knowledge-gateway-mcp.mjs"), "export {};\n"),
@@ -79,10 +81,15 @@ try {
   assert.throws(() => resolveHostPorts({ DSH_PORT: "70000" }), /valid TCP port/);
   const closure = await deriveInternalRuntimeModuleClosure(path.resolve("."), [
     "scripts/start-host.mjs",
+    "scripts/windows-graceful-bootstrap.mjs",
+    "scripts/windows-managed-shutdown-client.mjs",
     "agent-integration/scripts/start-agent-proxy.mjs",
     "agent-integration/scripts/start-knowledge-gateway-mcp.mjs"
   ]);
   assert.ok(closure.includes("scripts/runtime-ports.mjs"));
+  assert.ok(closure.includes("scripts/windows-graceful-bootstrap.mjs"));
+  assert.ok(closure.includes("scripts/windows-graceful-pipe.mjs"));
+  assert.ok(closure.includes("scripts/windows-managed-shutdown-client.mjs"));
   assert.ok(closure.includes("agent-integration/scripts/start-knowledge-gateway-mcp.mjs"));
   assert.ok(closure.every((file) => file.startsWith("scripts/") || file.startsWith("agent-integration/scripts/")));
   console.log("[internal-release] manifest identity, file hashes, path traversal, tamper and link checks passed.");
