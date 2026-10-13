@@ -505,6 +505,53 @@ async function testWindowsBootstrapSpecifierContract() {
   await rm(root, { recursive: true, force: true });
 }
 
+async function testWindowsJobHelperQueryFailureClassification() {
+  async function createFixture(response) {
+    const helper = new EventEmitter();
+    helper.pid = 77100;
+    helper.exitCode = null;
+    helper.signalCode = null;
+    helper.stdout = new EventEmitter();
+    helper.stdin = {
+      writable: true,
+      write(line) {
+        if (!line.startsWith("query ")) return true;
+        queueMicrotask(() => {
+          if (response.event === "helper-exit") {
+            helper.exitCode = response.code;
+            helper.emit("exit", response.code, response.signal ?? null);
+          } else {
+            helper.stdout.emit("data", Buffer.from(`${JSON.stringify(response)}\n`));
+          }
+        });
+        return true;
+      }
+    };
+    const client = new WindowsJobHelperClient({
+      verifyHelper: async () => ({ version: 1, architecture: "x64", sha256: "a".repeat(64) }),
+      spawnImpl: () => {
+        queueMicrotask(() => helper.stdout.emit("data", Buffer.from('{"event":"spawned","pid":77101}\n')));
+        return helper;
+      }
+    });
+    const binding = { component: "dsh", supervisorInstanceId: "supervisor-a", runtimeInstanceId: "runtime-a", generation: 1 };
+    const child = await client.spawn({ command: "node", args: ["fixture.mjs"], cwd: os.tmpdir(), env: {}, windowsJobHelper: { path: "C:\\helpers\\job.exe", sha256: "a".repeat(64) } }, binding);
+    return { client, record: { child, jobOwnership: child.jobOwnership, ...binding } };
+  }
+
+  const queryFailure = await createFixture({ event: "job-query-failed", value: 5 });
+  await assert.rejects(() => queryFailure.client.activeProcessCount(queryFailure.record), (error) => error.reasonCode === "windows_job_query_failed" && error.win32ErrorCode === 5);
+
+  const helperExit = await createFixture({ event: "helper-exit", code: 73 });
+  await assert.rejects(() => helperExit.client.activeProcessCount(helperExit.record), (error) => error.reasonCode === "windows_job_helper_exited" && error.helperExitCode === 73);
+  assert.equal(helperExit.record.child.jobOwnership.helperExitCode, 73);
+
+  const rejected = await createFixture({ event: "protocol-rejected" });
+  await assert.rejects(() => rejected.client.activeProcessCount(rejected.record), (error) => error.reasonCode === "windows_job_protocol_rejected");
+  rejected.record.child.helper.stdin.writable = false;
+  assert.throws(() => rejected.client.request(rejected.record, "query"), (error) => error.reasonCode === "windows_job_pipe_unavailable");
+}
+
 async function testWindowsProcessIdentityProbeBindsPid() {
   const calls = [];
   const process = new EventEmitter();
@@ -611,7 +658,8 @@ await testSupervisorLock();
 await testOrphanMetadataFailsClosed();
 await testWindowsAdapterOwnershipAndForcedStop();
 await testWindowsJobConvergenceWaitsAndRecordsFailure();
-  await testWindowsOwnedJobFallbackIsDistinctAndBounded();
+await testWindowsJobHelperQueryFailureClassification();
+await testWindowsOwnedJobFallbackIsDistinctAndBounded();
 await testWindowsBootstrapSpecifierContract();
 await testWindowsProcessIdentityProbeBindsPid();
 await testWindowsIdentityMismatchFailsClosed();

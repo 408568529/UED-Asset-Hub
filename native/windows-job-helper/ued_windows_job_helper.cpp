@@ -86,8 +86,8 @@ int wmain(int argc, wchar_t* argv[]) {
       const std::string binding = std::string(jobInstanceId.begin(), jobInstanceId.end()) + " " + std::string(supervisorInstanceId.begin(), supervisorInstanceId.end()) + " " + std::string(runtimeInstanceId.begin(), runtimeInstanceId.end()) + " " + std::string(component.begin(), component.end()) + " " + std::string(generation.begin(), generation.end());
       if (line == "query " + binding) {
         JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting{};
-        QueryInformationJobObject(job, JobObjectBasicAccountingInformation, &accounting, sizeof(accounting), nullptr);
-        emit("job-count", accounting.ActiveProcesses);
+        if (!QueryInformationJobObject(job, JobObjectBasicAccountingInformation, &accounting, sizeof(accounting), nullptr)) emit("job-query-failed", GetLastError());
+        else emit("job-count", accounting.ActiveProcesses);
       } else if (line == "terminate " + binding) {
         if (!TerminateJobObject(job, ERROR_PROCESS_ABORTED)) emit("terminate-failed", GetLastError()); else emit("terminated");
       } else if (line == "shutdown-helper " + binding) {

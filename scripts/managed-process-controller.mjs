@@ -206,6 +206,9 @@ export class ManagedProcessController {
       } else {
         record.convergence.failedAt = new Date().toISOString();
         record.convergence.failureReasonCode = error?.reasonCode ?? "managed_process_convergence_failed";
+        if (typeof error?.reasonCode === "string" && error.reasonCode.startsWith("windows_job_")) {
+          record.convergence.jobQueryFailure ??= { reasonCode: error.reasonCode };
+        }
         await this.persistMetadata().catch(() => {});
         this.onProcessEvent({
           type: "convergence_failed",

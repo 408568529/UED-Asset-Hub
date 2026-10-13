@@ -62,11 +62,21 @@ export class WindowsJobHelperClient {
     root.signalCode = null;
     root.helper = child;
     root.jobOwnership = { provider: "ued-windows-job-helper", helperVersion: integrity.version, helperSha256: integrity.sha256, helperPath: helper.path, helperPid: child.pid ?? null, supervisorPid: ownership.supervisorPid ?? process.pid, jobInstanceId, killOnJobClose: true, rootAssigned: true, assignedAt: new Date().toISOString() };
-    root.helperExitPromise = child.exitCode !== null
+    root.helperExitPromise = (child.exitCode !== null
       ? Promise.resolve({ code: child.exitCode, signal: child.signalCode })
       : new Promise((resolve) => {
         child.once("exit", (code, signal) => resolve({ code, signal }));
-        child.once("error", (error) => resolve({ error: error.message }));
+        child.once("error", (error) => resolve({ errorCode: error.code ?? "helper_process_error" }));
+      })).then((status) => {
+        root.helperExitStatus = status;
+        Object.assign(root.jobOwnership, {
+          helperExitCode: Number.isInteger(status.code) ? status.code : null,
+          helperExitSignal: typeof status.signal === "string" ? status.signal : null,
+          helperExitErrorCode: status.errorCode ?? null,
+          helperExitedAt: new Date().toISOString()
+        });
+        root.emit("helper-exit", status);
+        return status;
       });
     let helperOutput = "";
     child.stdout?.on("data", (chunk) => {
@@ -79,6 +89,9 @@ export class WindowsJobHelperClient {
           const message = JSON.parse(line);
           if (message.event === "root-exit" && root.exitCode === null) { root.exitCode = Number(message.value); root.emit("exit", root.exitCode, null); }
           if (message.event === "job-count") root.emit("job-count", Number(message.value));
+          if (message.event === "job-query-failed") root.emit("job-query-failed", Number(message.value));
+          if (message.event === "protocol-rejected") root.emit("protocol-rejected");
+          if (message.event === "terminate-failed") root.emit("terminate-failed", Number(message.value));
           if (message.event === "terminated") root.emit("terminated");
         } catch {}
       }
@@ -90,26 +103,61 @@ export class WindowsJobHelperClient {
 
   request(record, operation) {
     const job = record?.jobOwnership;
-    if (!job?.jobInstanceId || !record?.child?.helper?.stdin?.writable) throw new Error("Windows Job ownership is unavailable.");
-    record.child.helper.stdin.write(`${operation} ${job.jobInstanceId} ${record.supervisorInstanceId} ${record.runtimeInstanceId} ${record.component} ${record.generation}\n`);
+    if (!job?.jobInstanceId) throw Object.assign(new Error("Windows Job ownership is unavailable."), { reasonCode: "windows_job_ownership_unavailable" });
+    if (!record?.child?.helper?.stdin?.writable) throw Object.assign(new Error("Windows Job Helper input pipe is unavailable."), { reasonCode: "windows_job_pipe_unavailable" });
+    try {
+      record.child.helper.stdin.write(`${operation} ${job.jobInstanceId} ${record.supervisorInstanceId} ${record.runtimeInstanceId} ${record.component} ${record.generation}\n`);
+    } catch (cause) {
+      throw Object.assign(new Error("Windows Job Helper input pipe write failed."), { reasonCode: "windows_job_pipe_write_failed", causeCode: cause?.code ?? null });
+    }
   }
 
   async activeProcessCount(record) {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => finish(reject, new Error("Windows Job query timed out.")), 2_000);
-      const finish = (callback, value) => { clearTimeout(timer); record.child.off("job-count", onCount); callback(value); };
+      let settled = false;
+      const timer = setTimeout(() => finish(reject, Object.assign(new Error("Windows Job query timed out."), { reasonCode: "windows_job_query_timeout" })), 2_000);
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        for (const [event, listener] of listeners) record.child.off(event, listener);
+        callback(value);
+      };
       const onCount = (count) => finish(resolve, count);
-      record.child.once("job-count", onCount);
-      try { this.request(record, "query"); } catch (error) { finish(reject, error); }
+      const fail = (reasonCode, message, details = {}) => {
+        const error = Object.assign(new Error(message), { reasonCode, ...details });
+        finish(reject, error);
+      };
+      const onQueryFailed = (win32ErrorCode) => fail("windows_job_query_failed", `Windows Job query failed with Win32 error ${win32ErrorCode}.`, { win32ErrorCode });
+      const onProtocolRejected = () => fail("windows_job_protocol_rejected", "Windows Job Helper rejected the bound query.");
+      const onHelperExit = (status) => fail("windows_job_helper_exited", "Windows Job Helper exited before replying to the query.", {
+        helperExitCode: Number.isInteger(status?.code) ? status.code : null,
+        helperExitSignal: typeof status?.signal === "string" ? status.signal : null,
+        helperExitErrorCode: status?.errorCode ?? null
+      });
+      const listeners = [["job-count", onCount], ["job-query-failed", onQueryFailed], ["protocol-rejected", onProtocolRejected], ["helper-exit", onHelperExit]];
+      for (const [event, listener] of listeners) record.child.once(event, listener);
+      if (record.child.helperExitStatus) onHelperExit(record.child.helperExitStatus);
+      if (!settled) try { this.request(record, "query"); } catch (error) { finish(reject, error); }
     });
   }
 
   async terminate(record) {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => finish(reject, new Error("Windows Job termination timed out.")), 2_000);
-      const finish = (callback, value) => { clearTimeout(timer); record.child.off("terminated", onTerminated); callback(value); };
+      const timer = setTimeout(() => finish(reject, Object.assign(new Error("Windows Job termination timed out."), { reasonCode: "windows_job_termination_timeout" })), 2_000);
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        record.child.off("terminated", onTerminated);
+        record.child.off("terminate-failed", onTerminateFailed);
+        callback(value);
+      };
+      let settled = false;
       const onTerminated = () => finish(resolve);
+      const onTerminateFailed = (win32ErrorCode) => finish(reject, Object.assign(new Error(`Windows Job termination failed with Win32 error ${win32ErrorCode}.`), { reasonCode: "windows_job_termination_failed", win32ErrorCode }));
       record.child.once("terminated", onTerminated);
+      record.child.once("terminate-failed", onTerminateFailed);
       try { this.request(record, "terminate"); } catch (error) { finish(reject, error); }
     });
   }

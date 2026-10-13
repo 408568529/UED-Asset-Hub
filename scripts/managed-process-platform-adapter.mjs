@@ -240,9 +240,25 @@ export class WindowsProcessAdapter extends ManagedProcessPlatformAdapter {
       try {
         activeProcessCount = await this.jobHelper.activeProcessCount(record);
         record.convergence.activeProcessCount = activeProcessCount;
-      } catch {
-        const error = new Error(`Windows Job state for ${record.component} could not be queried.`);
-        error.reasonCode = "windows_job_query_failed";
+      } catch (queryError) {
+        const reasonCode = queryError?.reasonCode ?? "windows_job_query_failed";
+        record.convergence.jobQueryFailure = {
+          reasonCode,
+          win32ErrorCode: Number.isInteger(queryError?.win32ErrorCode) ? queryError.win32ErrorCode : null,
+          helperExitCode: Number.isInteger(queryError?.helperExitCode) ? queryError.helperExitCode : null,
+          helperExitSignal: typeof queryError?.helperExitSignal === "string" ? queryError.helperExitSignal : null,
+          helperExitErrorCode: typeof queryError?.helperExitErrorCode === "string" ? queryError.helperExitErrorCode : null,
+          observedAt: new Date().toISOString()
+        };
+        const detail = Number.isInteger(queryError?.win32ErrorCode)
+          ? ` Win32 error ${queryError.win32ErrorCode}.`
+          : Number.isInteger(queryError?.helperExitCode)
+            ? ` Helper exit code ${queryError.helperExitCode}.`
+            : queryError?.helperExitSignal
+              ? ` Helper exit signal ${queryError.helperExitSignal}.`
+              : "";
+        const error = new Error(`Windows Job state for ${record.component} could not be queried (${reasonCode}).${detail}`);
+        error.reasonCode = reasonCode;
         throw error;
       }
       portReleased = false;
