@@ -4,8 +4,8 @@ This is a private, non-production ZIP channel. It is separate from the Formal Fr
 
 ## Source baseline
 
-- Starting commit: `e7944e8a6c8d241f8be3f1c31131e3e68a62afb2`
-- Starting tree: `10ef814fa0c12fb1f08de9018026ce78feb48728`
+- Starting commit: `616041905f91690d989cad814d327fdfdac88131`
+- Starting tree: `6a04a3f6d3bdddf6dbae457f5ad964c8d682822c`
 - The release worktree is based on that commit. Every package records the final committed source SHA and tree SHA; never build from a dirty worktree.
 
 ## Build a Windows x64 package
