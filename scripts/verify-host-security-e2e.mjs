@@ -91,7 +91,7 @@ async function configuredDshSources() {
 }
 
 async function runDshProbe(environment) {
-  const child = spawn(process.execPath, ["agent-integration/scripts/verify-dsh.mjs"], { cwd: projectDir, env: environment, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, ["agent-integration/scripts/verify-dsh.mjs"], { cwd: projectDir, env: { ...environment, DSH_BASE_URL: `http://127.0.0.1:${environment.DSH_PORT}` }, stdio: ["ignore", "pipe", "pipe"] });
   const output = capture(child);
   const code = await waitForExit(child, 10_000);
   assert.equal(code, 0, "isolated DSH probe must pass");
@@ -129,7 +129,8 @@ async function main() {
   const password = `${randomBytes(24).toString("base64url")}-${sentinel}`;
   try {
     const runtimeWorkspace = await materializeIsolatedRuntimeWorkspace(testRoot);
-    const [publicPort, internalPort, proxyPort, gatewayPort] = await Promise.all([freePort(), freePort(), freePort(), freePort()]);
+    const [dshPort, publicPort, internalPort, proxyPort, gatewayPort] = await Promise.all([freePort(), freePort(), freePort(), freePort(), freePort()]);
+    assert.equal(new Set([dshPort, publicPort, internalPort, proxyPort, gatewayPort]).size, 5, "isolated ports must be unique");
     const dataDir = path.join(testRoot, "data");
     const agentRuntimeDir = path.join(testRoot, "agent-runtime");
     const trainingMediaDir = path.join(testRoot, "training-media");
@@ -142,7 +143,7 @@ async function main() {
       TRAINING_MEDIA_DIR: trainingMediaDir,
       DSH_SOURCE_DIR: sourceDir,
       DSH_RUNTIME_SOURCE_DIR: runtimeSourceDir,
-      DSH_BASE_URL: "http://127.0.0.1:3080",
+      DSH_PORT: String(dshPort),
       HOST_BIND_HOST: "127.0.0.1",
       HOST_PORT: String(publicPort),
       HOST_INTERNAL_PORT: String(internalPort),
@@ -259,7 +260,7 @@ async function main() {
     host.kill("SIGTERM");
     assert.equal(await waitForExit(host), 0);
     host = null;
-    await Promise.all([assertPortAvailable(3080), assertPortAvailable(publicPort), assertPortAvailable(internalPort), assertPortAvailable(proxyPort), assertPortAvailable(gatewayPort)]);
+    await Promise.all([assertPortAvailable(3080), assertPortAvailable(dshPort), assertPortAvailable(publicPort), assertPortAvailable(internalPort), assertPortAvailable(proxyPort), assertPortAvailable(gatewayPort)]);
     console.log("[Host Security E2E] isolated Host Runner, credential-missing behavior, redaction, and shutdown verification passed.");
   } finally {
     if (host?.exitCode === null && !shutdownStarted) {
