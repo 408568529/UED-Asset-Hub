@@ -53,6 +53,7 @@ export class WindowsJobHelperClient {
       env: specification.env,
       stdio: ["pipe", "pipe", "inherit"],
       windowsHide: true,
+      detached: true,
       shell: false
     });
     const spawned = await waitForLine(child, (message) => message.event === "spawned");

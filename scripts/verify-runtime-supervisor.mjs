@@ -508,6 +508,7 @@ async function testWindowsBootstrapSpecifierContract() {
 async function testWindowsJobHelperQueryFailureClassification() {
   async function createFixture(response) {
     const helper = new EventEmitter();
+    let helperSpawnOptions;
     helper.pid = 77100;
     helper.exitCode = null;
     helper.signalCode = null;
@@ -529,17 +530,19 @@ async function testWindowsJobHelperQueryFailureClassification() {
     };
     const client = new WindowsJobHelperClient({
       verifyHelper: async () => ({ version: 1, architecture: "x64", sha256: "a".repeat(64) }),
-      spawnImpl: () => {
+      spawnImpl: (_path, _args, options) => {
+        helperSpawnOptions = options;
         queueMicrotask(() => helper.stdout.emit("data", Buffer.from('{"event":"spawned","pid":77101}\n')));
         return helper;
       }
     });
     const binding = { component: "dsh", supervisorInstanceId: "supervisor-a", runtimeInstanceId: "runtime-a", generation: 1 };
     const child = await client.spawn({ command: "node", args: ["fixture.mjs"], cwd: os.tmpdir(), env: {}, windowsJobHelper: { path: "C:\\helpers\\job.exe", sha256: "a".repeat(64) } }, binding);
-    return { client, record: { child, jobOwnership: child.jobOwnership, ...binding } };
+    return { client, record: { child, jobOwnership: child.jobOwnership, ...binding }, helperSpawnOptions };
   }
 
   const queryFailure = await createFixture({ event: "job-query-failed", value: 5 });
+  assert.equal(queryFailure.helperSpawnOptions.detached, true, "Windows Job Helper must not share Supervisor console control events.");
   await assert.rejects(() => queryFailure.client.activeProcessCount(queryFailure.record), (error) => error.reasonCode === "windows_job_query_failed" && error.win32ErrorCode === 5);
 
   const helperExit = await createFixture({ event: "helper-exit", code: 73 });
