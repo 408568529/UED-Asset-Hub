@@ -452,7 +452,8 @@ const server = http.createServer(async (request, response) => {
   }
   const sessionAuthorized = hasAdminSession(request);
   const previewGrantPresent = url.searchParams.has(previewGrantQuery);
-  const previewGrantAuthorized = !sessionAuthorized && hasValidPreviewGrant(request, url);
+  const previewGrantValid = hasValidPreviewGrant(request, url);
+  const previewGrantAuthorized = !sessionAuthorized && previewGrantValid;
   if (!sessionAuthorized && !previewGrantAuthorized) return unauthorized(response);
   if (previewGrantPresent) {
     request.__uedPreviewGrantPresent = true;
@@ -471,7 +472,7 @@ const server = http.createServer(async (request, response) => {
   }
   if (await handlePresetBoundaryRequest(request, response, url)) return;
   if (await handleManagedWorkspaceRequest(request, response, url)) return;
-  const proxyHeaders = { origin: previewGrantAuthorized && request.headers.origin === "null" ? "null" : target.origin, referer: `${target.origin}/` };
+  const proxyHeaders = { origin: previewGrantValid && request.headers.origin === "null" ? "null" : target.origin, referer: `${target.origin}/` };
   proxy.web(request, response, { target: target.origin, headers: proxyHeaders });
 });
 

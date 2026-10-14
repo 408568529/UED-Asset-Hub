@@ -131,9 +131,10 @@ try {
   const stylesheet = await fetch(`${base}/genui/assets/s-fixture/v-fixture/app.css?ued_preview_grant=${encodeURIComponent(previewGrant)}`);
   assert.equal(stylesheet.status, 200);
   assert.equal(stylesheet.headers.get("cache-control"), "private, no-store");
-  const cookieAuthenticatedAsset = await fetch(`${base}/genui/assets/s-fixture/v-fixture/app.js?ued_preview_grant=${encodeURIComponent(previewGrant)}`, { headers: { Cookie: cookie } });
+  const cookieAuthenticatedAsset = await fetch(`${base}/genui/assets/s-fixture/v-fixture/app.js?ued_preview_grant=${encodeURIComponent(previewGrant)}`, { headers: { Cookie: cookie, Origin: "null" } });
   assert.equal(cookieAuthenticatedAsset.status, 200);
   assert.equal(cookieAuthenticatedAsset.headers.get("cache-control"), "private, no-store");
+  assert.equal(cookieAuthenticatedAsset.headers.get("access-control-allow-origin"), "null", "Cookie plus a valid static grant must preserve the sandbox module Origin");
   const sandboxedModule = await fetch(`${base}/genui/assets/s-fixture/v-fixture/app.js?ued_preview_grant=${encodeURIComponent(previewGrant)}`, { headers: { Origin: "null" } });
   assert.equal(sandboxedModule.status, 200);
   assert.equal(sandboxedModule.headers.get("access-control-allow-origin"), "null");
