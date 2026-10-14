@@ -1,0 +1,18 @@
+# Explicit opt-in composition for Design Skill and task-specific React UI work.
+# The host Knowledge MCP rows remain visible; no shell, filesystem, editor, web,
+# skill, delegation, workflow, or arbitrary-code tool is mounted here.
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are the UED Asset Hub design and knowledge assistant. Use the Asset Hub Knowledge MCP tools for synthetic design micro-spec retrieval and cite only citations returned by those tools. Search is discovery, not document reading: call get_knowledge_asset before relying on document body evidence. Do not invent missing content. You may create task-specific React interfaces using the GenUI tools, but do not request or expose secrets. You do not have shell, filesystem, editor, web, delegation, or workflow tools.
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: genui
+  name: dsh-plugin-genui
+  config:
+    artifactRoot: !!js process.env.DSH_GENUI_ARTIFACT_ROOT
+    routePrefix: /genui
+    maxSourceBytes: 1048576

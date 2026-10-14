@@ -109,6 +109,7 @@ function createEdgeServer({ host, port: publicPort, internalPort, proxyPort }) {
   const sockets = new Set();
   const belongsToAgentRuntime = (request, requestUrl) => {
     if (requestUrl.pathname.startsWith("/agent-runtime/")) return true;
+    if (requestUrl.pathname === "/.well-known/dsh-genui" || requestUrl.pathname === "/genui" || requestUrl.pathname.startsWith("/genui/")) return true;
     if (requestUrl.pathname === "/api/respond" || /^\/api\/[^/]+\.[^/]+$/.test(requestUrl.pathname)) return true;
     try { return Boolean(request.headers.referer && new URL(request.headers.referer).pathname.startsWith("/agent-runtime/")); } catch { return false; }
   };
@@ -158,10 +159,12 @@ async function windowsPipeSecurityAdapterSpecification() {
   return { path: helperPath, manifestPath, sha256: manifest.sha256 };
 }
 
-async function installRestrictedPreset(runtimePaths) {
-  const source = path.join(projectDir, "agent-integration", "dsh", "agent-presets", "asset-hub-restricted");
-  const destination = await ensureRuntimeSubdirectory({ dataRoot: runtimePaths.dataRoot, agentRoot: runtimePaths.agentRoot, relativePath: "dsh-home/.agent-presets/asset-hub-restricted" });
-  for (const file of ["agent.cordis.yml", "preset.yml"]) { await access(path.join(source, file)); await copyFile(path.join(source, file), path.join(destination, file)); }
+async function installAgentPresets(runtimePaths) {
+  for (const preset of ["asset-hub-restricted", "asset-hub-genui-restricted"]) {
+    const source = path.join(projectDir, "agent-integration", "dsh", "agent-presets", preset);
+    const destination = await ensureRuntimeSubdirectory({ dataRoot: runtimePaths.dataRoot, agentRoot: runtimePaths.agentRoot, relativePath: `dsh-home/.agent-presets/${preset}` });
+    for (const file of ["agent.cordis.yml", "preset.yml"]) { await access(path.join(source, file)); await copyFile(path.join(source, file), path.join(destination, file)); }
+  }
 }
 
 async function inspectBuild(sourceDir, identity) {
@@ -325,7 +328,7 @@ export async function main() {
     if (!runtimePaths?.agentRoot || !lastCanonicalRuntimeSource) throw new Error("Agent Runtime 尚未完成受控预检。");
     const values = { DSH_HOME: path.join(runtimePaths.agentRoot, "dsh-home"), AGENT_WORKSPACE_ROOT: path.join(runtimePaths.agentRoot, "workspaces") };
     specifications.gateway = { command: process.execPath, args: ["agent-integration/scripts/start-knowledge-gateway-mcp.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.gatewayBridge(securityEnvironment, { KNOWLEDGE_GATEWAY_MCP_PORT: String(gatewayPort), KNOWLEDGE_GATEWAY_INTERNAL_URL: `http://127.0.0.1:${internalPort}` }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(gatewayPort, "Knowledge Gateway", { reasonCode: "managed_component_port_not_released" }) } };
-    specifications.dsh = { command: process.execPath, args: ["--import", "tsx/esm", "apps/cli/src/bin.ts", "web", "--patch", path.join(projectDir, "agent-integration", "dsh", "asset-hub-agent.overlay.yml"), "--host", "127.0.0.1", "--port", String(dshPort)], cwd: lastCanonicalRuntimeSource, env: runtimeEnvironmentProfiles.dsh(securityEnvironment, { DSH_HOME: values.DSH_HOME, DSH_TELEMETRY_DISABLED: "1", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT, ASSET_HUB_MCP_URL: `http://127.0.0.1:${gatewayPort}/mcp` }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(dshPort, "DSH", { reasonCode: "managed_component_port_not_released" }) } };
+    specifications.dsh = { command: process.execPath, args: ["--import", "tsx/esm", "apps/cli/src/bin.ts", "web", "--patch", path.join(projectDir, "agent-integration", "dsh", "asset-hub-agent.overlay.yml"), "--host", "127.0.0.1", "--port", String(dshPort)], cwd: lastCanonicalRuntimeSource, env: runtimeEnvironmentProfiles.dsh(securityEnvironment, { DSH_HOME: values.DSH_HOME, DSH_TELEMETRY_DISABLED: "1", DSH_GENUI_ARTIFACT_ROOT: path.join(values.DSH_HOME, "genui-artifacts"), AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT, ASSET_HUB_MCP_URL: `http://127.0.0.1:${gatewayPort}/mcp` }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(dshPort, "DSH", { reasonCode: "managed_component_port_not_released" }) } };
     specifications.proxy = { command: process.execPath, args: ["agent-integration/scripts/start-agent-proxy.mjs"], cwd: projectDir, env: runtimeEnvironmentProfiles.agentProxy(securityEnvironment, { ADMIN_USERNAME: securityConfig.username, ADMIN_SESSION_SECRET: securityConfig.sessionSecret, DSH_BASE_URL: runtimeUrl.origin, AGENT_PROXY_HOST: "127.0.0.1", AGENT_PROXY_BASE_PATH: "/agent-runtime", AGENT_WORKSPACE_ROOT: values.AGENT_WORKSPACE_ROOT }), windowsJobHelper, convergence: { verify: () => assertPortAvailable(proxyPort, "Agent Proxy", { reasonCode: "managed_component_port_not_released" }) } };
   };
   const inspectRuntime = async () => {
@@ -361,7 +364,7 @@ export async function main() {
           releaseLock = await acquireSupervisorLock({ lockPath: supervisorLockPath(runtimePaths.directories), instanceId });
         }
         configureAgentSpecifications();
-        await installRestrictedPreset(runtimePaths);
+        await installAgentPresets(runtimePaths);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Agent Runtime 配置失败。";
         const reasonCode = /ownership|lock|遗留|orphan/i.test(message) ? "runtime_ownership_conflict" : "runtime_configuration_invalid";

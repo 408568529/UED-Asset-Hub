@@ -3,6 +3,8 @@
 # preset root. Host Runner installs the Asset Hub-owned preset there.
 - id: directory-picker
   disabled: true
+- id: genui
+  disabled: true
 - id: agent-presets
   config:
     default: asset-hub-restricted

@@ -37,11 +37,13 @@ foreach ($candidate in @($source, $runtime)) {
 if (Test-Overlap $source $runtime) { throw 'DSH authority and runtime source must be separate.' }
 
 $releaseVersion = Get-Content -LiteralPath (Join-Path $release 'agent-integration\dsh\version.json') -Raw | ConvertFrom-Json
+$genuiContract = Get-Content -LiteralPath (Join-Path $release 'agent-integration\dsh\genui-plugin.json') -Raw | ConvertFrom-Json
 $repository = [string]$releaseVersion.sourceRepository
 $commit = [string]$releaseVersion.sourceCommit
 if ($repository -ne 'https://github.com/deepseek-ai/deepseek-harness.git' -or $commit -ne 'b150a551b8d465e31e418e1b2eaf5e79bbb7d28e') {
   throw 'Release DSH identity is not the approved pinned upstream source.'
 }
+if ($genuiContract.packageName -ne 'dsh-plugin-genui' -or $genuiContract.version -ne '0.15.1' -or $genuiContract.dshVersion -ne $releaseVersion.version -or $genuiContract.npmIntegrity -notmatch '^sha512-[A-Za-z0-9+/]+=*$') { throw 'Release GenUI plugin identity or npm integrity is invalid.' }
 $env:COREPACK_DEFAULT_TO_LATEST = '0'
 $pnpmVersion = '11.7.0'
 
@@ -134,4 +136,26 @@ try {
 } finally {
   Pop-Location
 }
-Write-Host 'Pinned DSH source and isolated runtime are ready; no Hub or data service was started.'
+$dshHome = Join-Path ([System.IO.Path]::GetFullPath([string]$config.AGENT_RUNTIME_DIR)) 'dsh-home'
+$null = [System.IO.Directory]::CreateDirectory($dshHome)
+Assert-NoReparseAncestor $dshHome
+Assert-UedPrivateAcl $dshHome
+$env:DSH_HOME = $dshHome
+$env:DSH_TELEMETRY_DISABLED = '1'
+Push-Location $runtime
+try {
+  $pluginSpec = '{0}@{1}' -f $genuiContract.packageName, $genuiContract.version
+  & $node.Source '--import' 'tsx/esm' 'apps/cli/src/bin.ts' 'plugin' '--profile' 'web' 'add' $pluginSpec '--save-exact'
+  if ($LASTEXITCODE -ne 0) { throw 'The official DSH Plugin Manager could not install the pinned GenUI plugin into the isolated web profile.' }
+  $pluginManifestPath = Join-Path $dshHome 'profiles\web\node_modules\dsh-plugin-genui\package.json'
+  if (-not (Test-Path -LiteralPath $pluginManifestPath -PathType Leaf)) { throw 'The isolated DSH web profile is missing the installed GenUI package.' }
+  $pluginManifest = Get-Content -LiteralPath $pluginManifestPath -Raw | ConvertFrom-Json
+  if ($pluginManifest.name -ne $genuiContract.packageName -or $pluginManifest.version -ne $genuiContract.version) { throw 'The installed GenUI package identity does not match the pinned release manifest.' }
+  $profileManifest = Get-Content -LiteralPath (Join-Path $dshHome 'profiles\web\package.json') -Raw | ConvertFrom-Json
+  $pinnedPluginVersion = $profileManifest.dependencies.PSObject.Properties[$genuiContract.packageName].Value
+  if ($pinnedPluginVersion -ne $genuiContract.version) { throw 'The DSH web profile does not pin GenUI to the approved exact version.' }
+  if (-not (Select-String -LiteralPath (Join-Path $dshHome 'profiles\web\pnpm-lock.yaml') -SimpleMatch $genuiContract.npmIntegrity -Quiet)) { throw 'The DSH web profile lockfile does not contain the approved GenUI npm integrity.' }
+} finally {
+  Pop-Location
+}
+Write-Host 'Pinned DSH source, isolated runtime, and exact GenUI web profile are ready; no Hub or data service was started.'

@@ -28,6 +28,8 @@ const agentRuntimeDir = process.env.AGENT_RUNTIME_DIR?.trim();
 if (!agentRuntimeDir) throw new Error("AGENT_RUNTIME_DIR must be configured before starting the Agent Proxy.");
 const workspaceRoot = path.resolve(process.env.AGENT_WORKSPACE_ROOT || path.join(agentRuntimeDir, "workspaces"));
 const restrictedPreset = "asset-hub-restricted";
+const genuiPreset = "asset-hub-genui-restricted";
+const allowedPresets = new Set([restrictedPreset, genuiPreset]);
 await mkdir(workspaceRoot, { recursive: true });
 const workspaceRootRealPath = await realpath(workspaceRoot);
 
@@ -318,15 +320,20 @@ async function handlePresetBoundaryRequest(request, response, url) {
   }
 
   if (url.pathname === "/api/session.create") {
+    const agentPreset = payload?.payload?.agentPreset || restrictedPreset;
+    if (!allowedPresets.has(agentPreset)) {
+      rpcError(response, payload, "agent-preset-restricted", "悠鼎 Agent 只允许使用已批准的 Agent 预设。", { agentPreset, allowed: [...allowedPresets] });
+      return true;
+    }
     await forwardRpcRequest(url, {
       ...payload,
-      payload: { ...(payload?.payload || {}), agentPreset: restrictedPreset }
+      payload: { ...(payload?.payload || {}), agentPreset }
     }, response);
     return true;
   }
 
-  if (payload?.payload?.agentPreset !== restrictedPreset) {
-    rpcError(response, payload, "agent-preset-restricted", "悠鼎 Agent 只允许使用 asset-hub-restricted 预设。", { agentPreset: payload?.payload?.agentPreset, required: restrictedPreset });
+  if (!allowedPresets.has(payload?.payload?.agentPreset)) {
+    rpcError(response, payload, "agent-preset-restricted", "悠鼎 Agent 只允许使用已批准的 Agent 预设。", { agentPreset: payload?.payload?.agentPreset, allowed: [...allowedPresets] });
     return true;
   }
   await forwardRpcRequest(url, payload, response);
