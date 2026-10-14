@@ -1,6 +1,7 @@
 node_modules/
 .npm-cache/
 .next/
+.next-local-test/
 .cache-backups/
 out/
 dist/

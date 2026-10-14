@@ -2,12 +2,22 @@ import { NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE, ADMIN_SESSION_MAX_AGE } from "@/config/admin";
 import { authenticateAdmin, createAdminSession } from "@/lib/adminAuth";
 import { operationLogService } from "@/services/operationLogService";
+import { isHostSecurityConfigError } from "../../../../../scripts/host-security-config.mjs";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as { username?: string; password?: string };
-  if (!authenticateAdmin(String(body.username ?? ""), String(body.password ?? ""))) {
-    return NextResponse.json({ message: "账号或密码不正确" }, { status: 401 });
+  let authenticated = false;
+  try {
+    authenticated = authenticateAdmin(String(body.username ?? ""), String(body.password ?? ""));
+  } catch (error) {
+    if (isHostSecurityConfigError(error)) {
+      console.error(`[Admin Login] ${error.reasonCode}: ${error.field}`);
+      return NextResponse.json({ code: error.reasonCode, message: "登录服务配置错误。" }, { status: 503 });
+    }
+    console.error("[Admin Login] login_service_unavailable");
+    return NextResponse.json({ code: "login_service_unavailable", message: "登录服务暂不可用。" }, { status: 503 });
   }
+  if (!authenticated) return NextResponse.json({ code: "invalid_credentials", message: "账号或密码不正确。" }, { status: 401 });
 
   const response = NextResponse.json({ authenticated: true });
   response.cookies.set({

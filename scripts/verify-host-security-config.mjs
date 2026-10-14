@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,20 @@ for (const sessionSecret of ["short", valid.ADMIN_USERNAME, valid.ADMIN_PASSWORD
 assertRejected({ ...valid, NODE_ENV: "production", ADMIN_SESSION_SECURE: "false", PUBLIC_ORIGIN: "https://asset-hub.test" }, "host_security_config_invalid", "ADMIN_SESSION_SECURE");
 assertRejected({ ...valid, NODE_ENV: "production", ADMIN_SESSION_SECURE: "true", PUBLIC_ORIGIN: "http://asset-hub.test" }, "host_security_config_invalid", "PUBLIC_ORIGIN");
 assert.deepEqual(resolveHostSecurityConfig({ ...valid, NODE_ENV: "production", ADMIN_SESSION_SECURE: "true", PUBLIC_ORIGIN: "https://asset-hub.test" }), { username: valid.ADMIN_USERNAME, password: valid.ADMIN_PASSWORD, sessionSecret: valid.ADMIN_SESSION_SECRET });
+
+const localTestRoot = await mkdtemp(path.join(os.tmpdir(), "ued-local-test-security-"));
+try {
+  const localTestData = path.join(localTestRoot, "synthetic-data");
+  await mkdir(localTestData);
+  const localTestEnvironment = { ...valid, ADMIN_USERNAME: "admin", ADMIN_PASSWORD: "password123", NODE_ENV: "development", UED_LOCAL_TEST_MODE: "true", ADMIN_SESSION_SECURE: "false", PUBLIC_ORIGIN: "http://127.0.0.1:3027", HOST_BIND_HOST: "127.0.0.1", TMPDIR: localTestRoot, DATA_DIR: localTestData };
+  assert.deepEqual(resolveHostSecurityConfig(localTestEnvironment), { username: "admin", password: "password123", sessionSecret: valid.ADMIN_SESSION_SECRET });
+  assertRejected({ ...localTestEnvironment, PUBLIC_ORIGIN: "http://192.168.1.4:3027" }, "host_security_config_invalid", "ADMIN_PASSWORD");
+  assertRejected({ ...localTestEnvironment, DATA_DIR: os.tmpdir() }, "host_security_config_invalid", "ADMIN_PASSWORD");
+  assert.deepEqual(resolveHostSecurityConfig({ ...localTestEnvironment, NODE_ENV: "production" }), { username: "admin", password: "password123", sessionSecret: valid.ADMIN_SESSION_SECRET });
+  assertRejected({ ...localTestEnvironment, DATA_DIR: "/var/lib/ued-formal-data", NODE_ENV: "production" }, "host_security_config_invalid", "ADMIN_SESSION_SECURE");
+} finally {
+  await rm(localTestRoot, { recursive: true, force: true });
+}
 
 const marker = "host-security-redaction-marker";
 const isolatedCwd = await mkdtemp(path.join(os.tmpdir(), "ued-host-security-"));

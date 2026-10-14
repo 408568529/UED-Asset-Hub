@@ -16,8 +16,9 @@ export function LoginForm() {
     const password = String(formData.get("password") ?? "");
 
     setSubmitting(true);
-    if (!await loginAdmin(username, password)) {
-      setError("账号或密码不正确");
+    const result = await loginAdmin(username, password);
+    if (result !== "authenticated") {
+      setError(result === "invalid_credentials" ? "账号或密码不正确" : result === "server_configuration_error" ? "登录服务配置错误，请检查隔离测试环境启动配置。" : "登录服务暂不可用，请检查服务运行状态。");
       setSubmitting(false);
       return;
     }

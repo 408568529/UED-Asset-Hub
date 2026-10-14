@@ -1,4 +1,6 @@
 import { validateProductionSessionSecurity } from "./windows-security-foundation.mjs";
+import os from "node:os";
+import path from "node:path";
 
 const invalidPasswordPatterns = [/(?:example|sample|placeholder|changeme)/i, /^<.*>$/u, /请设置/u];
 const knownDefaultPasswords = new Set(["admin123", "password", "password123", "123456", "12345678"]);
@@ -28,13 +30,28 @@ function isPlaceholder(value) {
   return invalidPasswordPatterns.some((pattern) => pattern.test(value));
 }
 
+function isLocalSyntheticTestEnvironment(environment) {
+  if (environment.UED_LOCAL_TEST_MODE !== "true") return false;
+  let origin;
+  try { origin = new URL(environment.PUBLIC_ORIGIN || ""); } catch { return false; }
+  const loopback = new Set(["127.0.0.1", "[::1]"]);
+  if (origin.protocol !== "http:" || !loopback.has(origin.hostname) || !loopback.has(environment.HOST_BIND_HOST || "")) return false;
+  const dataDir = path.resolve(environment.DATA_DIR || "");
+  const tempRoots = [os.tmpdir(), environment.TMPDIR].filter(Boolean).map((root) => path.resolve(root));
+  return tempRoots.some((root) => {
+    const relative = path.relative(root, dataDir);
+    return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+  });
+}
+
 export function resolveHostSecurityConfig(environment = process.env) {
   const productionSession = validateProductionSessionSecurity(environment);
-  if (!productionSession.ok) invalid(productionSession.field);
+  const localSyntheticTest = isLocalSyntheticTestEnvironment(environment);
+  if (!productionSession.ok && !(localSyntheticTest && ["ADMIN_SESSION_SECURE", "PUBLIC_ORIGIN"].includes(productionSession.field))) invalid(productionSession.field);
   const { username, sessionSecret } = resolveProxySessionConfig(environment);
   const password = readRequired(environment, "ADMIN_PASSWORD");
   const normalizedPassword = password.trim();
-  if (knownDefaultPasswords.has(normalizedPassword.toLowerCase()) || isPlaceholder(normalizedPassword)) invalid("ADMIN_PASSWORD");
+  if ((knownDefaultPasswords.has(normalizedPassword.toLowerCase()) && !localSyntheticTest) || isPlaceholder(normalizedPassword)) invalid("ADMIN_PASSWORD");
   if (Buffer.byteLength(sessionSecret, "utf8") < 32 || isPlaceholder(sessionSecret) || sessionSecret === username || sessionSecret === password || sessionSecret === `${username}:${password}:ued-asset-hub`) invalid("ADMIN_SESSION_SECRET");
   return { username, password, sessionSecret };
 }
