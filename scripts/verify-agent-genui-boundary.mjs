@@ -114,6 +114,8 @@ try {
   assert.equal(preview.status, 200);
   assert.equal(preview.headers.get("content-security-policy"), "default-src 'none'; script-src 'self'; frame-src 'none'; sandbox allow-scripts allow-modals");
   assert.equal(preview.headers.get("x-frame-options"), "SAMEORIGIN");
+  assert.equal(preview.headers.get("cache-control"), "private, no-store");
+  assert.equal(preview.headers.get("referrer-policy"), "no-referrer");
   const previewHtml = await preview.text();
   assert.match(previewHtml, /data-route-prefix="\/genui"/);
   assert.match(preview.headers.get("content-security-policy"), /sandbox allow-scripts allow-modals/);
@@ -123,8 +125,12 @@ try {
   assert.match(previewHtml, /href="\/genui\/assets\/s-fixture\/v-fixture\/app\.css\?[^\"]*ued_preview_grant=/);
   assert.match(previewHtml, /data-app-src="\/genui\/assets\/s-fixture\/v-fixture\/app\.js\?[^\"]*ued_preview_grant=/);
   assert.equal((await fetch(`${base}/genui/bridge.js?runtime=0.14.0`)).status, 401, "bridge bootstrap remains denied without a session or grant");
-  assert.equal((await fetch(`${base}/genui/bridge.js?runtime=0.14.0&ued_preview_grant=${encodeURIComponent(previewGrant)}`)).status, 200);
-  assert.equal((await fetch(`${base}/genui/assets/s-fixture/v-fixture/app.css?ued_preview_grant=${encodeURIComponent(previewGrant)}`)).status, 200);
+  const bridge = await fetch(`${base}/genui/bridge.js?runtime=0.14.0&ued_preview_grant=${encodeURIComponent(previewGrant)}`);
+  assert.equal(bridge.status, 200);
+  assert.equal(bridge.headers.get("cache-control"), "private, no-store");
+  const stylesheet = await fetch(`${base}/genui/assets/s-fixture/v-fixture/app.css?ued_preview_grant=${encodeURIComponent(previewGrant)}`);
+  assert.equal(stylesheet.status, 200);
+  assert.equal(stylesheet.headers.get("cache-control"), "private, no-store");
   const sandboxedModule = await fetch(`${base}/genui/assets/s-fixture/v-fixture/app.js?ued_preview_grant=${encodeURIComponent(previewGrant)}`, { headers: { Origin: "null" } });
   assert.equal(sandboxedModule.status, 200);
   assert.equal(sandboxedModule.headers.get("access-control-allow-origin"), "null");

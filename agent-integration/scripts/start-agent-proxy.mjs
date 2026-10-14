@@ -177,12 +177,14 @@ function unauthorized(response) {
   response.end("Unauthorized. Open /agent from Asset Hub after signing in.");
 }
 
-function copyHeaders(headers, bodyLength) {
+function copyHeaders(headers, bodyLength, { noStore = false, noReferrer = false } = {}) {
   const copied = { ...headers };
   delete copied.connection;
   delete copied["transfer-encoding"];
   if (bodyLength === undefined) delete copied["content-length"];
   else copied["content-length"] = String(bodyLength);
+  if (noStore) copied["cache-control"] = "private, no-store";
+  if (noReferrer) copied["referrer-policy"] = "no-referrer";
   return copied;
 }
 
@@ -388,10 +390,13 @@ const proxy = httpProxy.createProxyServer({ changeOrigin: true, selfHandleRespon
 proxy.on("proxyRes", (proxyResponse, request, response) => {
   const contentType = String(proxyResponse.headers["content-type"] || "");
   const requestPath = new URL(request.url || "/", target).pathname;
+  const previewDocument = requestPath.startsWith("/genui/preview/");
+  const noStore = previewDocument || request.__uedPreviewGrantAuthorized === true;
+  const copyProxyHeaders = (bodyLength) => copyHeaders(proxyResponse.headers, bodyLength, { noStore, noReferrer: previewDocument });
   if (contentType.includes("text/html") && requestPath.startsWith("/genui/preview/")) {
     const match = requestPath.match(/^\/genui\/preview\/([^/]+)\/([^/]+)$/);
     if (proxyResponse.statusCode !== 200 || !match) {
-      response.writeHead(proxyResponse.statusCode || 502, copyHeaders(proxyResponse.headers));
+      response.writeHead(proxyResponse.statusCode || 502, copyProxyHeaders());
       proxyResponse.pipe(response);
       return;
     }
@@ -410,13 +415,13 @@ proxy.on("proxyRes", (proxyResponse, request, response) => {
         return;
       }
       const body = Buffer.from(html);
-      response.writeHead(proxyResponse.statusCode || 502, copyHeaders(proxyResponse.headers, body.length));
+      response.writeHead(proxyResponse.statusCode || 502, copyProxyHeaders(body.length));
       response.end(body);
     });
     return;
   }
   if (!contentType.includes("text/html")) {
-    response.writeHead(proxyResponse.statusCode || 502, copyHeaders(proxyResponse.headers));
+    response.writeHead(proxyResponse.statusCode || 502, copyProxyHeaders());
     proxyResponse.pipe(response);
     return;
   }
@@ -425,7 +430,7 @@ proxy.on("proxyRes", (proxyResponse, request, response) => {
   proxyResponse.on("data", (chunk) => chunks.push(chunk));
   proxyResponse.on("end", () => {
     const html = injectTheme(Buffer.concat(chunks).toString("utf8"));
-    response.writeHead(proxyResponse.statusCode || 502, copyHeaders(proxyResponse.headers, Buffer.byteLength(html)));
+    response.writeHead(proxyResponse.statusCode || 502, copyProxyHeaders(Buffer.byteLength(html)));
     response.end(html);
   });
 });
@@ -449,6 +454,7 @@ const server = http.createServer(async (request, response) => {
   const previewGrantAuthorized = !sessionAuthorized && hasValidPreviewGrant(request, url);
   if (!sessionAuthorized && !previewGrantAuthorized) return unauthorized(response);
   if (previewGrantAuthorized) {
+    request.__uedPreviewGrantAuthorized = true;
     url.searchParams.delete(previewGrantQuery);
     request.url = `${url.pathname}${url.search}`;
   }
