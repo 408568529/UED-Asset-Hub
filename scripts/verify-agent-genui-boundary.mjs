@@ -46,7 +46,24 @@ const adminSecret = randomBytes(32).toString("base64url");
 const username = "genui-boundary-test";
 const upstreamPort = await freePort();
 const received = [];
+const receivedGenui = [];
 const upstream = createHttpServer(async (request, response) => {
+  if (request.method === "GET" && request.url.startsWith("/genui/preview/")) {
+    response.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Security-Policy": "default-src 'none'; script-src 'self'; frame-src 'none'; sandbox allow-scripts allow-modals",
+      "X-Frame-Options": "SAMEORIGIN",
+      "Cache-Control": "no-store"
+    });
+    response.end('<!doctype html><html><head><link rel="stylesheet" href="/genui/assets/s-fixture/v-fixture/app.css?runtime=0.14.0"></head><body data-route-prefix="/genui"><div id="root" data-app-src="/genui/assets/s-fixture/v-fixture/app.js?runtime=0.14.0"></div><script src="/genui/bridge.js?runtime=0.14.0"></script></body></html>');
+    return;
+  }
+  if (request.method === "GET" && (request.url.startsWith("/genui/bridge.js") || request.url.startsWith("/genui/assets/"))) {
+    receivedGenui.push({ path: request.url, origin: request.headers.origin || null });
+    response.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8", ...(request.headers.origin === "null" ? { "Access-Control-Allow-Origin": "null", Vary: "Origin" } : {}) });
+    response.end("// synthetic GenUI asset");
+    return;
+  }
   if (request.method === "GET") {
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ status: "ok" }));
@@ -91,6 +108,38 @@ async function call(pathname, payload, authenticated = true) {
 try {
   await waitForProxy();
   assert.equal((await call("/api/session.create", { rpcId: "anon", payload: { agentPreset: "asset-hub-genui-restricted" } }, false)).status, 401);
+  const protectedPreview = await fetch(`${base}/genui/preview/s-fixture/v-fixture`);
+  assert.equal(protectedPreview.status, 401, "GenUI preview routes must retain Hub session authentication");
+  const preview = await fetch(`${base}/genui/preview/s-fixture/v-fixture`, { headers: { Cookie: cookie } });
+  assert.equal(preview.status, 200);
+  assert.equal(preview.headers.get("content-security-policy"), "default-src 'none'; script-src 'self'; frame-src 'none'; sandbox allow-scripts allow-modals");
+  assert.equal(preview.headers.get("x-frame-options"), "SAMEORIGIN");
+  const previewHtml = await preview.text();
+  assert.match(previewHtml, /data-route-prefix="\/genui"/);
+  assert.match(preview.headers.get("content-security-policy"), /sandbox allow-scripts allow-modals/);
+  const previewGrantMatch = previewHtml.match(/ued_preview_grant=([^&"']+)/);
+  assert.ok(previewGrantMatch, "authenticated preview HTML must issue a scoped read-only asset grant");
+  const previewGrant = decodeURIComponent(previewGrantMatch[1]);
+  assert.match(previewHtml, /href="\/genui\/assets\/s-fixture\/v-fixture\/app\.css\?[^\"]*ued_preview_grant=/);
+  assert.match(previewHtml, /data-app-src="\/genui\/assets\/s-fixture\/v-fixture\/app\.js\?[^\"]*ued_preview_grant=/);
+  assert.equal((await fetch(`${base}/genui/bridge.js?runtime=0.14.0`)).status, 401, "bridge bootstrap remains denied without a session or grant");
+  assert.equal((await fetch(`${base}/genui/bridge.js?runtime=0.14.0&ued_preview_grant=${encodeURIComponent(previewGrant)}`)).status, 200);
+  assert.equal((await fetch(`${base}/genui/assets/s-fixture/v-fixture/app.css?ued_preview_grant=${encodeURIComponent(previewGrant)}`)).status, 200);
+  const sandboxedModule = await fetch(`${base}/genui/assets/s-fixture/v-fixture/app.js?ued_preview_grant=${encodeURIComponent(previewGrant)}`, { headers: { Origin: "null" } });
+  assert.equal(sandboxedModule.status, 200);
+  assert.equal(sandboxedModule.headers.get("access-control-allow-origin"), "null");
+  assert.equal((await fetch(`${base}/genui/assets/s-other/v-fixture/app.js?ued_preview_grant=${encodeURIComponent(previewGrant)}`)).status, 401, "asset grant must not cross artifact scope");
+  assert.equal((await fetch(`${base}/genui/assets/s-fixture/v-other/app.js?ued_preview_grant=${encodeURIComponent(previewGrant)}`)).status, 401, "asset grant must not cross version scope");
+  assert.equal((await fetch(`${base}/genui/api/s-fixture/state/read?ued_preview_grant=${encodeURIComponent(previewGrant)}`)).status, 401, "asset grant must not authorize artifact APIs");
+  assert.equal((await fetch(`${base}/genui/assets/s-fixture/v-fixture/app.js?ued_preview_grant=${encodeURIComponent(previewGrant)}`, { method: "POST" })).status, 401, "asset grant is read-only");
+  const expiredPayload = Buffer.from(JSON.stringify({ artifactId: "s-fixture", versionId: "v-fixture", expiresAt: Date.now() - 1 })).toString("base64url");
+  const expiredSignature = createHmac("sha256", adminSecret).update(`genui-preview-asset-v1.${expiredPayload}`).digest("base64url");
+  assert.equal((await fetch(`${base}/genui/assets/s-fixture/v-fixture/app.js?ued_preview_grant=${expiredPayload}.${expiredSignature}`)).status, 401, "expired preview grant must be denied");
+  const tamperedGrant = `${previewGrant.slice(0, -1)}${previewGrant.endsWith("a") ? "b" : "a"}`;
+  assert.equal((await fetch(`${base}/genui/bridge.js?ued_preview_grant=${encodeURIComponent(tamperedGrant)}`)).status, 401, "tampered preview grant must be denied");
+  assert.equal((await fetch(`${base}/genui/bridge.js?ued_preview_grant=${encodeURIComponent(previewGrant)}&ued_preview_grant=${encodeURIComponent(previewGrant)}`)).status, 401, "duplicate preview grants must be denied");
+  assert.ok(receivedGenui.every(({ path }) => !path.includes("ued_preview_grant")), "proxy grant must not be forwarded to DSH");
+  assert.equal(receivedGenui.find(({ path }) => path.includes("/app.js"))?.origin, "null", "sandbox origin must reach DSH unchanged for module CORS");
   const genui = await call("/api/session.create", { rpcId: "genui", payload: { agentPreset: "asset-hub-genui-restricted" } });
   assert.equal(genui.body.result.ok, true);
   assert.equal(received.at(-1).payload.payload.agentPreset, "asset-hub-genui-restricted");

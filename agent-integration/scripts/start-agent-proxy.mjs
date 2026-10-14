@@ -33,6 +33,52 @@ const allowedPresets = new Set([restrictedPreset, genuiPreset]);
 await mkdir(workspaceRoot, { recursive: true });
 const workspaceRootRealPath = await realpath(workspaceRoot);
 
+const previewGrantQuery = "ued_preview_grant";
+const previewGrantLifetimeMs = 5 * 60 * 1000;
+
+function createPreviewGrant(artifactId, versionId) {
+  const payload = Buffer.from(JSON.stringify({ artifactId, versionId, expiresAt: Date.now() + previewGrantLifetimeMs })).toString("base64url");
+  const signature = createHmac("sha256", sessionSecret).update(`genui-preview-asset-v1.${payload}`).digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+function hasValidPreviewGrant(request, url) {
+  if (request.method !== "GET" || url.searchParams.getAll(previewGrantQuery).length !== 1) return false;
+  const grant = url.searchParams.get(previewGrantQuery) || "";
+  const [payload, signature, extra] = grant.split(".");
+  if (!payload || !signature || extra !== undefined) return false;
+  let scope;
+  try { scope = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")); } catch { return false; }
+  if (typeof scope?.artifactId !== "string" || typeof scope?.versionId !== "string"
+    || !Number.isSafeInteger(scope?.expiresAt) || scope.expiresAt <= Date.now()
+    || scope.expiresAt > Date.now() + previewGrantLifetimeMs) return false;
+  const assetMatch = url.pathname.match(/^\/genui\/assets\/([^/]+)\/([^/]+)\/.+$/);
+  if (url.pathname !== "/genui/bridge.js"
+    && (!assetMatch || assetMatch[1] !== encodeURIComponent(scope.artifactId) || assetMatch[2] !== encodeURIComponent(scope.versionId))) return false;
+  const expected = createHmac("sha256", sessionSecret).update(`genui-preview-asset-v1.${payload}`).digest("base64url");
+  const actualBytes = Buffer.from(signature);
+  const expectedBytes = Buffer.from(expected);
+  return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
+}
+
+function addPreviewAssetGrant(html, artifactId, versionId, grant) {
+  const assetPrefix = `/genui/assets/${encodeURIComponent(artifactId)}/${encodeURIComponent(versionId)}/`;
+  let bridgeCount = 0;
+  let appCount = 0;
+  const rewritten = html.replace(/(\s(?:src|href|data-app-src)=["'])([^"']+)(["'])/g, (match, before, value, after) => {
+    const asset = new URL(value, "http://127.0.0.1");
+    const bridge = asset.pathname === "/genui/bridge.js";
+    const artifactAsset = asset.pathname.startsWith(assetPrefix);
+    if (!bridge && !artifactAsset) return match;
+    asset.searchParams.set(previewGrantQuery, grant);
+    if (bridge) bridgeCount += 1;
+    if (asset.pathname === `${assetPrefix}app.js`) appCount += 1;
+    return `${before}${asset.pathname}${asset.search}${after}`;
+  });
+  if (bridgeCount !== 1 || appCount !== 1) throw new Error("GenUI preview document does not contain the expected bridge and app entrypoints.");
+  return rewritten;
+}
+
 const themeCss = `
 /* Asset Hub only overrides DSH semantic color tokens. Layout, typography and motion remain official DSH. */
 :root, body, body[data-ds-dark-theme] {
@@ -133,9 +179,6 @@ function unauthorized(response) {
 
 function copyHeaders(headers, bodyLength) {
   const copied = { ...headers };
-  delete copied["content-security-policy"];
-  delete copied["content-security-policy-report-only"];
-  delete copied["x-frame-options"];
   delete copied.connection;
   delete copied["transfer-encoding"];
   if (bodyLength === undefined) delete copied["content-length"];
@@ -344,6 +387,34 @@ const proxy = httpProxy.createProxyServer({ changeOrigin: true, selfHandleRespon
 
 proxy.on("proxyRes", (proxyResponse, request, response) => {
   const contentType = String(proxyResponse.headers["content-type"] || "");
+  const requestPath = new URL(request.url || "/", target).pathname;
+  if (contentType.includes("text/html") && requestPath.startsWith("/genui/preview/")) {
+    const match = requestPath.match(/^\/genui\/preview\/([^/]+)\/([^/]+)$/);
+    if (proxyResponse.statusCode !== 200 || !match) {
+      response.writeHead(proxyResponse.statusCode || 502, copyHeaders(proxyResponse.headers));
+      proxyResponse.pipe(response);
+      return;
+    }
+    const chunks = [];
+    proxyResponse.on("data", (chunk) => chunks.push(chunk));
+    proxyResponse.on("end", () => {
+      const source = Buffer.concat(chunks).toString("utf8");
+      let html;
+      try {
+        const artifactId = decodeURIComponent(match[1]);
+        const versionId = decodeURIComponent(match[2]);
+        html = addPreviewAssetGrant(source, artifactId, versionId, createPreviewGrant(artifactId, versionId));
+      } catch {
+        response.writeHead(502, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+        response.end("GenUI preview could not be prepared.");
+        return;
+      }
+      const body = Buffer.from(html);
+      response.writeHead(proxyResponse.statusCode || 502, copyHeaders(proxyResponse.headers, body.length));
+      response.end(body);
+    });
+    return;
+  }
   if (!contentType.includes("text/html")) {
     response.writeHead(proxyResponse.statusCode || 502, copyHeaders(proxyResponse.headers));
     proxyResponse.pipe(response);
@@ -374,7 +445,13 @@ const server = http.createServer(async (request, response) => {
     response.end(JSON.stringify({ ok }));
     return;
   }
-  if (!hasAdminSession(request)) return unauthorized(response);
+  const sessionAuthorized = hasAdminSession(request);
+  const previewGrantAuthorized = !sessionAuthorized && hasValidPreviewGrant(request, url);
+  if (!sessionAuthorized && !previewGrantAuthorized) return unauthorized(response);
+  if (previewGrantAuthorized) {
+    url.searchParams.delete(previewGrantQuery);
+    request.url = `${url.pathname}${url.search}`;
+  }
   if (url.pathname === "/asset-hub-agent-theme.css") {
     response.writeHead(200, { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "no-store" });
     response.end(themeCss);
@@ -387,7 +464,8 @@ const server = http.createServer(async (request, response) => {
   }
   if (await handlePresetBoundaryRequest(request, response, url)) return;
   if (await handleManagedWorkspaceRequest(request, response, url)) return;
-  proxy.web(request, response, { target: target.origin, headers: { origin: target.origin, referer: `${target.origin}/` } });
+  const proxyHeaders = { origin: previewGrantAuthorized && request.headers.origin === "null" ? "null" : target.origin, referer: `${target.origin}/` };
+  proxy.web(request, response, { target: target.origin, headers: proxyHeaders });
 });
 
 const sockets = new Set();

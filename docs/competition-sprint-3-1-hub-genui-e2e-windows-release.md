@@ -25,6 +25,72 @@ The Sprint 3 tarball is committed at `agent-integration/dsh/packages/dsh-plugin-
 - Existing standalone DSH evidence remains distinct: synthetic real-model Knowledge MCP search → get citation, React generation/build, browser rendering, three-control interaction/save (`18px`, `12px`, `32px`), same-session refresh recovery, and next-turn `genui_state_read` all passed. User-entered DeepSeek credentials were not read or included in evidence.
 - The untracked root `server.js` is byte-identical to `.next/standalone/server.js` (SHA-256 `3c93d4de734e53b8135e79fcda5620a111102ede0a91b1ee87302aa456afe6f8`, 6,487 bytes). Host Supervisor launches `server.js`; this is the live isolated Hub's generated Next standalone runtime entry, not an independent helper to add to Git. The Windows release build runs `next build`, copies `.next/standalone` including its generated `server.js`, and verifies it. The local generated copy remains untracked and is excluded from the release source identity. For the local-only `.next-local-test` build, its generated `static` directory was copied into the matching standalone runtime directory; this ignored build output is not a source or release change.
 
+## 2026-10-14 — Sprint 3.1 embedded-preview differential debug
+
+**Status remains `PARTIAL`; the Hub embedded preview is not repaired.** This section records the current-turn differential checks and must not be read as a Hub E2E pass.
+
+| Check | Independent DSH | Hub embedded Agent | Evidence / conclusion |
+| --- | --- | --- | --- |
+| Same artifact | `s-987516b2319f-sprint31-token-settings`, version `v-0df321cc-9d8c-4415-a5d3-0ed33ef289a1` | Same artifact and session | Confirmed in both browser trees. |
+| Preview rendering | PASS: all three token sliders render at `18`, `12`, and `32` | FAIL: card reports “应用暂时没有打开” after the loading state | Browser accessibility evidence captured through the isolated IAB tabs. |
+| First observable failure | No failure observed | GenUI host does not accept a `bridge-connect` before its 8-second readiness timeout; request-level status and browser console event were not available through the current browser surface | The timeout behavior is confirmed by the pinned plugin source; the underlying failed request/event remains unknown. Do not label a specific request as the root cause. |
+| Cookie hypothesis | — | Not established | A synthetic same-site `SameSite=Lax` cookie probe was sent by this browser from a sandboxed iframe, so cookie omission is not supported as the cause. This probe is not a substitute for Hub request capture. |
+
+The Agent Proxy source showed a verified differential: it previously passed GenUI preview HTML through the general HTML rewriting/injection path and removed `Content-Security-Policy` and `X-Frame-Options` from proxied responses. The current local change stops transforming `/genui/preview/**` HTML and preserves those security headers. `scripts/verify-agent-genui-boundary.mjs` now verifies byte-preserving preview markup, retained CSP/X-Frame-Options, authenticated access, and `401` for an unauthenticated preview request. Syntax checks, this focused verifier, and `git diff --check` pass.
+
+That security correction did **not** restore the embedded preview in the real Hub session after a controlled Proxy restart and browser reload. The Hub card still reaches the same readiness timeout. Therefore the Proxy HTML/header difference is a confirmed security defect and has been corrected, but it is **not confirmed as the preview root cause**. No request cookies, bearer values, URL fragments, model credentials, response bodies, or user data were recorded. No iframe sandbox or Restricted Preset was relaxed. Direct DSH, Gateway, Hub, and Agent Proxy remain running on their original loopback ports; the final Proxy process was restarted from the edited source. The `server.js` untracked file remains the pre-existing generated standalone entry.
+
+Current code changes are local and uncommitted because the required Hub browser rendering and interaction/save/refresh/follow-up checks still fail or remain `NOT_VERIFIED`. No Windows work, production service, credential, asset, or Git remote was touched. Minimal remaining task: capture the first failed GenUI preview request and/or bridge event from the live Hub browser (status, content type, and CSP only; redact Cookie/Authorization/query fragments), then make a root-cause-specific Hub-boundary correction and rerun the full in-Hub lifecycle.
+
+```text
+HUB_DIRECT_DSH_SAME_ARTIFACT=PASS
+HUB_EMBEDDED_PREVIEW=FAIL
+HUB_EMBEDDED_FIRST_FAILED_REQUEST=NOT_VERIFIED
+HUB_EMBEDDED_FIRST_FAILED_EVENT=bridge-connect not accepted before 8s timeout
+GENUI_PROXY_SECURITY_HEADER_PASSTHROUGH=PASS
+GENUI_PROXY_BOUNDARY_REGRESSION=PASS
+HUB_INTERACTION_SAVE_REFRESH_FOLLOWUP=NOT_VERIFIED
+LOCAL_COMMIT_CREATED=false
+GIT_PUSHED=false
+PROTECTED_SERVICES_TOUCHED=false
+```
+
+## 2026-10-14 — Root-cause repair and Hub embedded-preview acceptance
+
+**Status: Hub embedded rendering and the saved-state loop now pass in the isolated Sprint 3.1 stack.** The initial differential section above records the pre-fix state.
+
+### Proven first failure
+
+The sanitized Proxy event trace is `/private/tmp/ued-sprint-3.1-genui-handshake-trace-20261014-1.jsonl`. On the Hub run, route discovery, artifact metadata, and the preview document returned `200`; the preview response retained its restrictive CSP and the request had no Referer because the plugin sets `referrerPolicy="no-referrer"`. The preview document itself reached the Proxy with the authenticated Hub session. Its subsequent sandbox-origin static-resource requests had no Cookie and were rejected by the Proxy with `401` (`artifact-app-asset`, then `bridge-bootstrap`). The first failure therefore occurred at the Agent Proxy authorization gate for a preview static asset. The bootstrap never reached the parent `bridge-connect` listener. This explains the later 8-second timeout; it was not the initiating failure.
+
+No GenUI CSP or runtime Console error was present in the captured Hub page logs. The only Console warnings were DSH connection retries during the controlled Proxy restarts. The child iframe used the existing `allow-scripts allow-modals` sandbox and `no-referrer` policy; no token, Cookie, Authorization header, API key, response body, or capability value was written to the trace.
+
+### Minimal Hub-boundary repair
+
+An authenticated preview-document response now adds a five-minute HMAC-signed **read-only static-asset grant** to that exact artifact/version's bridge and asset URLs. The Proxy accepts that grant only for `GET /genui/bridge.js` and `GET /genui/assets/<same-artifact>/<same-version>/**`; it strips the grant before forwarding to DSH. It does not authorize preview documents, GenUI APIs, writes, other artifact versions, or other artifacts. Expired, duplicate, tampered, or absent grants remain unauthorized. For a grant-authorized module request with the browser's opaque `Origin: null`, the Proxy preserves that Origin so DSH returns its existing `Access-Control-Allow-Origin: null` response.
+
+The previously made Proxy preview-HTML passthrough and CSP/X-Frame-Options preservation remain in place; the preview body is changed only to attach the scoped asset grant. Hub session authentication, DSH capabilities, Restricted Preset policy, and the GenUI iframe sandbox remain unchanged. No DSH package/core, generated artifact source, model configuration, or API key was changed.
+
+### Browser acceptance
+
+- Direct DSH, same artifact `s-987516b2319f-sprint31-token-settings` / version `v-0df321cc-9d8c-4415-a5d3-0ed33ef289a1`: PASS, three controls render.
+- Hub `/agent` embedded same artifact: PASS, all three interactive sliders render at `18 / 12 / 32` before the test interaction. No GenUI Console errors were observed.
+- Changed radius to `20`, saved in the Hub card, refreshed `/agent`, and observed restoration at `20 / 12 / 32`: PASS.
+- Sent a subsequent real Agent turn in the same session. The answer read back `radius=20px`, `spacing=12px`, `fontSize=32px`: PASS.
+- Negative boundary tests: unauthenticated preview/document and bridge without a grant remain `401`; cross-artifact/version, expired grant, API path, and non-GET asset requests are rejected; the scoped static grant is not forwarded upstream. CSP, X-Frame-Options, and the iframe sandbox are retained: PASS.
+
+The Hub browser, synthetic asset, and state were isolated to this local Sprint 3.1 instance. No Windows ZIP, deployment, production service, production DATA, credential, or remote Git operation was touched.
+
+```text
+ROOT_CAUSE=SANDBOX_SUBRESOURCE_REQUESTS_LACK_HUB_COOKIE; PROXY_RETURNED_401_BEFORE_BRIDGE
+DIRECT_DSH_SAME_ARTIFACT=PASS
+HUB_EMBEDDED_RENDER=PASS
+INTERACT_SAVE_RELOAD_NEXT_TURN=PASS
+SCOPED_STATIC_GRANT_BOUNDARY=PASS
+LOCAL_COMMIT=RECORDED_IN_GIT_HISTORY
+GIT_PUSHED=false
+```
+
 ## Windows package boundary
 
 - `scripts/build-internal-windows-release.ps1` rejects non-Windows x64. It also requires Git, `npm.cmd`, pinned Node `22.23.2`, npm `10.9.8`, Visual Studio Build Tools x64 and `cl.exe` to compile the native Windows helpers. This host reports `Darwin`; `pwsh`, Windows PowerShell, and `cl.exe` are unavailable. No cross-platform/manual ZIP was substituted.
