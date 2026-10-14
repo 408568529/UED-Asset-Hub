@@ -131,6 +131,9 @@ try {
   const stylesheet = await fetch(`${base}/genui/assets/s-fixture/v-fixture/app.css?ued_preview_grant=${encodeURIComponent(previewGrant)}`);
   assert.equal(stylesheet.status, 200);
   assert.equal(stylesheet.headers.get("cache-control"), "private, no-store");
+  const cookieAuthenticatedAsset = await fetch(`${base}/genui/assets/s-fixture/v-fixture/app.js?ued_preview_grant=${encodeURIComponent(previewGrant)}`, { headers: { Cookie: cookie } });
+  assert.equal(cookieAuthenticatedAsset.status, 200);
+  assert.equal(cookieAuthenticatedAsset.headers.get("cache-control"), "private, no-store");
   const sandboxedModule = await fetch(`${base}/genui/assets/s-fixture/v-fixture/app.js?ued_preview_grant=${encodeURIComponent(previewGrant)}`, { headers: { Origin: "null" } });
   assert.equal(sandboxedModule.status, 200);
   assert.equal(sandboxedModule.headers.get("access-control-allow-origin"), "null");
@@ -145,7 +148,7 @@ try {
   assert.equal((await fetch(`${base}/genui/bridge.js?ued_preview_grant=${encodeURIComponent(tamperedGrant)}`)).status, 401, "tampered preview grant must be denied");
   assert.equal((await fetch(`${base}/genui/bridge.js?ued_preview_grant=${encodeURIComponent(previewGrant)}&ued_preview_grant=${encodeURIComponent(previewGrant)}`)).status, 401, "duplicate preview grants must be denied");
   assert.ok(receivedGenui.every(({ path }) => !path.includes("ued_preview_grant")), "proxy grant must not be forwarded to DSH");
-  assert.equal(receivedGenui.find(({ path }) => path.includes("/app.js"))?.origin, "null", "sandbox origin must reach DSH unchanged for module CORS");
+  assert.equal(receivedGenui.find(({ origin }) => origin === "null")?.origin, "null", "sandbox origin must reach DSH unchanged for module CORS");
   const genui = await call("/api/session.create", { rpcId: "genui", payload: { agentPreset: "asset-hub-genui-restricted" } });
   assert.equal(genui.body.result.ok, true);
   assert.equal(received.at(-1).payload.payload.agentPreset, "asset-hub-genui-restricted");

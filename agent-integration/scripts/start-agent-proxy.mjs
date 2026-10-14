@@ -391,7 +391,7 @@ proxy.on("proxyRes", (proxyResponse, request, response) => {
   const contentType = String(proxyResponse.headers["content-type"] || "");
   const requestPath = new URL(request.url || "/", target).pathname;
   const previewDocument = requestPath.startsWith("/genui/preview/");
-  const noStore = previewDocument || request.__uedPreviewGrantAuthorized === true;
+  const noStore = previewDocument || request.__uedPreviewGrantPresent === true;
   const copyProxyHeaders = (bodyLength) => copyHeaders(proxyResponse.headers, bodyLength, { noStore, noReferrer: previewDocument });
   if (contentType.includes("text/html") && requestPath.startsWith("/genui/preview/")) {
     const match = requestPath.match(/^\/genui\/preview\/([^/]+)\/([^/]+)$/);
@@ -451,10 +451,11 @@ const server = http.createServer(async (request, response) => {
     return;
   }
   const sessionAuthorized = hasAdminSession(request);
+  const previewGrantPresent = url.searchParams.has(previewGrantQuery);
   const previewGrantAuthorized = !sessionAuthorized && hasValidPreviewGrant(request, url);
   if (!sessionAuthorized && !previewGrantAuthorized) return unauthorized(response);
-  if (previewGrantAuthorized) {
-    request.__uedPreviewGrantAuthorized = true;
+  if (previewGrantPresent) {
+    request.__uedPreviewGrantPresent = true;
     url.searchParams.delete(previewGrantQuery);
     request.url = `${url.pathname}${url.search}`;
   }
