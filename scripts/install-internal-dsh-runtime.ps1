@@ -43,7 +43,7 @@ $commit = [string]$releaseVersion.sourceCommit
 if ($repository -ne 'https://github.com/deepseek-ai/deepseek-harness.git' -or $commit -ne 'b150a551b8d465e31e418e1b2eaf5e79bbb7d28e') {
   throw 'Release DSH identity is not the approved pinned upstream source.'
 }
-if ($genuiContract.packageName -ne 'dsh-plugin-genui' -or $genuiContract.version -ne '0.15.1' -or $genuiContract.dshVersion -ne $releaseVersion.version -or $genuiContract.npmIntegrity -notmatch '^sha512-[A-Za-z0-9+/]+=*$') { throw 'Release GenUI plugin identity or npm integrity is invalid.' }
+if ($genuiContract.packageName -ne 'dsh-plugin-genui' -or $genuiContract.version -ne '0.15.1' -or $genuiContract.dshVersion -ne $releaseVersion.version -or $genuiContract.npmIntegrity -notmatch '^sha512-[A-Za-z0-9+/]+=*$' -or $genuiContract.packageTarball -ne 'agent-integration/dsh/packages/dsh-plugin-genui-0.15.1.tgz' -or $genuiContract.packageTarballSha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Release GenUI plugin identity or local package integrity is invalid.' }
 $env:COREPACK_DEFAULT_TO_LATEST = '0'
 $pnpmVersion = '11.7.0'
 
@@ -65,7 +65,7 @@ if (Test-Path -LiteralPath $pnpmShim) { throw 'A pnpm shim already exists in the
 $null = [System.IO.Directory]::CreateDirectory($pnpmShimRoot)
 Assert-NoReparseAncestor $pnpmShimRoot
 Assert-UedPrivateAcl $pnpmShimRoot
-[System.IO.File]::WriteAllText($pnpmShim, "@echo off`r`ncall `"$($corepack.Source)`" pnpm %*`r`nexit /b %ERRORLEVEL%`r`n", [System.Text.Encoding]::ASCII)
+[System.IO.File]::WriteAllText($pnpmShim, "@echo off`r`ncall `"$($corepack.Source)`" pnpm@$pnpmVersion %*`r`nexit /b %ERRORLEVEL%`r`n", [System.Text.Encoding]::ASCII)
 $env:Path = $pnpmShimRoot + ';' + $env:Path
 $env:COREPACK_HOME = Join-Path $parent '.corepack-cache'
 $env:PNPM_STORE_PATH = Join-Path $parent '.pnpm-store'
@@ -110,9 +110,9 @@ foreach ($target in @($source, $runtime)) {
     if ($package.packageManager -ne "pnpm@$pnpmVersion" -or $package.version -ne $releaseVersion.version) { throw 'Pinned DSH package manager or package version changed.' }
     $actualPnpmVersion = (& $corepack.Source pnpm --silent --version).Trim()
     if ($LASTEXITCODE -ne 0 -or $actualPnpmVersion -ne $pnpmVersion) { throw 'Corepack did not resolve the DSH-pinned pnpm version.' }
-    & $corepack.Source pnpm install --frozen-lockfile
+    & $corepack.Source pnpm --store-dir $env:PNPM_STORE_PATH install --frozen-lockfile
     if ($LASTEXITCODE -ne 0) { throw 'DSH frozen dependency installation failed.' }
-    & $corepack.Source pnpm build
+    & $corepack.Source pnpm run build
     if ($LASTEXITCODE -ne 0) { throw 'DSH build failed.' }
     if ($target -eq $source) {
       $status = ((& git -C $source status --porcelain=v1) -join "`n").Trim()
@@ -140,12 +140,27 @@ $dshHome = Join-Path ([System.IO.Path]::GetFullPath([string]$config.AGENT_RUNTIM
 $null = [System.IO.Directory]::CreateDirectory($dshHome)
 Assert-NoReparseAncestor $dshHome
 Assert-UedPrivateAcl $dshHome
+$pluginTarballSource = Join-Path $release ($genuiContract.packageTarball.Replace('/', '\'))
+if (-not (Test-Path -LiteralPath $pluginTarballSource -PathType Leaf)) { throw 'The verified GenUI plugin tarball is missing from this release.' }
+Assert-NoReparseAncestor $pluginTarballSource
+if ((Get-FileHash -LiteralPath $pluginTarballSource -Algorithm SHA256).Hash -ne $genuiContract.packageTarballSha256) { throw 'The GenUI plugin tarball SHA-256 does not match its release manifest.' }
+$pluginTarballCache = Join-Path ([System.IO.Path]::GetFullPath([string]$config.AGENT_RUNTIME_DIR)) 'genui-packages'
+$null = [System.IO.Directory]::CreateDirectory($pluginTarballCache)
+Assert-NoReparseAncestor $pluginTarballCache
+Assert-UedPrivateAcl $pluginTarballCache
+$pluginTarball = Join-Path $pluginTarballCache ('dsh-plugin-genui-0.15.1-' + $genuiContract.packageTarballSha256 + '.tgz')
+if (Test-Path -LiteralPath $pluginTarball) {
+  if (-not (Test-Path -LiteralPath $pluginTarball -PathType Leaf) -or (Get-FileHash -LiteralPath $pluginTarball -Algorithm SHA256).Hash -ne $genuiContract.packageTarballSha256) { throw 'An existing GenUI runtime package cache entry does not match the pinned SHA-256.' }
+} else {
+  Copy-Item -LiteralPath $pluginTarballSource -Destination $pluginTarball
+  Assert-NoReparseAncestor $pluginTarball
+  if ((Get-FileHash -LiteralPath $pluginTarball -Algorithm SHA256).Hash -ne $genuiContract.packageTarballSha256) { throw 'The cached GenUI plugin tarball failed SHA-256 verification.' }
+}
 $env:DSH_HOME = $dshHome
 $env:DSH_TELEMETRY_DISABLED = '1'
 Push-Location $runtime
 try {
-  $pluginSpec = '{0}@{1}' -f $genuiContract.packageName, $genuiContract.version
-  & $node.Source '--import' 'tsx/esm' 'apps/cli/src/bin.ts' 'plugin' '--profile' 'web' 'add' $pluginSpec '--save-exact'
+  & $node.Source '--import' 'tsx/esm' 'apps/cli/src/bin.ts' 'plugin' '--profile' 'web' 'add' $pluginTarball '--save-exact' '--ignore-scripts' '--store-dir' $env:PNPM_STORE_PATH
   if ($LASTEXITCODE -ne 0) { throw 'The official DSH Plugin Manager could not install the pinned GenUI plugin into the isolated web profile.' }
   $pluginManifestPath = Join-Path $dshHome 'profiles\web\node_modules\dsh-plugin-genui\package.json'
   if (-not (Test-Path -LiteralPath $pluginManifestPath -PathType Leaf)) { throw 'The isolated DSH web profile is missing the installed GenUI package.' }
@@ -153,7 +168,14 @@ try {
   if ($pluginManifest.name -ne $genuiContract.packageName -or $pluginManifest.version -ne $genuiContract.version) { throw 'The installed GenUI package identity does not match the pinned release manifest.' }
   $profileManifest = Get-Content -LiteralPath (Join-Path $dshHome 'profiles\web\package.json') -Raw | ConvertFrom-Json
   $pinnedPluginVersion = $profileManifest.dependencies.PSObject.Properties[$genuiContract.packageName].Value
-  if ($pinnedPluginVersion -ne $genuiContract.version) { throw 'The DSH web profile does not pin GenUI to the approved exact version.' }
+  if ([string]$pinnedPluginVersion -notmatch 'dsh-plugin-genui-0\.15\.1-[a-fA-F0-9]{64}\.tgz') { throw 'The DSH web profile does not refer to the verified local GenUI package tarball.' }
+  $bundles = @($profileManifest.dsh.profile.bundles | Where-Object { $_ -ne $genuiContract.packageName })
+  if ($bundles.Count -ne @($profileManifest.dsh.profile.bundles).Count) {
+    $profileManifest.dsh.profile.bundles = $bundles
+    $profilePath = Join-Path $dshHome 'profiles\web\package.json'
+    $profileManifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $profilePath -Encoding utf8NoBOM
+  }
+  if (@($profileManifest.dsh.profile.bundles) -contains $genuiContract.packageName) { throw 'The GenUI package must remain opt-in through its restricted Agent preset, not load in every DSH session.' }
   if (-not (Select-String -LiteralPath (Join-Path $dshHome 'profiles\web\pnpm-lock.yaml') -SimpleMatch $genuiContract.npmIntegrity -Quiet)) { throw 'The DSH web profile lockfile does not contain the approved GenUI npm integrity.' }
 } finally {
   Pop-Location

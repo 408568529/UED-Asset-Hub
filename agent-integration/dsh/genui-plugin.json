@@ -2,7 +2,11 @@
   "packageName": "dsh-plugin-genui",
   "version": "0.15.1",
   "npmIntegrity": "sha512-QrWQI039vtQCrjspa+bjhX1snNsFTELlMG5nrY2MsvA0T8D9iVF3blqe4sq1+LPaOrJ5A8RV0iA+xH0JtXeSvA==",
+  "npmRegistry": "https://registry.npmjs.org/dsh-plugin-genui/-/dsh-plugin-genui-0.15.1.tgz",
+  "packageTarball": "agent-integration/dsh/packages/dsh-plugin-genui-0.15.1.tgz",
+  "packageTarballSha256": "ac555017451724f6a4b990da8ac951603c8cfc8c61634b6015067f71c689689b",
+  "license": "MIT",
   "dshVersion": "0.1.1-rc.2",
-  "installation": "dsh plugin --profile web add dsh-plugin-genui@0.15.1 --save-exact",
-  "delivery": "The private Windows release carries this lock manifest and the restricted GenUI preset. The DSH Plugin Manager installs the npm package into the isolated DSH_HOME web profile during runtime provisioning; no package is installed globally."
+  "installation": "dsh plugin --profile web add <verified-local-tarball> --save-exact, then remove the package from global profile bundles so only the explicit restricted preset mounts it",
+  "delivery": "The private Windows release carries this verified npm tarball. The installer verifies its SHA-256, retains it under the isolated AGENT_RUNTIME_DIR plugin package cache, then uses the official DSH Plugin Manager to install it into the web profile. The plugin tarball is locally bundled; Plugin Manager dependency resolution and supply-chain checks may still access the configured npm registry. GenUI stays opt-in through asset-hub-genui-restricted and is not loaded in every DSH session."
 }
