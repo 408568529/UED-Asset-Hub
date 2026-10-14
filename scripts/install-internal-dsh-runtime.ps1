@@ -166,6 +166,8 @@ try {
   if (-not (Test-Path -LiteralPath $pluginManifestPath -PathType Leaf)) { throw 'The isolated DSH web profile is missing the installed GenUI package.' }
   $pluginManifest = Get-Content -LiteralPath $pluginManifestPath -Raw | ConvertFrom-Json
   if ($pluginManifest.name -ne $genuiContract.packageName -or $pluginManifest.version -ne $genuiContract.version) { throw 'The installed GenUI package identity does not match the pinned release manifest.' }
+  & $node.Source (Join-Path $release 'agent-integration\scripts\genui-client-load-liveness.mjs') $dshHome
+  if ($LASTEXITCODE -ne 0) { throw 'The pinned GenUI client compatibility patch failed.' }
   $profileManifest = Get-Content -LiteralPath (Join-Path $dshHome 'profiles\web\package.json') -Raw | ConvertFrom-Json
   $pinnedPluginVersion = $profileManifest.dependencies.PSObject.Properties[$genuiContract.packageName].Value
   if ([string]$pinnedPluginVersion -notmatch 'dsh-plugin-genui-0\.15\.1-[a-fA-F0-9]{64}\.tgz') { throw 'The DSH web profile does not refer to the verified local GenUI package tarball.' }

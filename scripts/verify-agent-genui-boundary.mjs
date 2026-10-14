@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { createServer as createNetServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { compatibleLoadHandler, officialClientSha256, patchedClientSha256, patchGenuiClientLoad } from "../agent-integration/scripts/genui-client-load-liveness.mjs";
 
 async function freePort() {
   const server = createNetServer();
@@ -42,6 +43,33 @@ assert.match(windowsInstaller, /genui-packages/);
 assert.match(windowsInstaller, /npmIntegrity/);
 assert.match(windowsPayload, /agent-integration\/dsh\/packages\/dsh-plugin-genui-0\.15\.1\.tgz/);
 assert.match(windowsBuild, /agent-integration\/dsh\/packages\/dsh-plugin-genui-0\.15\.1\.tgz/);
+const officialClient = execFileSync("tar", ["-xOf", pluginLock.packageTarball, "package/lib/client.js"], { encoding: "utf8" });
+assert.equal(pluginLock.clientCompatibility.officialClientSha256, officialClientSha256);
+assert.equal(pluginLock.clientCompatibility.patchedClientSha256, patchedClientSha256);
+const compatibleClient = patchGenuiClientLoad(officialClient);
+assert.equal(createHash("sha256").update(compatibleClient).digest("hex"), patchedClientSha256);
+assert.equal(patchGenuiClientLoad(compatibleClient), compatibleClient);
+assert.throws(() => patchGenuiClientLoad(officialClient + "changed"));
+assert.match(windowsInstaller, /genui-client-load-liveness\.mjs/);
+assert.match(windowsBuild, /genui-client-load-liveness\.mjs/);
+assert.match(windowsPayload, /genui-client-load-liveness\.mjs/);
+const loadHarness = new Function("trustedPreviewStarted", `
+  let active = true, resolveLiveness;
+  const calls = { verify: 0, close: 0, fail: 0 };
+  const connection = { verifyCurrentDocument() { calls.verify++; return new Promise(resolve => { resolveLiveness = resolve; }); }, close() { calls.close++; } };
+  const failNavigatedPreview = () => { calls.fail++; };
+  ${compatibleLoadHandler}
+  return { loaded, calls, settle: value => resolveLiveness(value), deactivate() { active = false; } };
+`);
+const earlyLoad = loadHarness(false); earlyLoad.loaded();
+assert.deepEqual(earlyLoad.calls, { verify: 0, close: 0, fail: 0 });
+for (const alive of [true, false]) {
+  const lateLoad = loadHarness(true); lateLoad.loaded(); lateLoad.settle(alive); await Promise.resolve();
+  assert.deepEqual(lateLoad.calls, { verify: 1, close: alive ? 0 : 1, fail: alive ? 0 : 1 });
+}
+const disposedLoad = loadHarness(true); disposedLoad.loaded(); disposedLoad.deactivate(); disposedLoad.settle(false); await Promise.resolve();
+assert.deepEqual(disposedLoad.calls, { verify: 1, close: 0, fail: 0 });
+
 const adminSecret = randomBytes(32).toString("base64url");
 const username = "genui-boundary-test";
 const upstreamPort = await freePort();

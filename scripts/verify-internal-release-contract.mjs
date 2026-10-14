@@ -6,6 +6,9 @@ import { createInternalReleaseManifest, deriveInternalRuntimeModuleClosure, veri
 import { validateInternalRuntimeEnvironment } from "./internal-release-preflight.mjs";
 import { resolveHostPorts } from "./runtime-ports.mjs";
 
+const { default: nextConfig } = await import("../next.config.ts");
+assert.equal(nextConfig.experimental?.isrFlushToDisk, false, "Runtime page caches must not change the immutable release tree.");
+
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "ued-internal-release-contract-"));
 const payloadRoot = path.join(temporaryRoot, "payload");
 const sourceCommit = "e7944e8a6c8d241f8be3f1c31131e3e68a62afb2";

@@ -8,5 +8,12 @@
   "license": "MIT",
   "dshVersion": "0.1.1-rc.2",
   "installation": "dsh plugin --profile web add <verified-local-tarball> --save-exact, then remove the package from global profile bundles so only the explicit restricted preset mounts it",
-  "delivery": "The private Windows release carries this verified npm tarball. The installer verifies its SHA-256, retains it under the isolated AGENT_RUNTIME_DIR plugin package cache, then uses the official DSH Plugin Manager to install it into the web profile. The plugin tarball is locally bundled; Plugin Manager dependency resolution and supply-chain checks may still access the configured npm registry. GenUI stays opt-in through asset-hub-genui-restricted and is not loaded in every DSH session."
+  "delivery": "The private Windows release carries this verified npm tarball. The installer verifies its SHA-256, retains it under the isolated AGENT_RUNTIME_DIR plugin package cache, then uses the official DSH Plugin Manager to install it into the web profile. The plugin tarball is locally bundled; Plugin Manager dependency resolution and supply-chain checks may still access the configured npm registry. GenUI stays opt-in through asset-hub-genui-restricted and is not loaded in every DSH session.",
+  "clientCompatibility": {
+    "id": "ued-load-liveness-v1",
+    "installer": "agent-integration/scripts/genui-client-load-liveness.mjs",
+    "officialClientSha256": "93bde01047b1932bb1daaf8811dae61b66ccb6a7e9a72b3b686577d10015ef37",
+    "patchedClientSha256": "492c56a31ec65867aa4e48f95ebad1f9af2198c7301ca68f069f7aee387136fe",
+    "reason": "Verify the accepted MessagePort before treating a late initial iframe load event as navigation; retain close-on-lost-document behavior."
+  }
 }

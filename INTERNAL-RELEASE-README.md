@@ -94,3 +94,9 @@ Test schema compatibility before any future deployment rollback. This channel do
 The manifest records `INTERNAL_RELEASE`, source Commit/Tree, Windows build toolchain, pinned DSH identity, package file paths, sizes, and SHA-256 values. It is an integrity manifest, not a Formal Authority, signature, or anti-reverse-engineering mechanism.
 
 No step in this workflow binds a package to existing business data, starts `UEDAssetHubR2C`, changes the current staging service, or deploys production. Those actions require separate authorization.
+
+## GenUI client compatibility
+
+The official Plugin Manager installs the pinned, unmodified GenUI 0.15.1 tarball. The installer then applies `ued-load-liveness-v1` to its installed client: a late initial iframe load verifies the accepted MessagePort before treating the document as navigated. Both original and resulting SHA-256 values are declared in `agent-integration/dsh/genui-plugin.json`; unexpected client bytes fail installation. The patch is idempotent and does not change grant scope, sandbox policy, or preset selection.
+
+Next route caching stays in memory (`experimental.isrFlushToDisk=false`) so runtime page requests cannot add cache files to the immutable release tree. Runtime data and plugin state remain external.

@@ -6,6 +6,7 @@ if (releaseBuildId !== undefined && !/^rb1-[a-f0-9]{64}$/.test(releaseBuildId)) 
 
 const nextConfig = {
   output: "standalone",
+  experimental: { isrFlushToDisk: false },
   ...(process.env.UED_LOCAL_TEST_MODE === "true" ? { distDir: ".next-local-test" } : {}),
   ...(releaseBuildId ? { generateBuildId: async () => releaseBuildId } : {}),
   images: {
