@@ -19,17 +19,17 @@ const sections: Array<{ id: "all" | KnowledgeSection; label: string; icon: typeo
   { id: "resource", label: "资源", icon: Type }
 ];
 
-const types: Array<{ id: KnowledgeAssetType; label: string }> = [
-  { id: "knowledge", label: "知识文章" },
-  { id: "sop", label: "SOP" },
-  { id: "component-spec", label: "组件规范" },
-  { id: "micro-spec", label: "微规范" },
-  { id: "project", label: "项目沉淀" },
-  { id: "prompt", label: "Prompt" },
-  { id: "skill", label: "Skill" },
-  { id: "training", label: "培训资料" },
-  { id: "vibe-product", label: "Vibe Product" },
-  { id: "font", label: "Font" }
+const types: Array<{ id: KnowledgeAssetType; label: string; section: KnowledgeSection }> = [
+  { id: "knowledge", label: "知识文章", section: "document" },
+  { id: "sop", label: "SOP", section: "document" },
+  { id: "component-spec", label: "组件规范", section: "document" },
+  { id: "micro-spec", label: "微规范", section: "document" },
+  { id: "project", label: "项目沉淀", section: "document" },
+  { id: "prompt", label: "Prompt", section: "ai" },
+  { id: "skill", label: "Skill", section: "ai" },
+  { id: "training", label: "培训资料", section: "training" },
+  { id: "vibe-product", label: "Vibe Product", section: "product-tool" },
+  { id: "font", label: "Font", section: "resource" }
 ];
 
 function buildHref(query: KnowledgeLibraryQuery, changes: Partial<KnowledgeLibraryQuery>) {
@@ -110,9 +110,7 @@ function TrainingAssetCard({ item, query }: { item: KnowledgeAssetView; query: K
 }
 
 function SecondaryNavigation({ activeSection, query }: { activeSection: "all" | KnowledgeSection; query: KnowledgeLibraryQuery }) {
-  const documentTypes = types.filter((type) => type.id === "knowledge" || type.id === "sop" || type.id === "component-spec" || type.id === "micro-spec" || type.id === "project");
-  const aiTypes = types.filter((type) => type.id === "prompt" || type.id === "skill");
-  const activeTypes = activeSection === "document" ? documentTypes : activeSection === "ai" ? aiTypes : [];
+  const activeTypes = activeSection === "document" || activeSection === "ai" ? types.filter((type) => type.section === activeSection) : [];
   const title = activeSection === "document" ? "文档类型" : "AI 类型";
 
   if (!activeTypes.length) return null;
@@ -146,6 +144,7 @@ export function KnowledgeLibraryWorkspace({ result, query, children }: { result:
   const router = useRouter();
   const [keyword, setKeyword] = useState(query.q ?? "");
   const activeSection = query.section ?? "all";
+  const availableTypes = types.filter((type) => activeSection === "all" || type.section === activeSection);
   const failedSources = result.sourceStates.filter((source) => source.status === "rejected");
   const allFailed = failedSources.length === result.sourceStates.length;
   const hasFilters = Boolean(query.q || query.type || query.category || query.tag || (query.section && query.section !== "all") || (query.sort && query.sort !== "updated-desc"));
@@ -202,7 +201,7 @@ export function KnowledgeLibraryWorkspace({ result, query, children }: { result:
           {!isDetail ? <div className="knowledge-list-filters">
             <div className="flex items-center gap-2 text-xs text-muted-foreground"><SlidersHorizontal size={15} />筛选与排序</div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:flex">
-              <Select size="small" aria-label="按类型筛选" value={query.type ?? ""} onChange={(value: string) => updateFilters({ type: value as KnowledgeAssetType || undefined, category: undefined, tag: undefined })} className="min-w-0 w-full xl:w-32" options={[{ value: "", label: "全部类型" }, ...types.map((type) => ({ value: type.id, label: type.label }))]} />
+              <Select size="small" aria-label="按类型筛选" value={query.type ?? ""} onChange={(value: string) => updateFilters({ type: value as KnowledgeAssetType || undefined, category: undefined, tag: undefined })} className="min-w-0 w-full xl:w-32" options={[{ value: "", label: "全部类型" }, ...availableTypes.map((type) => ({ value: type.id, label: type.label }))]} />
               <Select size="small" aria-label="按分类筛选" value={query.category ?? ""} onChange={(value: string) => updateFilters({ category: value || undefined })} className="min-w-0 w-full xl:w-32" options={[{ value: "", label: "全部分类" }, ...result.categories.map((category) => ({ value: category, label: category }))]} />
               <Select size="small" aria-label="按标签筛选" value={query.tag ?? ""} onChange={(value: string) => updateFilters({ tag: value || undefined })} className="min-w-0 w-full xl:w-32" options={[{ value: "", label: "全部标签" }, ...result.tags.map((tag) => ({ value: tag, label: `#${tag}` }))]} />
               <Select size="small" aria-label="排序方式" value={query.sort ?? "updated-desc"} onChange={(value: KnowledgeLibraryQuery["sort"]) => updateFilters({ sort: value })} className="min-w-0 w-full xl:w-32" options={[{ value: "updated-desc", label: "最近更新" }, { value: "title-asc", label: "名称 A-Z" }, { value: "title-desc", label: "名称 Z-A" }]} />
