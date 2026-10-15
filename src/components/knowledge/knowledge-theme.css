@@ -192,6 +192,7 @@ body:has(.knowledge-detail-theme) .hub-document-header :is(a, button):focus-visi
   .knowledge-detail-theme .knowledge-detail-metadata dl { grid-template-columns: minmax(0, 1fr); }
 }
 @media (min-width: 1440px) {
+  .knowledge-detail-theme .knowledge-workspace-shell { width: 100%; max-width: 1440px; margin-inline: auto; }
   .knowledge-detail-theme .knowledge-document { padding: 32px 48px; }
 }
 @media (max-width: 800px) {
