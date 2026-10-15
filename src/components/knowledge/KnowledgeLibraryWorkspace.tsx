@@ -5,10 +5,8 @@ import { useRouter } from "next/navigation";
 import { ArrowUpRight, BookOpen, Bot, Boxes, ExternalLink, FileText, GraduationCap, Search, SlidersHorizontal, Type, Wrench } from "lucide-react";
 import { useState } from "react";
 import { KnowledgeCreateMenu } from "@/components/knowledge/KnowledgeCreateMenu";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { Button, Input, Select, Tag as Badge } from "antd";
+import { KnowledgeThemeProvider } from "@/components/knowledge/KnowledgeThemeProvider";
 import type { KnowledgeAssetType, KnowledgeAssetView, KnowledgeLibraryQuery, KnowledgeLibraryResult, KnowledgeSection } from "@/types/knowledge";
 
 const sections: Array<{ id: "all" | KnowledgeSection; label: string; icon: typeof BookOpen }> = [
@@ -86,7 +84,7 @@ function AssetRow({ item, query }: { item: KnowledgeAssetView; query: KnowledgeL
     </>
   );
 
-  const className = "library-row group grid min-h-16 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3 lg:grid-cols-[minmax(18rem,1.8fr)_minmax(9rem,0.75fr)_minmax(10rem,0.9fr)_5.5rem_1.25rem] lg:gap-4 lg:px-6";
+  const className = "library-row knowledge-list-columns group grid min-h-16 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3 lg:grid-cols-[minmax(18rem,1.8fr)_minmax(9rem,0.75fr)_minmax(10rem,0.9fr)_5.5rem_1.25rem] lg:gap-4 lg:px-6";
   return item.route.kind === "external"
     ? <a href={item.route.href} target="_blank" rel="noreferrer" className={className}>{content}</a>
     : <a href={href} className={className}>{content}</a>;
@@ -112,7 +110,8 @@ function SecondaryNavigation({ activeSection, query }: { activeSection: "all" | 
 
 export function KnowledgeWorkspaceShell({ mode, sidebar, children }: { mode: "browse" | "authoring"; sidebar?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <main className="knowledge-workspace flex min-w-0 flex-col" data-workspace-mode={mode} id="main-content">
+    <KnowledgeThemeProvider>
+    <main className="knowledge-workspace knowledge-theme flex min-w-0 flex-col" data-hub-visual="v1.1" data-workspace-mode={mode} id="main-content">
       <div className="knowledge-workspace-shell flex min-h-[calc(100dvh-var(--app-header-height))] min-w-0 flex-1 flex-col lg:flex-row">
         {mode === "browse" ? sidebar : null}
         <section className="knowledge-workspace-main flex min-w-0 flex-1 flex-col bg-[hsl(var(--surface))]" aria-label={mode === "browse" ? "知识资产工作区" : "知识内容创作工作区"}>
@@ -120,6 +119,7 @@ export function KnowledgeWorkspaceShell({ mode, sidebar, children }: { mode: "br
         </section>
       </div>
     </main>
+    </KnowledgeThemeProvider>
   );
 }
 
@@ -153,14 +153,14 @@ export function KnowledgeLibraryWorkspace({ result, query, children }: { result:
             {sections.map((section) => {
               const Icon = section.icon;
               const active = activeSection === section.id;
-              return <Link key={section.id} href={buildHref(query, { asset: undefined, section: section.id, type: undefined, category: undefined, tag: undefined })} className={`flex min-h-10 items-center gap-2 px-2.5 text-sm font-medium transition ${active ? "bg-foreground text-white" : "text-muted-foreground hover:bg-[hsl(var(--surface-raised))] hover:text-foreground"}`}><Icon size={15} />{section.label}</Link>;
+              return <Link key={section.id} href={buildHref(query, { asset: undefined, section: section.id, type: undefined, category: undefined, tag: undefined })} className={`flex min-h-10 items-center gap-2 px-2.5 text-sm font-medium transition ${active ? "knowledge-nav-active" : "text-muted-foreground hover:bg-[hsl(var(--surface-raised))] hover:text-foreground"}`}><Icon size={15} />{section.label}</Link>;
             })}
           </nav>
           <div className="lg:hidden"><SecondaryNavigation activeSection={activeSection} query={query} /></div>
           <div className="hidden lg:block"><SecondaryNavigation activeSection={activeSection} query={query} /></div>
       </aside>
     }>
-          {!isDetail ? <header className="border-b border-border px-4 py-4 md:px-6">
+          {!isDetail ? <header className="knowledge-list-header border-b border-border px-4 py-4 md:px-6">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
               <div className="flex min-w-0 items-center gap-3 xl:w-52 xl:shrink-0">
                 <div className="min-w-0">
@@ -170,10 +170,9 @@ export function KnowledgeLibraryWorkspace({ result, query, children }: { result:
               </div>
               <form onSubmit={submitSearch} className="flex min-w-0 flex-1 gap-2">
                 <div className="relative min-w-0 flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} aria-hidden="true" />
-                  <Input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索知识资产" aria-label="搜索知识资产" className="pl-9" controlSize="md" />
+                  <Input prefix={<Search className="text-muted-foreground" size={16} aria-hidden="true" />} value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索知识资产" aria-label="搜索知识资产" />
                 </div>
-                <Button type="submit" size="md">搜索</Button>
+                <Button htmlType="submit">搜索</Button>
               </form>
               <div className="self-end xl:self-auto"><KnowledgeCreateMenu returnTo={buildHref(query, { asset: undefined })} /></div>
             </div>
@@ -182,10 +181,10 @@ export function KnowledgeLibraryWorkspace({ result, query, children }: { result:
           {!isDetail ? <div className="flex flex-col gap-2 border-b border-border bg-[hsl(var(--surface-subtle)/0.36)] px-4 py-3 md:px-6 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex items-center gap-2 text-xs text-muted-foreground"><SlidersHorizontal size={15} />筛选与排序</div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:flex">
-              <Select aria-label="按类型筛选" value={query.type ?? ""} onChange={(event) => updateFilters({ type: event.target.value as KnowledgeAssetType || undefined, category: undefined, tag: undefined })} controlSize="sm" className="min-w-0 xl:min-w-32"><option value="">全部类型</option>{types.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}</Select>
-              <Select aria-label="按分类筛选" value={query.category ?? ""} onChange={(event) => updateFilters({ category: event.target.value || undefined })} controlSize="sm" className="min-w-0 xl:min-w-32"><option value="">全部分类</option>{result.categories.map((category) => <option key={category} value={category}>{category}</option>)}</Select>
-              <Select aria-label="按标签筛选" value={query.tag ?? ""} onChange={(event) => updateFilters({ tag: event.target.value || undefined })} controlSize="sm" className="min-w-0 xl:min-w-32"><option value="">全部标签</option>{result.tags.map((tag) => <option key={tag} value={tag}>#{tag}</option>)}</Select>
-              <Select aria-label="排序方式" value={query.sort ?? "updated-desc"} onChange={(event) => updateFilters({ sort: event.target.value as KnowledgeLibraryQuery["sort"] })} controlSize="sm" className="min-w-0 xl:min-w-32"><option value="updated-desc">最近更新</option><option value="title-asc">名称 A-Z</option><option value="title-desc">名称 Z-A</option></Select>
+              <Select aria-label="按类型筛选" value={query.type ?? ""} onChange={(value: string) => updateFilters({ type: value as KnowledgeAssetType || undefined, category: undefined, tag: undefined })} className="min-w-0 w-full xl:w-32" options={[{ value: "", label: "全部类型" }, ...types.map((type) => ({ value: type.id, label: type.label }))]} />
+              <Select aria-label="按分类筛选" value={query.category ?? ""} onChange={(value: string) => updateFilters({ category: value || undefined })} className="min-w-0 w-full xl:w-32" options={[{ value: "", label: "全部分类" }, ...result.categories.map((category) => ({ value: category, label: category }))]} />
+              <Select aria-label="按标签筛选" value={query.tag ?? ""} onChange={(value: string) => updateFilters({ tag: value || undefined })} className="min-w-0 w-full xl:w-32" options={[{ value: "", label: "全部标签" }, ...result.tags.map((tag) => ({ value: tag, label: `#${tag}` }))]} />
+              <Select aria-label="排序方式" value={query.sort ?? "updated-desc"} onChange={(value: KnowledgeLibraryQuery["sort"]) => updateFilters({ sort: value })} className="min-w-0 w-full xl:w-32" options={[{ value: "updated-desc", label: "最近更新" }, { value: "title-asc", label: "名称 A-Z" }, { value: "title-desc", label: "名称 Z-A" }]} />
             </div>
           </div> : null}
 
@@ -193,12 +192,12 @@ export function KnowledgeLibraryWorkspace({ result, query, children }: { result:
 
           <div key={isDetail ? "detail" : "list"} className="workspace-content-transition flex min-h-0 flex-1 flex-col">
           {isDetail ? children : <div className="flex min-h-0 flex-1 flex-col">
-            <div className="hidden grid-cols-[minmax(18rem,1.8fr)_minmax(9rem,0.75fr)_minmax(10rem,0.9fr)_5.5rem_1.25rem] gap-4 border-b border-border bg-[hsl(var(--surface-subtle)/0.5)] px-6 py-2.5 font-mono text-[10px] uppercase tracking-[0.11em] text-muted-foreground lg:grid">
+            <div className="knowledge-list-columns hidden grid-cols-[minmax(18rem,1.8fr)_minmax(9rem,0.75fr)_minmax(10rem,0.9fr)_5.5rem_1.25rem] gap-4 border-b border-border bg-[hsl(var(--surface-subtle)/0.5)] px-6 py-2.5 text-xs font-medium text-muted-foreground lg:grid">
               <span>名称</span><span>类型 / 分类</span><span>标签</span><span>更新</span><span aria-hidden="true" />
             </div>
             {!allFailed && result.items.length ? <div className="library-list">{result.items.map((item) => <AssetRow key={item.key} item={item} query={query} />)}</div> : null}
-            {!allFailed && !result.items.length ? <div className="flex flex-1 items-center justify-center px-5 py-16 text-center"><div><FileText className="mx-auto text-muted-foreground" size={26} aria-hidden="true" /><h2 className="mt-3 text-base font-black">没有匹配的知识资产</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">尝试更换关键词或清除筛选。</p>{hasFilters ? <Button asChild variant="outline" className="mt-5"><Link href="/knowledge">清空筛选</Link></Button> : null}</div></div> : null}
-            {allFailed ? <div className="flex flex-1 items-center justify-center px-5 py-16 text-center"><div><h2 className="text-base font-black">知识库暂时无法读取</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">数据来源暂不可用，请稍后重试。现有模块页面与后台维护功能不受影响。</p><Button asChild variant="outline" className="mt-5"><Link href={buildHref(query, {})}>重新加载</Link></Button></div></div> : null}
+            {!allFailed && !result.items.length ? <div className="flex flex-1 items-center justify-center px-5 py-16 text-center"><div><FileText className="mx-auto text-muted-foreground" size={26} aria-hidden="true" /><h2 className="mt-3 text-base font-black">没有匹配的知识资产</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">尝试更换关键词或清除筛选。</p>{hasFilters ? <Button href="/knowledge" className="mt-5">清空筛选</Button> : null}</div></div> : null}
+            {allFailed ? <div className="flex flex-1 items-center justify-center px-5 py-16 text-center"><div><h2 className="text-base font-black">知识库暂时无法读取</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">数据来源暂不可用，请稍后重试。现有模块页面与后台维护功能不受影响。</p><Button href={buildHref(query, {})} className="mt-5">重新加载</Button></div></div> : null}
           </div>}
           </div>
     </KnowledgeWorkspaceShell>

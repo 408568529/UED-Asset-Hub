@@ -55,7 +55,7 @@
   box-sizing: border-box;
 }
 
-[class*="rounded-"] {
+[class*="rounded-"]:not(:where([data-hub-visual="v1.1"], [data-hub-visual="v1.1"] *)) {
   border-radius: var(--radius) !important;
 }
 

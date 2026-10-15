@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { normalizeLegacyEscapedMarkdown } from "@/lib/markdown";
-import { TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Segmented } from "antd";
 
 function safeMarkdownUrl(url: string) {
   const normalized = url.trim().toLocaleLowerCase();
@@ -23,10 +23,7 @@ export function MarkdownKnowledgeDetail({ content }: { content: string | null })
     <section>
       <header className="flex min-h-14 items-center justify-between gap-4 border-b border-border px-4 md:px-6">
         <h2 className="text-sm font-black">Markdown 正文</h2>
-        <TabsList className="gap-5 border-b-0">
-          <TabsTrigger active={view === "rendered"} onClick={() => setView("rendered")}>渲染视图</TabsTrigger>
-          <TabsTrigger active={view === "source"} onClick={() => setView("source")}>源码视图</TabsTrigger>
-        </TabsList>
+        <Segmented value={view} onChange={(value) => setView(value as "rendered" | "source")} aria-label="Markdown 查看方式" options={[{ value: "rendered", label: "预览" }, { value: "source", label: "Markdown" }]} />
       </header>
       {view === "source" ? (
         <pre key="source" className="markdown-source-view workspace-section-transition m-4 overflow-x-auto whitespace-pre-wrap border border-border p-4 font-mono text-[13px] leading-6 md:m-6">{content || "（空 Markdown 文档）"}</pre>

@@ -4,8 +4,7 @@ import { MarkdownKnowledgeDetail } from "@/components/knowledge/MarkdownKnowledg
 import { FontPreview } from "@/components/font/FontPreview";
 import { PromptCopyButton } from "@/components/prompt/PromptCopyButton";
 import { TrainingPlayer } from "@/components/training/TrainingPlayer";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, Tag as Badge } from "antd";
 import type { FontAsset } from "@/types/font";
 import type { KnowledgeAssetView } from "@/types/knowledge";
 import type { PromptAsset } from "@/types/prompt";
@@ -33,7 +32,7 @@ function DetailMetadata({ asset, markdown }: { asset: KnowledgeAssetView; markdo
   const microSpec = markdown?.metadata.documentType === "micro-spec" ? markdown.metadata : null;
   return (
     <aside className="border-t border-border px-4 py-5 xl:border-l xl:border-t-0 xl:px-6" aria-label="资产元数据">
-      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Metadata</p>
+      <p className="text-xs font-medium text-muted-foreground">资产信息</p>
       <dl className="mt-4 grid gap-4 text-sm">
         <div><dt className="text-xs text-muted-foreground">类型</dt><dd className="mt-1 font-bold">{asset.assetTypeLabel}</dd></div>
         <div><dt className="text-xs text-muted-foreground">分类</dt><dd className="mt-1 font-bold">{asset.businessCategory || "未分类"}</dd></div>
@@ -56,16 +55,16 @@ export function KnowledgeWorkspaceDetail({ detail, backHref }: { detail: Knowled
   const action = detail.kind === "prompt"
     ? <PromptCopyButton promptId={detail.item.id} content={detail.item.content} />
     : detail.kind === "skill"
-      ? <Button asChild size="sm"><a href={`/api/skills/${detail.item.id}/download`}><Download size={15} />下载 Skill</a></Button>
+      ? <Button type="primary" href={`/api/skills/${detail.item.id}/download`}><Download size={15} />下载 Skill</Button>
       : detail.kind === "font"
-        ? <Button asChild size="sm"><a href={`/api/fonts/${detail.item.id}/download`}><Download size={15} />下载字体</a></Button>
+        ? <Button type="primary" href={`/api/fonts/${detail.item.id}/download`}><Download size={15} />下载字体</Button>
         : detail.kind === "markdown"
-          ? <Button asChild size="sm"><Link href={appendKnowledgeReturnHref(`/admin/knowledge/${encodeURIComponent(detail.item.metadata.id)}/edit`, backHref)}><Pencil size={15} />编辑 Markdown</Link></Button>
+          ? <Button type="primary" href={appendKnowledgeReturnHref(`/admin/knowledge/${encodeURIComponent(detail.item.metadata.id)}/edit`, backHref)}><Pencil size={15} />编辑 Markdown</Button>
           : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" aria-label={`${asset.title} 详情`}>
-      <header className="border-b border-border px-4 py-4 md:px-6">
+      <header className="knowledge-detail-header border-b border-border px-4 py-4 md:px-6">
         <Link href={backHref} className="inline-flex min-h-10 items-center gap-2 text-sm font-bold text-muted-foreground transition hover:text-foreground"><ArrowLeft size={16} />返回列表</Link>
         <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
