@@ -225,7 +225,7 @@ body:has(.knowledge-visual-theme) .hub-document-header :is(a, button):focus-visi
 .knowledge-visual-theme .knowledge-mode .ant-segmented-item { flex: 0 1 auto; border-radius: 6px; }
 .knowledge-visual-theme .knowledge-mode .ant-segmented-item-label { min-height: 32px; padding-inline: 16px; line-height: 32px; }
 .knowledge-visual-theme .knowledge-mode :is(.ant-segmented-thumb, .ant-segmented-item-selected) { background: var(--uedv-surface); border-radius: 6px; box-shadow: 0 1px 3px #0000000a; }
-.knowledge-visual-theme .markdown-editor { border-color: var(--uedv-control-border); border-radius: 8px; --crepe-font-default: var(--uedv-font); --crepe-font-title: var(--uedv-font); --crepe-base-font-size: 15px; }
+.knowledge-visual-theme .markdown-editor { border-color: var(--uedv-control-border); border-radius: 8px; }
 .knowledge-visual-theme .markdown-editor:focus-within { border-color: #14141480; box-shadow: 0 0 0 2px #14141414; }
 .knowledge-visual-theme .knowledge-form-actions { padding-top: 0; border: 0; }
 .knowledge-create-popup .text-muted-foreground { color: #141414a6; }
@@ -236,5 +236,5 @@ body:has(.knowledge-visual-theme) .hub-document-header :is(a, button):focus-visi
   .knowledge-visual-theme .knowledge-list-filters > div:last-child { width: 100%; }
 }
 
-.knowledge-visual-theme .markdown-editor .milkdown { border-radius: inherit; }
+.knowledge-visual-theme .markdown-editor .milkdown { border-radius: inherit; --crepe-font-default: var(--uedv-font); --crepe-font-title: var(--uedv-font); --crepe-font-code: var(--uedv-mono); --crepe-base-font-size: 15px; }
 .knowledge-visual-theme .markdown-editor .milkdown-top-bar { border-radius: 8px 8px 0 0; }
