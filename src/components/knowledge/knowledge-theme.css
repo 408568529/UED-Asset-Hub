@@ -296,9 +296,9 @@ body:has(.knowledge-visual-theme, .asset-visual-theme) .hub-document-header :is(
 .knowledge-visual-theme .knowledge-training-header .knowledge-search { width: 100%; max-width: none; }
 @media (min-width: 768px) {
   .knowledge-visual-theme .knowledge-training-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .knowledge-visual-theme .knowledge-training-header .knowledge-search { width: calc((100% - 24px) / 2); }
+  .knowledge-visual-theme .knowledge-training-header .knowledge-search > div { flex: 0 0 calc((100% - 24px) / 2); }
 }
 @media (min-width: 1024px) {
   .knowledge-visual-theme .knowledge-training-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .knowledge-visual-theme .knowledge-training-header .knowledge-search { width: calc((100% - 48px) / 3); }
+  .knowledge-visual-theme .knowledge-training-header .knowledge-search > div { flex: 0 0 calc((100% - 48px) / 3); }
 }
