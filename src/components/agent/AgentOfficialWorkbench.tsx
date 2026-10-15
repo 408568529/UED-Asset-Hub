@@ -119,7 +119,7 @@ export function AgentOfficialWorkbench() {
         if (!isCurrent(scope)) return;
         actionLockRef.current = false;
         setState({ status: "error", kind: "agent-unavailable", runtime: null });
-      }, 15_000);
+      }, 45_000);
     } catch {
       if (!isCurrent(scope)) return;
       actionLockRef.current = false;

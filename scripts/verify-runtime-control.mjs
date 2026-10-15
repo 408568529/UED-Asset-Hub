@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { acceptsSameOriginJsonMutation, invokeRuntimeControl, invokeRuntimeShutdown } from "../src/lib/runtimeControl.ts";
 import { createRuntimeControlBridge, requestRuntimeControl, runtimeControlEndpoint } from "./runtime-control-bridge.mjs";
+
+const workbenchSource = await readFile(new URL("../src/components/agent/AgentOfficialWorkbench.tsx", import.meta.url), "utf8");
+assert.match(workbenchSource, /frameLoadTimerRef\.current = window\.setTimeout\([\s\S]*?}, 45_000\);/, "iframe load remains bounded while allowing the measured Windows startup latency");
 
 const ready = { status: "ready", phase: null, reasonCode: null, operationId: null, startedAt: null, generation: 7, credentialStatus: "configured", retryable: false, shell: "ready", operation: null };
 
@@ -44,12 +47,12 @@ async function testApplicationStatusAllowsSlowWindowsHealthCheck() {
   const previousToken = process.env.RUNTIME_CONTROL_TOKEN;
   let shutdownCalls = 0;
   const binding = { supervisorInstanceId: "supervisor", runtimeInstanceId: "runtime", generation: 7 };
-  const fixture = await createFixture({ inspect: async () => { await new Promise((resolve) => setTimeout(resolve, 5_500)); return ready; }, shutdownBinding: () => binding, shutdown: async () => { shutdownCalls += 1; } });
+  const fixture = await createFixture({ inspect: async () => { await new Promise((resolve) => setTimeout(resolve, 16_000)); return ready; }, shutdownBinding: () => binding, shutdown: async () => { shutdownCalls += 1; } });
   process.env.RUNTIME_CONTROL_ENDPOINT = fixture.endpoint;
   process.env.RUNTIME_CONTROL_TOKEN = "control-token";
   try {
     const state = await invokeRuntimeControl("status");
-    assert.equal(state.status, "ready", "read-only Windows health inspection can exceed the former five-second deadline");
+    assert.equal(state.status, "ready", "read-only Windows health inspection can exceed the former fifteen-second deadline");
     await invokeRuntimeShutdown();
     assert.equal(shutdownCalls, 1, "graceful shutdown obtains its binding after a slow read-only status inspection");
   } finally {

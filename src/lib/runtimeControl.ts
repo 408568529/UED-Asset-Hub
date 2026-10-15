@@ -71,14 +71,14 @@ function sendControlRequest(endpoint: string, token: string, operation: "status"
 
 export async function invokeRuntimeControl(operation: "status" | "start"): Promise<RuntimeState> {
   const { endpoint, token } = requireControlConfig();
-  const body = await sendControlRequest(endpoint, token, operation, undefined, operation === "status" ? 15_000 : 5_000);
+  const body = await sendControlRequest(endpoint, token, operation, undefined, operation === "status" ? 30_000 : 5_000);
   if (!isRuntimeState(body.runtime)) throw new Error("Runtime control failed.");
   return body.runtime;
 }
 
 export async function invokeRuntimeShutdown() {
   const { endpoint, token } = requireControlConfig();
-  const status = await sendControlRequest(endpoint, token, "status", undefined, 15_000);
+  const status = await sendControlRequest(endpoint, token, "status", undefined, 30_000);
   if (!isRuntimeState(status.runtime) || !isShutdownBinding(status.shutdownBinding)) throw new Error("Runtime shutdown binding is unavailable.");
   const result = await sendControlRequest(endpoint, token, "shutdown", status.shutdownBinding, 90_000);
   if (result.shutdown?.status !== "terminal") throw new Error("Runtime shutdown failed.");
