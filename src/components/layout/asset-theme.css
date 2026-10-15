@@ -198,3 +198,13 @@ body:has(.home-header) footer .border-primary { border-color: #2ccc6c; }
 .asset-visual-theme .asset-search-results .library-row { border: 0; border-bottom: 1px solid var(--uedv-border); padding: 20px 0; background: transparent; box-shadow: none; }
 .asset-visual-theme .asset-search-results .library-row:hover { background: var(--uedv-hover); }
 .asset-visual-theme .asset-search-results h2 { font-size: 18px; line-height: 28px; font-weight: 600; overflow-wrap: anywhere; }
+
+/* Training keeps its existing 1 / 2 / 3-column responsive grid. */
+.asset-visual-theme .training-media-card { overflow: hidden; border: 1px solid var(--uedv-border); border-radius: 8px; background: var(--uedv-surface); box-shadow: none; }
+.asset-visual-theme .training-media-card:hover { border-color: #14141440; }
+.asset-visual-theme .training-media-card h3 { font-size: 18px; line-height: 26px; }
+.asset-visual-theme .training-media-card .absolute.bottom-4 { border-radius: 50%; background: var(--uedv-brand); color: #0a2615; }
+
+.asset-visual-theme .training-video-search { width: 100%; max-width: none; }
+@media (min-width: 768px) { .asset-visual-theme .training-video-search { width: calc((100% - 24px) / 2); } }
+@media (min-width: 1024px) { .asset-visual-theme .training-video-search { width: calc((100% - 48px) / 3); } }

@@ -17,6 +17,18 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
     tags: params.tag ? [params.tag] : undefined
   });
 
+  const returnParams = new URLSearchParams();
+  for (const key of ["q", "type", "tag"] as const) {
+    if (params[key]) returnParams.set(key, params[key]);
+  }
+  const returnTo = returnParams.size ? `/search?${returnParams}` : "/search";
+  const resultHref = (href: string) => {
+    if (!/^\/(?:skills|fonts|prompts|training)\/[^/?#]+(?:[?#]|$)/.test(href)) return href;
+    const url = new URL(href, "http://localhost");
+    url.searchParams.set("returnTo", returnTo);
+    return `${url.pathname}${url.search}${url.hash}`;
+  };
+
   return (
     <main className="asset-search-page page-shell page-frame">
       <header className="asset-search-header surface-panel border-t-[3px] border-t-primary p-6 md:p-9">
@@ -34,7 +46,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
 
       <section className="asset-search-results library-list mt-4">
         {results.map((result) => (
-          <Link key={`${result.type}-${result.id}`} href={result.url} className="library-row group grid gap-5 px-5 py-6 md:grid-cols-[160px_1fr_auto] md:items-center">
+          <Link key={`${result.type}-${result.id}`} href={resultHref(result.url)} className="library-row group grid gap-5 px-5 py-6 md:grid-cols-[160px_1fr_auto] md:items-center">
             <div>
               <Badge>{result.typeLabel}</Badge>
               <p className="mt-3 font-mono text-xs text-muted-foreground">{result.updatedAt.slice(0, 10)}</p>

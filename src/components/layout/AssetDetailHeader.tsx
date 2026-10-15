@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
+import { SearchResultBackLink } from "@/components/search/SearchResultBackLink";
 
 export function AssetDetailHeader({
   eyebrow,
@@ -18,6 +19,8 @@ export function AssetDetailHeader({
   actions?: ReactNode;
 }) {
   return (
+    <>
+      <Suspense fallback={null}><SearchResultBackLink /></Suspense>
     <header className="asset-detail-header surface-panel overflow-hidden border-t-[3px] border-t-primary">
       <div className="asset-detail-heading grid lg:grid-cols-[9rem_minmax(0,1fr)_19rem]">
         <div className="asset-detail-marker flex items-center justify-between border-b border-border bg-[hsl(var(--surface-subtle)/0.62)] p-5 lg:flex-col lg:items-start lg:border-b-0 lg:border-r lg:p-6">
@@ -35,5 +38,6 @@ export function AssetDetailHeader({
         </aside>
       </div>
     </header>
+    </>
   );
 }
