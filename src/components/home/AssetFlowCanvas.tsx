@@ -83,7 +83,7 @@ export function AssetFlowCanvas({ modules }: { modules: ModuleSummary[] }) {
           const distance = Math.hypot(point.x - next.x, point.y - next.y);
           if (distance > Math.min(width, height) * 0.14) continue;
           const opacity = Math.max(0, 0.13 - distance / Math.min(width, height) * 0.5);
-          activeContext.strokeStyle = `rgba(188, 255, 58, ${opacity})`;
+          activeContext.strokeStyle = `rgba(44, 204, 108, ${opacity})`;
           activeContext.beginPath();
           activeContext.moveTo(point.x, point.y);
           activeContext.lineTo(next.x, next.y);
@@ -96,21 +96,21 @@ export function AssetFlowCanvas({ modules }: { modules: ModuleSummary[] }) {
         const y = anchor.y * height;
         const radius = 54 + (modules[index]?.count || 0) * 1.25;
         const gradient = activeContext.createRadialGradient(x, y, 0, x, y, radius);
-        gradient.addColorStop(0, "rgba(190, 255, 60, 0.20)");
-        gradient.addColorStop(0.35, "rgba(190, 255, 60, 0.05)");
-        gradient.addColorStop(1, "rgba(190, 255, 60, 0)");
+        gradient.addColorStop(0, "rgba(44, 204, 108, 0.20)");
+        gradient.addColorStop(0.35, "rgba(44, 204, 108, 0.05)");
+        gradient.addColorStop(1, "rgba(44, 204, 108, 0)");
         activeContext.fillStyle = gradient;
         activeContext.beginPath();
         activeContext.arc(x, y, radius, 0, Math.PI * 2);
         activeContext.fill();
-        activeContext.fillStyle = "rgba(210, 255, 93, 0.9)";
+        activeContext.fillStyle = "rgba(44, 204, 108, 0.9)";
         activeContext.beginPath();
         activeContext.arc(x, y, 2.2, 0, Math.PI * 2);
         activeContext.fill();
       });
 
       resolved.forEach((point, index) => {
-        activeContext.fillStyle = index % 9 === 0 ? "rgba(203, 255, 86, 0.86)" : "rgba(229, 237, 219, 0.34)";
+        activeContext.fillStyle = index % 9 === 0 ? "rgba(44, 204, 108, 0.86)" : "rgba(229, 237, 219, 0.34)";
         activeContext.beginPath();
         activeContext.arc(point.x, point.y, points[index].size, 0, Math.PI * 2);
         activeContext.fill();

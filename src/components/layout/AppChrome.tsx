@@ -9,7 +9,7 @@ import { Header } from "@/components/layout/Header";
 export function AppChrome({ children }: Readonly<{ children: React.ReactNode }>) {
   const pathname = usePathname();
   const agentWorkbench = pathname === "/agent";
-  const assetWorkspace = pathname === "/agent/settings" || /^\/(?:haldur-design-skill|prompts|skills|fonts|training|assets|products|components|sops|test-environments)(?:\/|$)/.test(pathname) || /^\/admin(?:\/(?:prompts|skills|fonts|training|sops|components|products|uploads|login)(?:\/|$)|$)/.test(pathname);
+  const assetWorkspace = pathname === "/search" || pathname === "/agent/settings" || /^\/(?:haldur-design-skill|prompts|skills|fonts|training|assets|products|components|sops|test-environments)(?:\/|$)/.test(pathname) || /^\/admin(?:\/(?:prompts|skills|fonts|training|sops|components|products|uploads|login)(?:\/|$)|$)/.test(pathname);
 
   return (
     <div className={agentWorkbench ? "agent-shell-theme flex h-dvh min-h-0 flex-col overflow-hidden" : "flex min-h-screen flex-col"}>

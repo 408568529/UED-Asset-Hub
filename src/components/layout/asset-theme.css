@@ -182,3 +182,19 @@ body:has(.home-header) footer .border-t { border-color: #ffffff14; }
 .asset-visual-theme .haldur-unavailable-page { display: grid; width: 100%; max-width: none; min-height: calc(100dvh - var(--app-header-height)); place-items: center; background: transparent; }
 .asset-visual-theme .haldur-unavailable-content { width: 100%; max-width: 448px; border: 1px solid #1414141a; border-radius: 8px; padding: 24px; background: #fafafa; box-shadow: none; }
 .asset-visual-theme .haldur-unavailable-content h1 { font-size: 20px; line-height: 30px; }
+
+/* Home brand accent follows the supplied Qwen token, without global token changes. */
+body:has(.home-header) footer .border-primary { border-color: #2ccc6c; }
+
+.asset-visual-theme .asset-search-page { width: 100%; max-width: 1440px; margin-inline: auto; background: transparent; }
+.asset-visual-theme .asset-search-header { border: 0; padding: 0; background: transparent; }
+.asset-visual-theme .asset-search-header h1 { margin-top: 12px; }
+.asset-visual-theme .asset-search-header > p:last-of-type { margin-top: 12px; font-size: 14px; line-height: 24px; }
+.asset-visual-theme .asset-search-header input[data-ui-control] { height: 36px; border-radius: 4px; }
+.asset-visual-theme .asset-search-header form [data-slot="button"] { height: 36px; min-height: 36px; border-radius: 4px; border-color: var(--uedv-text); background: var(--uedv-text); color: #fff; }
+.asset-visual-theme .asset-search-header nav a { height: 32px; border-radius: 4px; padding-inline: 12px; font-weight: 400; border-color: transparent; }
+.asset-visual-theme .asset-search-header nav a:not(.bg-foreground):hover { background: var(--uedv-hover); }
+.asset-visual-theme .asset-search-results { border: 0; background: transparent; }
+.asset-visual-theme .asset-search-results .library-row { border: 0; border-bottom: 1px solid var(--uedv-border); padding: 20px 0; background: transparent; box-shadow: none; }
+.asset-visual-theme .asset-search-results .library-row:hover { background: var(--uedv-hover); }
+.asset-visual-theme .asset-search-results h2 { font-size: 18px; line-height: 28px; font-weight: 600; overflow-wrap: anywhere; }
