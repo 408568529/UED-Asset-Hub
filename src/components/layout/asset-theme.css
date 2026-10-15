@@ -89,23 +89,23 @@ body:has(.asset-visual-theme) [data-slot="dialog-overlay"] { background: #000000
 body:has(.asset-visual-theme) :is([data-slot="dropdown-menu-content"], [data-slot="popover-content"]) { max-width: calc(100vw - 24px); border: 1px solid #1414141a; border-radius: 10px; background: #fff; color: #141414; box-shadow: 0 5px 20px -5px #0000001a, 0 4px 20px -4px #00000012; }
 body:has(.asset-visual-theme) [data-slot="dropdown-menu-content"] [data-highlighted] { background: #1414140a; }
 body:has(.asset-visual-theme) [data-slot="dialog-content"] input { border-color: #14141426; }
-.home-header { --radius: 8px; background: #141414; color: #fff; border-color: #ffffff1a; backdrop-filter: none; }
-.home-header .hub-header-inner { width: 100%; max-width: none; min-height: 63px; margin: 0; padding-inline: 24px; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 16px; }
-.home-header .hub-header-brand { justify-self: start; gap: 10px; white-space: nowrap; }
-.home-header .hub-header-brand::after { content: ""; width: 1px; height: 22px; margin-left: 6px; background: #ffffff26; }
-.home-header .hub-header-mark { width: 32px; height: 32px; border: 0; background: #fff; color: #141414; }
-.home-header .hub-header-mark > span { width: 8px; height: 8px; background: #2ccc6c; }
-.home-header .hub-header-name { font-size: 15px; line-height: 20px; font-weight: 600; }
-.home-header .hub-header-subtitle { display: none; }
-.home-header nav[aria-label="主导航"] { gap: 4px; }
-.home-header nav[aria-label="主导航"] a { display: flex; min-height: 36px; align-items: center; border: 0; border-radius: 8px; padding: 0 12px; background: transparent; color: #ffffffa6; font-size: 13px; line-height: 20px; font-weight: 500; }
-.home-header nav[aria-label="主导航"] a::after { content: none; }
-.home-header nav[aria-label="主导航"] a:hover { background: #ffffff0a; color: #fff; }
-.home-header nav[aria-label="主导航"] a[aria-current="page"] { background: #fff; color: #141414; }
-.home-header .hub-header-actions :is(a, button) { min-height: 32px; border: 0; border-radius: 8px; padding-inline: 10px; background: transparent; color: #ffffffa6; box-shadow: none; font-size: 13px; font-weight: 500; }
-.home-header .hub-header-actions :is(a, button):hover { background: #ffffff0a; color: #fff; }
-.home-header .hub-header-actions svg { display: none; }
-.home-header :is(a, button):focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+:is(.home-header, .agent-shell-theme .hub-document-header) { --radius: 8px; background: #141414; color: #fff; border-color: #ffffff1a; backdrop-filter: none; }
+:is(.home-header, .agent-shell-theme .hub-document-header) .hub-header-inner { width: 100%; max-width: none; min-height: 63px; margin: 0; padding-inline: 24px; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 16px; }
+:is(.home-header, .agent-shell-theme .hub-document-header) .hub-header-brand { justify-self: start; gap: 10px; white-space: nowrap; }
+:is(.home-header, .agent-shell-theme .hub-document-header) .hub-header-brand::after { content: ""; width: 1px; height: 22px; margin-left: 6px; background: #ffffff26; }
+:is(.home-header, .agent-shell-theme .hub-document-header) .hub-header-mark { width: 32px; height: 32px; border: 0; background: #fff; color: #141414; }
+:is(.home-header, .agent-shell-theme .hub-document-header) .hub-header-mark > span { width: 8px; height: 8px; background: #2ccc6c; }
+:is(.home-header, .agent-shell-theme .hub-document-header) .hub-header-name { font-size: 15px; line-height: 20px; font-weight: 600; }
+:is(.home-header, .agent-shell-theme .hub-document-header) .hub-header-subtitle { display: none; }
+:is(.home-header, .agent-shell-theme .hub-document-header) nav[aria-label="主导航"] { gap: 4px; }
+:is(.home-header, .agent-shell-theme .hub-document-header) nav[aria-label="主导航"] a { display: flex; min-height: 36px; align-items: center; border: 0; border-radius: 8px; padding: 0 12px; background: transparent; color: #ffffffa6; font-size: 13px; line-height: 20px; font-weight: 500; }
+:is(.home-header, .agent-shell-theme .hub-document-header) nav[aria-label="主导航"] a::after { content: none; }
+:is(.home-header, .agent-shell-theme .hub-document-header) nav[aria-label="主导航"] a:hover { background: #ffffff0a; color: #fff; }
+:is(.home-header, .agent-shell-theme .hub-document-header) nav[aria-label="主导航"] a[aria-current="page"] { background: #fff; color: #141414; }
+:is(.home-header, .agent-shell-theme .hub-document-header) .hub-header-actions :is(a, button) { min-height: 32px; border: 0; border-radius: 8px; padding-inline: 10px; background: transparent; color: #ffffffa6; box-shadow: none; font-size: 13px; font-weight: 500; }
+:is(.home-header, .agent-shell-theme .hub-document-header) .hub-header-actions :is(a, button):hover { background: #ffffff0a; color: #fff; }
+:is(.home-header, .agent-shell-theme .hub-document-header) .hub-header-actions svg { display: none; }
+:is(.home-header, .agent-shell-theme .hub-document-header) :is(a, button):focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .home-search-controls { --radius-control: 8px; --control-height-lg: 40px; }
 .home-search-controls input[data-ui-control] { height: 40px; border: 1px solid #ffffff26; border-radius: 8px; background: #ffffff0a; color: #fff; font-size: 14px; box-shadow: none; }
 .home-search-controls input[data-ui-control]::placeholder { color: #ffffff80; }
@@ -129,7 +129,7 @@ body:has(.asset-visual-theme) [data-slot="dialog-content"] input { border-color:
 }
 @media (min-width: 1280px) { .asset-visual-theme { --site-gutter: 32px; } }
 @media (min-width: 1440px) { .asset-visual-theme { --site-gutter: 48px; } }
-@media (max-width: 800px) { .home-header .hub-header-inner { padding-inline: 16px; } }
+@media (max-width: 800px) { :is(.home-header, .agent-shell-theme .hub-document-header) .hub-header-inner { padding-inline: 16px; } }
 @media (max-width: 639px) { .asset-visual-theme { --site-gutter: 16px; } }
 
 .asset-visual-theme [class~="h-6"][class~="font-mono"] { border: 0; border-radius: 5px; background: var(--uedv-hover); font-family: var(--uedv-font); font-size: 12px; }
@@ -161,3 +161,24 @@ body:has(.home-header) footer .border-t { border-color: #ffffff14; }
 .asset-visual-theme .agent-model-settings label { font-weight: 500; }
 
 .asset-visual-theme > main:has(.agent-model-settings) { min-height: calc(100dvh - var(--app-header-height)); }
+
+/* Hub chrome only: these selectors never enter the DSH iframe. */
+.agent-shell-theme .agent-workbench-toolbar { min-height: 57px; border-color: #ffffff14; background: #141414; color: #ffffffa6; padding: 12px 24px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; }
+.agent-shell-theme .agent-workbench-toolbar > a { display: inline-flex; min-height: 32px; align-items: center; border: 1px solid #ffffff26; border-radius: 4px; padding: 0 12px; background: transparent; color: #f4f4f5; font-weight: 500; }
+.agent-shell-theme .agent-workbench-toolbar > a:hover { border-color: #ffffff66; background: #ffffff0a; }
+.agent-shell-theme .agent-workbench-toolbar > a:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+@media (max-width: 800px) { .agent-shell-theme .agent-workbench-toolbar { padding-inline: 16px; } }
+
+/* Runtime fallback keeps its dark surface and existing recovery actions. */
+.agent-shell-theme .agent-runtime-status { padding: 24px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; }
+.agent-shell-theme .agent-runtime-status-card { width: 100%; max-width: 448px; border-color: #ffffff1a; border-radius: 8px; padding: 24px; background: #181b20; color: #ffffffa6; line-height: 24px; }
+.agent-shell-theme .agent-runtime-status-card > p:first-child { color: #f4f4f5; font-size: 18px; line-height: 28px; font-weight: 600; }
+.agent-shell-theme .agent-runtime-status-card :is(button, a) { display: inline-flex; min-height: 32px; align-items: center; border: 1px solid #ffffff26; border-radius: 4px; padding: 4px 12px; background: #ffffff0a; color: #f4f4f5; font-size: 14px; line-height: 22px; }
+.agent-shell-theme .agent-runtime-status-card :is(button, a):hover { border-color: #ffffff66; background: #ffffff14; color: #fff; }
+.agent-shell-theme .agent-runtime-status-card :is(button, a):focus-visible { outline: 2px solid #d4d4d8; outline-offset: 3px; }
+
+/* Haldur fallback uses a quiet card without an outer white plate. */
+.asset-visual-theme:has(.haldur-unavailable-page) { background: hsl(var(--background)); }
+.asset-visual-theme .haldur-unavailable-page { display: grid; width: 100%; max-width: none; min-height: calc(100dvh - var(--app-header-height)); place-items: center; background: transparent; }
+.asset-visual-theme .haldur-unavailable-content { width: 100%; max-width: 448px; border: 1px solid #1414141a; border-radius: 8px; padding: 24px; background: #fafafa; box-shadow: none; }
+.asset-visual-theme .haldur-unavailable-content h1 { font-size: 20px; line-height: 30px; }

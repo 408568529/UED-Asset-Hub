@@ -168,7 +168,7 @@ export function HaldurDesignSkillWorkbench() {
   }
 
   if (loading && !snapshot) return <main className="page-shell page-frame"><p className="text-sm text-muted-foreground">正在读取 Haldur-Design-Skill…</p></main>;
-  if (!snapshot?.rootAvailable) return <main className="page-shell page-frame"><section className="mx-auto max-w-xl border border-destructive/25 bg-[hsl(var(--surface))] p-8 shadow-[var(--shadow-soft)]"><ShieldAlert className="text-destructive" size={28} /><h1 className="mt-5 text-2xl font-black">Haldur-Design-Skill 当前不可用</h1><p className="mt-3 text-sm leading-6 text-muted-foreground">{error ?? "未找到已配置的 Skill Root，系统不会自动创建或迁移目录。"}</p><Button className="mt-6" variant="outline" onClick={() => void reload()}>重新加载</Button></section></main>;
+  if (!snapshot?.rootAvailable) return <main className="haldur-unavailable-page page-shell page-frame"><section className="haldur-unavailable-content mx-auto max-w-xl border border-destructive/25 bg-[hsl(var(--surface))] p-8 shadow-[var(--shadow-soft)]"><ShieldAlert className="text-destructive" size={28} /><h1 className="mt-5 text-2xl font-black">Haldur-Design-Skill 当前不可用</h1><p className="mt-3 text-sm leading-6 text-muted-foreground">{error ?? "未找到已配置的 Skill Root，系统不会自动创建或迁移目录。"}</p><Button className="mt-6" variant="outline" onClick={() => void reload()}>重新加载</Button></section></main>;
 
   return <main ref={workbench} tabIndex={-1} className="haldur-workbench" id="main-content">
     <input ref={fileInput} className="sr-only" type="file" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; chooseFile(file); }} />
