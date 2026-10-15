@@ -6,7 +6,7 @@ import { spawn, execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { compatibleLoadHandler, officialClientSha256, patchedClientSha256, patchGenuiClientLoad } from "../agent-integration/scripts/genui-client-load-liveness.mjs";
+import { originalLoadHandler, compatibleLoadHandler, originalReadinessTimeout, compatibleReadinessTimeout, originalReadinessCleanup, compatibleReadinessCleanup, officialClientSha256, patchedClientSha256, patchGenuiClientLoad } from "../agent-integration/scripts/genui-client-load-liveness.mjs";
 
 async function freePort() {
   const server = createNetServer();
@@ -49,6 +49,8 @@ assert.equal(pluginLock.clientCompatibility.patchedClientSha256, patchedClientSh
 const compatibleClient = patchGenuiClientLoad(officialClient);
 assert.equal(createHash("sha256").update(compatibleClient).digest("hex"), patchedClientSha256);
 assert.equal(patchGenuiClientLoad(compatibleClient), compatibleClient);
+assert.equal(patchGenuiClientLoad(officialClient.replace(originalLoadHandler, compatibleLoadHandler)), compatibleClient);
+assert.equal(compatibleClient.replace(compatibleLoadHandler, originalLoadHandler).replace(compatibleReadinessTimeout, originalReadinessTimeout).replace(compatibleReadinessCleanup, originalReadinessCleanup), officialClient);
 assert.throws(() => patchGenuiClientLoad(officialClient + "changed"));
 assert.match(windowsInstaller, /genui-client-load-liveness\.mjs/);
 assert.match(windowsBuild, /genui-client-load-liveness\.mjs/);
@@ -69,6 +71,41 @@ for (const alive of [true, false]) {
 }
 const disposedLoad = loadHarness(true); disposedLoad.loaded(); disposedLoad.deactivate(); disposedLoad.settle(false); await Promise.resolve();
 assert.deepEqual(disposedLoad.calls, { verify: 1, close: 0, fail: 0 });
+
+const readinessHarness = new Function(`
+  let state = "loading", listener, observerCallback, disconnected = false, nextId = 0;
+  const timers = new Map(), messages = [];
+  const frameRef = { current: { contentWindow: { postMessage(value) { messages.push(value); } } } };
+  const meta = { artifactId: "same-artifact" }, activeVersionId = "same-version";
+  const window = { setTimeout(callback, ms) { const id = ++nextId; timers.set(id, { callback, ms }); return id; }, clearTimeout(id) { timers.delete(id); }, removeEventListener() {} };
+  const document = { visibilityState: "visible", addEventListener(type, callback) { listener = callback; }, removeEventListener(type, callback) { if (listener === callback) listener = undefined; } };
+  const IntersectionObserver = class { constructor(callback) { observerCallback = callback; } observe(frame) { if (frame !== frameRef.current) throw Error("wrong frame"); } disconnect() { disconnected = true; } };
+  const setFrameState = update => { state = update(state); };
+  const receive = () => {};
+  ${compatibleReadinessTimeout}
+  return { timers, messages, state: () => state,
+    intersect(value) { if (!disconnected) observerCallback([{ isIntersecting: value }]); },
+    visibility(value) { document.visibilityState = value; listener?.(); },
+    fire() { for (const timer of [...timers.values()]) timer.callback(); timers.clear(); },
+    ready() { state = "ready"; },
+    dispose() { ${compatibleReadinessCleanup} },
+    disconnected: () => disconnected
+  };
+`);
+const offscreen = readinessHarness(); offscreen.intersect(false);
+assert.equal(offscreen.timers.size, 0); assert.equal(offscreen.messages.length, 0);
+offscreen.intersect(true);
+assert.equal(offscreen.timers.size, 1); assert.equal([...offscreen.timers.values()][0].ms, 8000);
+assert.deepEqual(offscreen.messages[0], { source: "dsh-genui", type: "ready-request", artifactId: "same-artifact", versionId: "same-version" });
+offscreen.visibility("hidden"); assert.equal(offscreen.timers.size, 0);
+offscreen.visibility("visible"); assert.equal(offscreen.timers.size, 1);
+offscreen.intersect(false); assert.equal(offscreen.timers.size, 0);
+offscreen.intersect(true); offscreen.ready(); offscreen.fire(); assert.equal(offscreen.state(), "ready");
+const brokenVisible = readinessHarness(); brokenVisible.intersect(true); brokenVisible.fire(); assert.equal(brokenVisible.state(), "failed");
+const hiddenTab = readinessHarness(); hiddenTab.visibility("hidden"); hiddenTab.intersect(true); assert.equal(hiddenTab.timers.size, 0);
+hiddenTab.visibility("visible"); assert.equal(hiddenTab.timers.size, 1);
+hiddenTab.dispose(); assert.equal(hiddenTab.disconnected(), true); assert.equal(hiddenTab.timers.size, 0);
+hiddenTab.visibility("visible"); hiddenTab.intersect(true); assert.equal(hiddenTab.timers.size, 0);
 
 const adminSecret = randomBytes(32).toString("base64url");
 const username = "genui-boundary-test";
