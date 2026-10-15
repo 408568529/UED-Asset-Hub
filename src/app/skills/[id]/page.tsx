@@ -1,3 +1,5 @@
+import { MarkdownKnowledgeDetail } from "@/components/knowledge/MarkdownKnowledgeDetail";
+import { KnowledgeThemeProvider } from "@/components/knowledge/KnowledgeThemeProvider";
 import { notFound } from "next/navigation";
 import { AssetDetailHeader } from "@/components/layout/AssetDetailHeader";
 import { Badge } from "@/components/ui/badge";
@@ -24,9 +26,9 @@ export default async function SkillDetailPage({ params }: { params: Promise<{ id
 
       <section className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <article className="detail-surface p-6 md:p-8">
-          <p className="section-kicker">Documentation</p>
-          <h2 className="mt-3 text-2xl font-black">README</h2>
-          <pre className="mt-6 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{skill.readme || "暂无 README。"}</pre>
+          <KnowledgeThemeProvider>
+            <MarkdownKnowledgeDetail content={skill.readme || "暂无 README。"} />
+          </KnowledgeThemeProvider>
         </article>
         <aside className="detail-surface p-6 md:p-7">
           <p className="section-kicker">Archive</p>

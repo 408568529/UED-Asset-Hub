@@ -48,7 +48,7 @@ export function HaldurMarkdownDocumentPanel({ document, onClose, onSaved }: { do
   }
 
   const title = useMemo(() => document.path.split("/").slice(0, -1).join(" / "), [document.path]);
-  return <section className="min-w-0 bg-[hsl(var(--surface))]" aria-label={`${document.name} Markdown 文档`}>
+  return <section className="haldur-markdown-document min-w-0 bg-[hsl(var(--surface))]" aria-label={`${document.name} Markdown 文档`}>
     <header className="flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 md:px-6">
       <div className="min-w-0"><Button variant="ghost" size="sm" onClick={leave}><ArrowLeft size={15} />返回文件列表</Button><h2 className="mt-2 truncate text-xl font-black tracking-[-0.025em]">{document.name}</h2><p className="mt-1 text-xs text-muted-foreground">{title || "Haldur-Design-Skill"} · {document.size} B</p></div>
       <div className="flex items-center gap-2">{mode === "read" && canEdit ? <Button onClick={() => setMode("edit")}><Pencil size={15} />编辑</Button> : null}{mode === "edit" ? <><Button variant="outline" onClick={leave} disabled={saving}>取消</Button><Button onClick={() => void save()} disabled={!dirty || saving}>{saving ? "保存中…" : <><Save size={15} />保存</>}</Button></> : null}</div>

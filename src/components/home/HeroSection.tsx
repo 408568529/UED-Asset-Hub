@@ -74,7 +74,7 @@ export function HeroSection({ modules }: { modules: ModuleSummary[] }) {
               </Link>
             ))}
           </div>
-          <div className="mt-6 grid gap-3 border-t border-white/15 pt-5 lg:absolute lg:bottom-0 lg:left-0 lg:right-0 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div data-hub-visual="v1.1" className="home-search-controls mt-6 grid gap-3 border-t border-white/15 pt-5 lg:absolute lg:bottom-0 lg:left-0 lg:right-0 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
             <SearchBox tone="dark" target="/knowledge" placeholder="搜索资产名称、标签或使用场景" />
             <Link href="/knowledge" className="inline-flex min-h-12 items-center justify-center gap-2 border border-white/18 px-5 text-sm font-bold text-[#edf2e7] transition hover:border-[#b6ea4a] hover:text-[#b6ea4a]">
               进入知识库 <MoveUpRight size={16} />

@@ -96,7 +96,7 @@ export function RecentUpdatesSection({
     .slice(0, 6);
 
   return (
-    <section className={isDark ? "bg-[#080b0a] text-[#eef1e8]" : ""}>
+    <section className={isDark ? "home-recent-updates bg-[#080b0a] text-[#eef1e8]" : ""}>
       <div className="page-shell py-16 md:py-20">
       <Reveal>
         <div className={`mb-8 grid gap-6 border-t pt-6 md:grid-cols-[10rem_1fr] md:items-end ${isDark ? "border-white/15" : "border-border"}`}>

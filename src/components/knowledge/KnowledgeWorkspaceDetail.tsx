@@ -83,7 +83,7 @@ export function KnowledgeWorkspaceDetail({ detail, backHref }: { detail: Knowled
           </> : null}
           {detail.kind === "markdown" ? <MarkdownKnowledgeDetail content={detail.item.content} /> : null}
           {detail.kind === "skill" ? <>
-            <DetailSection title="README"><pre className="whitespace-pre-wrap bg-[hsl(var(--surface-subtle)/0.55)] p-4 font-sans text-sm leading-7 text-foreground">{detail.item.readme || "暂无 README。"}</pre></DetailSection>
+            <MarkdownKnowledgeDetail content={detail.item.readme || "暂无 README。"} />
             <DetailSection title="使用场景">{detail.item.usageScenarios.length ? <div className="flex flex-wrap gap-2">{detail.item.usageScenarios.map((scenario) => <Badge key={scenario}>{scenario}</Badge>)}</div> : "未填写使用场景。"}</DetailSection>
             <DetailSection title="更新说明">{detail.item.changeLog || "暂无更新说明。"}</DetailSection>
             <DetailSection title="版本记录">{detail.versions.length ? <div className="divide-y divide-border">{detail.versions.map((version) => <div key={version.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0"><div><p className="font-bold text-foreground">{version.version}</p><p className="mt-1 text-xs">{version.fileName} · {version.changeLog || "暂无说明"}</p></div><a href={`/api/skills/${detail.item.id}/download?versionId=${version.id}`} className="inline-flex items-center gap-1 text-sm font-bold text-foreground underline">下载 <Download size={14} /></a></div>)}</div> : "暂无历史版本。"}</DetailSection>
