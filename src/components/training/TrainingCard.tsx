@@ -14,7 +14,7 @@ export function formatDuration(seconds: number) {
 
 export function TrainingCard({ video }: { video: TrainingVideo }) {
   return (
-    <Link href={`/training/${video.id}`} className="training-media-card group block border border-border bg-[hsl(var(--surface))] shadow-[var(--shadow-soft)] transition-[border-color,transform] hover:-translate-y-0.5 hover:border-[hsl(var(--border-strong))]">
+    <Link href={`/training/${video.id}`} className="group block border border-border bg-[hsl(var(--surface))] shadow-[var(--shadow-soft)] transition-[border-color,transform] hover:-translate-y-0.5 hover:border-[hsl(var(--border-strong))]">
       <div className="relative aspect-video overflow-hidden bg-[hsl(var(--surface-subtle))] text-foreground">
         {video.coverPath ? <Image src={`/api/training/videos/${video.id}/cover`} alt="" fill unoptimized sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw" className="object-cover transition-transform duration-500 group-hover:scale-[1.03]" /> : (
           <div className="flex h-full flex-col justify-between p-6">

@@ -68,7 +68,7 @@ export function KnowledgeWorkspaceDetail({ detail, backHref, previousArticle, ne
     <div className="knowledge-document" aria-label={`${asset.title} 详情`}>
       <header className="knowledge-detail-header">
         <div className="knowledge-detail-actions">
-          <Link href={backHref} className="inline-flex items-center gap-2 text-sm text-muted-foreground transition hover:text-foreground"><ArrowLeft size={16} />返回列表</Link>
+          <Link href={backHref} className="inline-flex items-center gap-2 text-sm text-muted-foreground transition hover:text-foreground"><ArrowLeft size={16} />{backHref === "/search" || backHref.startsWith("/search?") ? "返回搜索结果" : "返回列表"}</Link>
           <div className="shrink-0">{action}</div>
         </div>
         <div className="knowledge-detail-intro">

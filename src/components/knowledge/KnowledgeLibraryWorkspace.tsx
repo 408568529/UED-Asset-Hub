@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, BookOpen, Bot, Boxes, ExternalLink, FileText, GraduationCap, Search, SlidersHorizontal, Type, Wrench } from "lucide-react";
+import { ArrowUpRight, BookOpen, Bot, Boxes, ExternalLink, FileText, GraduationCap, Play, Search, SlidersHorizontal, Type, Wrench } from "lucide-react";
 import { useState } from "react";
 import { KnowledgeCreateMenu } from "@/components/knowledge/KnowledgeCreateMenu";
 import { Button, Input, Select, Tag as Badge } from "antd";
@@ -90,6 +91,24 @@ function AssetRow({ item, query }: { item: KnowledgeAssetView; query: KnowledgeL
     : <a href={href} className={className}>{content}</a>;
 }
 
+function TrainingAssetCard({ item, query }: { item: KnowledgeAssetView; query: KnowledgeLibraryQuery }) {
+  const [coverFailed, setCoverFailed] = useState(false);
+  return (
+    <a href={buildHref(query, { asset: item.key })} className="knowledge-training-card">
+      <div className="knowledge-training-cover">
+        {coverFailed ? <GraduationCap size={36} aria-hidden="true" /> : <Image src={`/api/training/videos/${encodeURIComponent(item.id)}/cover`} alt="" fill unoptimized sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw" className="object-cover" onError={() => setCoverFailed(true)} />}
+        <span className="knowledge-training-play"><Play size={18} fill="currentColor" aria-hidden="true" /></span>
+      </div>
+      <div className="knowledge-training-card-body">
+        <p className="text-xs text-muted-foreground">{item.businessCategory || item.assetTypeLabel}</p>
+        <h2 className="mt-2 line-clamp-2 text-base font-semibold">{item.title}</h2>
+        <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{item.description || "暂无描述"}</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">{item.tags.slice(0, 2).map((tag) => <Badge key={tag}>#{tag}</Badge>)}<time dateTime={item.updatedAt}>{formatDate(item.updatedAt)}</time></div>
+      </div>
+    </a>
+  );
+}
+
 function SecondaryNavigation({ activeSection, query }: { activeSection: "all" | KnowledgeSection; query: KnowledgeLibraryQuery }) {
   const documentTypes = types.filter((type) => type.id === "knowledge" || type.id === "sop" || type.id === "component-spec" || type.id === "micro-spec" || type.id === "project");
   const aiTypes = types.filter((type) => type.id === "prompt" || type.id === "skill");
@@ -141,6 +160,7 @@ export function KnowledgeLibraryWorkspace({ result, query, children }: { result:
   }
 
   const isDetail = Boolean(children);
+  const trainingCards = activeSection === "training";
 
   return (
     <KnowledgeWorkspaceShell mode="browse" detail={isDetail} sidebar={
@@ -160,7 +180,7 @@ export function KnowledgeLibraryWorkspace({ result, query, children }: { result:
           <div className="hidden lg:block"><SecondaryNavigation activeSection={activeSection} query={query} /></div>
       </aside>
     }>
-          {!isDetail ? <header className="knowledge-list-header">
+          {!isDetail ? <header className={`knowledge-list-header${trainingCards ? " knowledge-training-header" : ""}`}>
             <div className="knowledge-list-heading">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="min-w-0">
@@ -193,10 +213,10 @@ export function KnowledgeLibraryWorkspace({ result, query, children }: { result:
 
           <div key={isDetail ? "detail" : "list"} className="workspace-content-transition flex min-h-0 flex-1 flex-col">
           {isDetail ? children : <div className="flex min-h-0 flex-1 flex-col">
-            <div className="knowledge-list-columns hidden grid-cols-[minmax(18rem,1.8fr)_minmax(9rem,0.75fr)_minmax(10rem,0.9fr)_5.5rem_1.25rem] gap-4 border-b border-border bg-[hsl(var(--surface-subtle)/0.5)] px-6 py-2.5 text-xs font-medium text-muted-foreground lg:grid">
+            {!trainingCards ? <div className="knowledge-list-columns hidden grid-cols-[minmax(18rem,1.8fr)_minmax(9rem,0.75fr)_minmax(10rem,0.9fr)_5.5rem_1.25rem] gap-4 border-b border-border bg-[hsl(var(--surface-subtle)/0.5)] px-6 py-2.5 text-xs font-medium text-muted-foreground lg:grid">
               <span>名称</span><span>类型 / 分类</span><span>标签</span><span>更新</span><span aria-hidden="true" />
-            </div>
-            {!allFailed && result.items.length ? <div className="library-list">{result.items.map((item) => <AssetRow key={item.key} item={item} query={query} />)}</div> : null}
+            </div> : null}
+            {!allFailed && result.items.length ? <div className={trainingCards ? "knowledge-training-grid" : "library-list"}>{result.items.map((item) => trainingCards ? <TrainingAssetCard key={item.key} item={item} query={query} /> : <AssetRow key={item.key} item={item} query={query} />)}</div> : null}
             {!allFailed && !result.items.length ? <div className="flex flex-1 items-center justify-center px-5 py-16 text-center"><div><FileText className="mx-auto text-muted-foreground" size={26} aria-hidden="true" /><h2 className="mt-3 text-base font-black">没有匹配的知识资产</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">尝试更换关键词或清除筛选。</p>{hasFilters ? <Button href="/knowledge" className="mt-5">清空筛选</Button> : null}</div></div> : null}
             {allFailed ? <div className="flex flex-1 items-center justify-center px-5 py-16 text-center"><div><h2 className="text-base font-black">知识库暂时无法读取</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">数据来源暂不可用，请稍后重试。现有模块页面与后台维护功能不受影响。</p><Button href={buildHref(query, {})} className="mt-5">重新加载</Button></div></div> : null}
           </div>}

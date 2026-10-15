@@ -12,7 +12,7 @@ export function TrainingFolderCard({ folder }: { folder: TrainingFolder }) {
   ][folder.name.split("").reduce((sum, character) => sum + character.charCodeAt(0), 0) % 4];
 
   return (
-    <Link href={`/training/groups/${folder.id}`} className="training-media-card group block border border-border bg-[hsl(var(--surface))] shadow-[var(--shadow-soft)] transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-[hsl(var(--border-strong))] hover:shadow-[var(--shadow-raised)]">
+    <Link href={`/training/groups/${folder.id}`} className="group block border border-border bg-[hsl(var(--surface))] shadow-[var(--shadow-soft)] transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-[hsl(var(--border-strong))] hover:shadow-[var(--shadow-raised)]">
       <div className={`relative aspect-[16/10] overflow-hidden border-b border-border ${tone}`}>
         {folder.coverVideoId ? (
           <Image src={`/api/training/videos/${folder.coverVideoId}/cover`} alt="" fill unoptimized sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw" className="object-cover transition duration-500 group-hover:scale-[1.02]" />

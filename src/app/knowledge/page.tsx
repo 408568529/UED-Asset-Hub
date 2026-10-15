@@ -1,4 +1,5 @@
 import { KnowledgeWorkspaceDetail, type KnowledgeWorkspaceDetailData } from "@/components/knowledge/KnowledgeWorkspaceDetail";
+import { searchReturnHref } from "@/components/knowledge/knowledgeLinks";
 import { KnowledgeLibraryWorkspace } from "@/components/knowledge/KnowledgeLibraryWorkspace";
 import { fontService } from "@/services/fontService";
 import { knowledgeAggregatorService } from "@/services/knowledgeAggregatorService";
@@ -76,7 +77,9 @@ async function getWorkspaceDetail(assetKey: KnowledgeLibraryQuery["asset"], fall
 }
 
 export default async function KnowledgePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const query = parseQuery(await searchParams);
+  const params = await searchParams;
+  const query = parseQuery(params);
+  const searchReturn = searchReturnHref(first(params.returnTo));
   const result = await knowledgeAggregatorService.getLibrary(query);
   const allItems = query.asset && !result.items.some((item) => item.key === query.asset)
     ? await knowledgeAggregatorService.getLibrary()
@@ -88,5 +91,5 @@ export default async function KnowledgePage({ searchParams }: { searchParams: Pr
     const item = articleIndex < 0 ? undefined : articles[articleIndex + offset];
     return item ? { title: item.title, href: buildListHref(query, item.key) } : undefined;
   }
-  return detail ? <KnowledgeLibraryWorkspace result={result} query={query}><KnowledgeWorkspaceDetail detail={detail} backHref={buildListHref(query)} previousArticle={adjacentArticle(-1)} nextArticle={adjacentArticle(1)} /></KnowledgeLibraryWorkspace> : <KnowledgeLibraryWorkspace result={result} query={query} />;
+  return detail ? <KnowledgeLibraryWorkspace result={result} query={query}><KnowledgeWorkspaceDetail detail={detail} backHref={searchReturn ?? buildListHref(query)} previousArticle={adjacentArticle(-1)} nextArticle={adjacentArticle(1)} /></KnowledgeLibraryWorkspace> : <KnowledgeLibraryWorkspace result={result} query={query} />;
 }
