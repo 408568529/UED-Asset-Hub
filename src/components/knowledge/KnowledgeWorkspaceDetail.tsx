@@ -31,7 +31,7 @@ function formatDate(value: string) {
 function DetailMetadata({ asset, markdown }: { asset: KnowledgeAssetView; markdown?: MarkdownKnowledgeDocument }) {
   const microSpec = markdown?.metadata.documentType === "micro-spec" ? markdown.metadata : null;
   return (
-    <aside className="border-t border-border px-4 py-5 xl:border-l xl:border-t-0 xl:px-6" aria-label="资产元数据">
+    <aside className="knowledge-detail-metadata" aria-label="资产元数据">
       <p className="text-xs font-medium text-muted-foreground">资产信息</p>
       <dl className="mt-4 grid gap-4 text-sm">
         <div><dt className="text-xs text-muted-foreground">类型</dt><dd className="mt-1 font-bold">{asset.assetTypeLabel}</dd></div>
@@ -47,7 +47,7 @@ function DetailMetadata({ asset, markdown }: { asset: KnowledgeAssetView; markdo
 }
 
 function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="border-b border-border px-4 py-5 md:px-6"><h2 className="text-sm font-black">{title}</h2><div className="mt-3 text-sm leading-7 text-muted-foreground">{children}</div></section>;
+  return <section className="knowledge-document-section border-b border-border px-4 py-5 md:px-6"><h2 className="text-sm font-black">{title}</h2><div className="mt-3 text-sm leading-7 text-muted-foreground">{children}</div></section>;
 }
 
 export function KnowledgeWorkspaceDetail({ detail, backHref }: { detail: KnowledgeWorkspaceDetailData; backHref: string }) {
@@ -59,25 +59,23 @@ export function KnowledgeWorkspaceDetail({ detail, backHref }: { detail: Knowled
       : detail.kind === "font"
         ? <Button type="primary" href={`/api/fonts/${detail.item.id}/download`}><Download size={15} />下载字体</Button>
         : detail.kind === "markdown"
-          ? <Button type="primary" href={appendKnowledgeReturnHref(`/admin/knowledge/${encodeURIComponent(detail.item.metadata.id)}/edit`, backHref)}><Pencil size={15} />编辑 Markdown</Button>
+          ? <Button href={appendKnowledgeReturnHref(`/admin/knowledge/${encodeURIComponent(detail.item.metadata.id)}/edit`, backHref)}><Pencil size={15} />编辑 Markdown</Button>
           : null;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col" aria-label={`${asset.title} 详情`}>
-      <header className="knowledge-detail-header border-b border-border px-4 py-4 md:px-6">
-        <Link href={backHref} className="inline-flex min-h-10 items-center gap-2 text-sm font-bold text-muted-foreground transition hover:text-foreground"><ArrowLeft size={16} />返回列表</Link>
-        <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2"><Badge>{asset.assetTypeLabel}</Badge><span className="text-xs text-muted-foreground">{asset.businessCategory || "未分类"}</span></div>
-            <h1 className="mt-3 text-xl font-black tracking-[-0.025em] md:text-2xl">{asset.title}</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{asset.description || "暂无描述"}</p>
-          </div>
+    <div className="knowledge-document" aria-label={`${asset.title} 详情`}>
+      <header className="knowledge-detail-header">
+        <div className="knowledge-detail-actions">
+          <Link href={backHref} className="inline-flex items-center gap-2 text-sm text-muted-foreground transition hover:text-foreground"><ArrowLeft size={16} />返回列表</Link>
           <div className="shrink-0">{action}</div>
         </div>
+        <div className="knowledge-detail-intro">
+          <div className="knowledge-detail-kind flex flex-wrap items-center gap-2"><Badge>{asset.assetTypeLabel}</Badge><span className="text-xs text-muted-foreground">{asset.businessCategory || "未分类"}</span></div>
+          <h1>{asset.title}</h1>
+          <p>{asset.description || "暂无描述"}</p>
+        </div>
       </header>
-
-      <div className="grid min-h-0 flex-1 xl:grid-cols-[minmax(0,1fr)_19rem]">
-        <article className="min-w-0">
+        <article className="knowledge-detail-body min-w-0">
           {detail.kind === "prompt" ? <>
             <DetailSection title="Prompt 正文"><pre className="whitespace-pre-wrap bg-[hsl(var(--surface-subtle)/0.55)] p-4 font-sans text-sm leading-7 text-foreground">{detail.item.content || "暂无 Prompt 内容。"}</pre></DetailSection>
             <DetailSection title="使用说明">{detail.item.usageGuide || "暂无使用说明。"}</DetailSection>
@@ -97,12 +95,11 @@ export function KnowledgeWorkspaceDetail({ detail, backHref }: { detail: Knowled
             {detail.item.officialUrl ? <DetailSection title="官方链接"><a href={detail.item.officialUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-foreground underline">字体官网 <ExternalLink size={14} /></a></DetailSection> : null}
           </> : null}
           {detail.kind === "training" ? <>
-            <section className="border-b border-border px-4 py-5 md:px-6"><div className="mb-3 flex items-center gap-2 text-sm font-black"><Play size={16} />视频播放</div><TrainingPlayer videoId={detail.item.id} title={detail.item.title} poster={detail.item.coverPath ? `/api/training/videos/${detail.item.id}/cover` : undefined} initialPlayCount={detail.item.playCount} /></section>
+            <section className="knowledge-document-section border-b border-border px-4 py-5 md:px-6"><div className="mb-3 flex items-center gap-2 text-sm font-black"><Play size={16} />视频播放</div><TrainingPlayer videoId={detail.item.id} title={detail.item.title} poster={detail.item.coverPath ? `/api/training/videos/${detail.item.id}/cover` : undefined} initialPlayCount={detail.item.playCount} /></section>
             <DetailSection title="视频说明">{detail.item.description || "暂无视频简介。"}</DetailSection>
           </> : null}
         </article>
-        <DetailMetadata asset={asset} markdown={detail.kind === "markdown" ? detail.item : undefined} />
-      </div>
+      <DetailMetadata asset={asset} markdown={detail.kind === "markdown" ? detail.item : undefined} />
     </div>
   );
 }

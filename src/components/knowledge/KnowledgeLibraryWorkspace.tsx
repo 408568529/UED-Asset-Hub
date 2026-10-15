@@ -108,10 +108,10 @@ function SecondaryNavigation({ activeSection, query }: { activeSection: "all" | 
   );
 }
 
-export function KnowledgeWorkspaceShell({ mode, sidebar, children }: { mode: "browse" | "authoring"; sidebar?: React.ReactNode; children: React.ReactNode }) {
+export function KnowledgeWorkspaceShell({ mode, sidebar, children, detail = false }: { mode: "browse" | "authoring"; sidebar?: React.ReactNode; children: React.ReactNode; detail?: boolean }) {
   return (
-    <KnowledgeThemeProvider>
-    <main className="knowledge-workspace knowledge-theme flex min-w-0 flex-col" data-hub-visual="v1.1" data-workspace-mode={mode} id="main-content">
+    <KnowledgeThemeProvider detail={detail}>
+    <main className={`knowledge-workspace knowledge-theme flex min-w-0 flex-col${detail ? " knowledge-detail-theme" : ""}`} data-hub-visual="v1.1" data-workspace-view={detail ? "detail" : mode} data-workspace-mode={mode} id="main-content">
       <div className="knowledge-workspace-shell flex min-h-[calc(100dvh-var(--app-header-height))] min-w-0 flex-1 flex-col lg:flex-row">
         {mode === "browse" ? sidebar : null}
         <section className="knowledge-workspace-main flex min-w-0 flex-1 flex-col bg-[hsl(var(--surface))]" aria-label={mode === "browse" ? "知识资产工作区" : "知识内容创作工作区"}>
@@ -143,7 +143,7 @@ export function KnowledgeLibraryWorkspace({ result, query, children }: { result:
   const isDetail = Boolean(children);
 
   return (
-    <KnowledgeWorkspaceShell mode="browse" sidebar={
+    <KnowledgeWorkspaceShell mode="browse" detail={isDetail} sidebar={
       <aside className="knowledge-workspace-sidebar w-full shrink-0 border-b border-border bg-[hsl(var(--surface-subtle)/0.48)] px-3 py-3 lg:w-60 lg:border-b-0 lg:border-r lg:px-4 lg:py-5" aria-label="知识库分类侧栏">
           <div className="flex items-center justify-between px-2 lg:block">
             <p className="text-sm font-black tracking-[-0.01em]">Knowledge Library</p>
