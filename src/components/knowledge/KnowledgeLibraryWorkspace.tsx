@@ -110,8 +110,8 @@ function SecondaryNavigation({ activeSection, query }: { activeSection: "all" | 
 
 export function KnowledgeWorkspaceShell({ mode, sidebar, children, detail = false }: { mode: "browse" | "authoring"; sidebar?: React.ReactNode; children: React.ReactNode; detail?: boolean }) {
   return (
-    <KnowledgeThemeProvider detail={detail}>
-    <main className={`knowledge-workspace knowledge-theme flex min-w-0 flex-col${detail ? " knowledge-detail-theme" : ""}`} data-hub-visual="v1.1" data-workspace-view={detail ? "detail" : mode} data-workspace-mode={mode} id="main-content">
+    <KnowledgeThemeProvider>
+    <main className={`knowledge-workspace knowledge-theme knowledge-visual-theme flex min-w-0 flex-col${detail ? " knowledge-detail-theme" : ""}`} data-hub-visual="v1.1" data-workspace-view={detail ? "detail" : mode} data-workspace-mode={mode} id="main-content">
       <div className="knowledge-workspace-shell flex min-h-[calc(100dvh-var(--app-header-height))] min-w-0 flex-1 flex-col lg:flex-row">
         {mode === "browse" ? sidebar : null}
         <section className="knowledge-workspace-main flex min-w-0 flex-1 flex-col bg-[hsl(var(--surface))]" aria-label={mode === "browse" ? "知识资产工作区" : "知识内容创作工作区"}>
@@ -160,31 +160,32 @@ export function KnowledgeLibraryWorkspace({ result, query, children }: { result:
           <div className="hidden lg:block"><SecondaryNavigation activeSection={activeSection} query={query} /></div>
       </aside>
     }>
-          {!isDetail ? <header className="knowledge-list-header border-b border-border px-4 py-4 md:px-6">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-              <div className="flex min-w-0 items-center gap-3 xl:w-52 xl:shrink-0">
+          {!isDetail ? <header className="knowledge-list-header">
+            <div className="knowledge-list-heading">
+              <div className="flex min-w-0 items-center gap-3">
                 <div className="min-w-0">
                   <h1 className="truncate text-lg font-black tracking-[-0.025em]">{activeSection === "all" ? "全部知识资产" : sections.find((section) => section.id === activeSection)?.label}</h1>
                   <p className="mt-0.5 text-xs text-muted-foreground">{result.items.length} 项结果</p>
                 </div>
               </div>
-              <form onSubmit={submitSearch} className="flex min-w-0 flex-1 gap-2">
-                <div className="relative min-w-0 flex-1">
-                  <Input prefix={<Search className="text-muted-foreground" size={16} aria-hidden="true" />} value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索知识资产" aria-label="搜索知识资产" />
-                </div>
-                <Button htmlType="submit">搜索</Button>
-              </form>
-              <div className="self-end xl:self-auto"><KnowledgeCreateMenu returnTo={buildHref(query, { asset: undefined })} /></div>
+              <div className="shrink-0"><KnowledgeCreateMenu returnTo={buildHref(query, { asset: undefined })} /></div>
             </div>
+              <form onSubmit={submitSearch} className="knowledge-search flex min-w-0 gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <Input size="small" prefix={<Search className="text-muted-foreground" size={16} aria-hidden="true" />} value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索知识资产" aria-label="搜索知识资产" />
+                </div>
+                <Button size="small" htmlType="submit">搜索</Button>
+              </form>
+
           </header> : null}
 
-          {!isDetail ? <div className="flex flex-col gap-2 border-b border-border bg-[hsl(var(--surface-subtle)/0.36)] px-4 py-3 md:px-6 xl:flex-row xl:items-center xl:justify-between">
+          {!isDetail ? <div className="knowledge-list-filters">
             <div className="flex items-center gap-2 text-xs text-muted-foreground"><SlidersHorizontal size={15} />筛选与排序</div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:flex">
-              <Select aria-label="按类型筛选" value={query.type ?? ""} onChange={(value: string) => updateFilters({ type: value as KnowledgeAssetType || undefined, category: undefined, tag: undefined })} className="min-w-0 w-full xl:w-32" options={[{ value: "", label: "全部类型" }, ...types.map((type) => ({ value: type.id, label: type.label }))]} />
-              <Select aria-label="按分类筛选" value={query.category ?? ""} onChange={(value: string) => updateFilters({ category: value || undefined })} className="min-w-0 w-full xl:w-32" options={[{ value: "", label: "全部分类" }, ...result.categories.map((category) => ({ value: category, label: category }))]} />
-              <Select aria-label="按标签筛选" value={query.tag ?? ""} onChange={(value: string) => updateFilters({ tag: value || undefined })} className="min-w-0 w-full xl:w-32" options={[{ value: "", label: "全部标签" }, ...result.tags.map((tag) => ({ value: tag, label: `#${tag}` }))]} />
-              <Select aria-label="排序方式" value={query.sort ?? "updated-desc"} onChange={(value: KnowledgeLibraryQuery["sort"]) => updateFilters({ sort: value })} className="min-w-0 w-full xl:w-32" options={[{ value: "updated-desc", label: "最近更新" }, { value: "title-asc", label: "名称 A-Z" }, { value: "title-desc", label: "名称 Z-A" }]} />
+              <Select size="small" aria-label="按类型筛选" value={query.type ?? ""} onChange={(value: string) => updateFilters({ type: value as KnowledgeAssetType || undefined, category: undefined, tag: undefined })} className="min-w-0 w-full xl:w-32" options={[{ value: "", label: "全部类型" }, ...types.map((type) => ({ value: type.id, label: type.label }))]} />
+              <Select size="small" aria-label="按分类筛选" value={query.category ?? ""} onChange={(value: string) => updateFilters({ category: value || undefined })} className="min-w-0 w-full xl:w-32" options={[{ value: "", label: "全部分类" }, ...result.categories.map((category) => ({ value: category, label: category }))]} />
+              <Select size="small" aria-label="按标签筛选" value={query.tag ?? ""} onChange={(value: string) => updateFilters({ tag: value || undefined })} className="min-w-0 w-full xl:w-32" options={[{ value: "", label: "全部标签" }, ...result.tags.map((tag) => ({ value: tag, label: `#${tag}` }))]} />
+              <Select size="small" aria-label="排序方式" value={query.sort ?? "updated-desc"} onChange={(value: KnowledgeLibraryQuery["sort"]) => updateFilters({ sort: value })} className="min-w-0 w-full xl:w-32" options={[{ value: "updated-desc", label: "最近更新" }, { value: "title-asc", label: "名称 A-Z" }, { value: "title-desc", label: "名称 Z-A" }]} />
             </div>
           </div> : null}
 

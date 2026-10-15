@@ -174,7 +174,7 @@ export function MarkdownKnowledgeForm({ documentType, document, returnHref = "/k
         <span className="text-[13px] leading-5 text-muted-foreground">支持标准 Markdown 与 GFM 表格；详情页默认显示渲染视图。</span>
       </div>
 
-      <div className="flex flex-wrap gap-3 border-t border-border pt-5">
+      <div className="knowledge-form-actions flex flex-wrap gap-3">
         <Button type="primary" htmlType="submit" loading={saving} disabled={saving}>{saving ? "保存中…" : isEdit ? "保存修改" : isMicroSpec ? "创建微规范" : "创建文档"}</Button>
         <Button htmlType="button" disabled={saving} onClick={() => router.push(returnHref)}>取消</Button>
       </div>
