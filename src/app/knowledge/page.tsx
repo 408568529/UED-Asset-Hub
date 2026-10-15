@@ -31,7 +31,7 @@ function parseQuery(params: Record<string, string | string[] | undefined>): Know
   };
 }
 
-function buildListHref(query: KnowledgeLibraryQuery) {
+function buildListHref(query: KnowledgeLibraryQuery, asset?: KnowledgeLibraryQuery["asset"]) {
   const params = new URLSearchParams();
   if (query.section && query.section !== "all") params.set("section", query.section);
   if (query.type) params.set("type", query.type);
@@ -39,6 +39,7 @@ function buildListHref(query: KnowledgeLibraryQuery) {
   if (query.tag) params.set("tag", query.tag);
   if (query.q) params.set("q", query.q);
   if (query.sort && query.sort !== "updated-desc") params.set("sort", query.sort);
+  if (asset) params.set("asset", asset);
   const value = params.toString();
   return value ? `/knowledge?${value}` : "/knowledge";
 }
@@ -81,5 +82,11 @@ export default async function KnowledgePage({ searchParams }: { searchParams: Pr
     ? await knowledgeAggregatorService.getLibrary()
     : result;
   const detail = await getWorkspaceDetail(query.asset, allItems);
-  return detail ? <KnowledgeLibraryWorkspace result={result} query={query}><KnowledgeWorkspaceDetail detail={detail} backHref={buildListHref(query)} /></KnowledgeLibraryWorkspace> : <KnowledgeLibraryWorkspace result={result} query={query} />;
+  const articles = detail?.kind === "markdown" ? result.items.filter((item) => item.source === "markdownKnowledgeService" && item.route.kind === "internal") : [];
+  const articleIndex = articles.findIndex((item) => item.key === query.asset);
+  function adjacentArticle(offset: number) {
+    const item = articleIndex < 0 ? undefined : articles[articleIndex + offset];
+    return item ? { title: item.title, href: buildListHref(query, item.key) } : undefined;
+  }
+  return detail ? <KnowledgeLibraryWorkspace result={result} query={query}><KnowledgeWorkspaceDetail detail={detail} backHref={buildListHref(query)} previousArticle={adjacentArticle(-1)} nextArticle={adjacentArticle(1)} /></KnowledgeLibraryWorkspace> : <KnowledgeLibraryWorkspace result={result} query={query} />;
 }

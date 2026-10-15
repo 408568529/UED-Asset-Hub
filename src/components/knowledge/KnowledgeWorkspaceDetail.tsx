@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Download, ExternalLink, Pencil, Play } from "lucide-react";
+import { ArrowLeft, ArrowRight, Download, ExternalLink, Pencil, Play } from "lucide-react";
 import { MarkdownKnowledgeDetail } from "@/components/knowledge/MarkdownKnowledgeDetail";
 import { FontPreview } from "@/components/font/FontPreview";
 import { PromptCopyButton } from "@/components/prompt/PromptCopyButton";
@@ -50,7 +50,9 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
   return <section className="knowledge-document-section border-b border-border px-4 py-5 md:px-6"><h2 className="text-sm font-black">{title}</h2><div className="mt-3 text-sm leading-7 text-muted-foreground">{children}</div></section>;
 }
 
-export function KnowledgeWorkspaceDetail({ detail, backHref }: { detail: KnowledgeWorkspaceDetailData; backHref: string }) {
+type ArticleLink = { title: string; href: string };
+
+export function KnowledgeWorkspaceDetail({ detail, backHref, previousArticle, nextArticle }: { detail: KnowledgeWorkspaceDetailData; backHref: string; previousArticle?: ArticleLink; nextArticle?: ArticleLink }) {
   const { asset } = detail;
   const action = detail.kind === "prompt"
     ? <PromptCopyButton promptId={detail.item.id} content={detail.item.content} />
@@ -98,6 +100,14 @@ export function KnowledgeWorkspaceDetail({ detail, backHref }: { detail: Knowled
             <section className="knowledge-document-section border-b border-border px-4 py-5 md:px-6"><div className="mb-3 flex items-center gap-2 text-sm font-black"><Play size={16} />视频播放</div><TrainingPlayer videoId={detail.item.id} title={detail.item.title} poster={detail.item.coverPath ? `/api/training/videos/${detail.item.id}/cover` : undefined} initialPlayCount={detail.item.playCount} /></section>
             <DetailSection title="视频说明">{detail.item.description || "暂无视频简介。"}</DetailSection>
           </> : null}
+          {detail.kind === "markdown" && (previousArticle || nextArticle) ? <nav className="knowledge-article-navigation" aria-label="文章切换">
+            {previousArticle ? <Link href={previousArticle.href} rel="prev" className="knowledge-article-link">
+              <span>上一篇</span><strong><ArrowLeft size={18} aria-hidden="true" />{previousArticle.title}</strong>
+            </Link> : null}
+            {nextArticle ? <Link href={nextArticle.href} rel="next" className="knowledge-article-link knowledge-article-link-next">
+              <span>下一篇</span><strong>{nextArticle.title}<ArrowRight size={18} aria-hidden="true" /></strong>
+            </Link> : null}
+          </nav> : null}
         </article>
       <DetailMetadata asset={asset} markdown={detail.kind === "markdown" ? detail.item : undefined} />
     </div>

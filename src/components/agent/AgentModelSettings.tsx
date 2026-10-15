@@ -65,7 +65,7 @@ export function AgentModelSettings() {
 
   const canWrite = settings.runtime === "ready" && settings.credential.writable;
   return (
-    <section className="mx-auto w-full max-w-2xl space-y-6 p-6 sm:p-10">
+    <section className="agent-model-settings mx-auto w-full max-w-2xl space-y-6 p-6 sm:p-10">
       <div>
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">悠鼎 Agent</p>
         <h1 className="mt-2 text-2xl font-black tracking-[-0.03em]">模型设置</h1>

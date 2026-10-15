@@ -153,3 +153,9 @@ body:has(.home-header) footer,
 body:has(.home-header) footer .border-t { border-color: #ffffff14; }
 @media (min-width: 1024px) { .home-search-controls { left: var(--site-gutter); right: var(--site-gutter); } }
 .asset-visual-theme [class~="rounded-[2rem]"] { border-radius: var(--radius-container); }
+
+/* Model settings adopts the content theme; the /agent workbench stays unscoped. */
+.asset-visual-theme .agent-model-settings { padding: 32px var(--site-gutter) 40px; }
+.asset-visual-theme .agent-model-settings > div:first-child > p:first-child { color: var(--uedv-secondary); letter-spacing: normal; font-weight: 400; }
+.asset-visual-theme .agent-model-settings > div:last-child { border: 0; background: transparent; padding: 0; }
+.asset-visual-theme .agent-model-settings label { font-weight: 500; }
