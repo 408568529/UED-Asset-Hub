@@ -159,3 +159,5 @@ body:has(.home-header) footer .border-t { border-color: #ffffff14; }
 .asset-visual-theme .agent-model-settings > div:first-child > p:first-child { color: var(--uedv-secondary); letter-spacing: normal; font-weight: 400; }
 .asset-visual-theme .agent-model-settings > div:last-child { border: 0; background: transparent; padding: 0; }
 .asset-visual-theme .agent-model-settings label { font-weight: 500; }
+
+.asset-visual-theme > main:has(.agent-model-settings) { min-height: calc(100dvh - var(--app-header-height)); }

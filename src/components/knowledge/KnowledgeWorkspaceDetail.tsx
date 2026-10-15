@@ -101,12 +101,12 @@ export function KnowledgeWorkspaceDetail({ detail, backHref, previousArticle, ne
             <DetailSection title="视频说明">{detail.item.description || "暂无视频简介。"}</DetailSection>
           </> : null}
           {detail.kind === "markdown" && (previousArticle || nextArticle) ? <nav className="knowledge-article-navigation" aria-label="文章切换">
-            {previousArticle ? <Link href={previousArticle.href} rel="prev" className="knowledge-article-link">
+            {previousArticle ? <a href={previousArticle.href} rel="prev" className="knowledge-article-link">
               <span>上一篇</span><strong><ArrowLeft size={18} aria-hidden="true" />{previousArticle.title}</strong>
-            </Link> : null}
-            {nextArticle ? <Link href={nextArticle.href} rel="next" className="knowledge-article-link knowledge-article-link-next">
+            </a> : null}
+            {nextArticle ? <a href={nextArticle.href} rel="next" className="knowledge-article-link knowledge-article-link-next">
               <span>下一篇</span><strong>{nextArticle.title}<ArrowRight size={18} aria-hidden="true" /></strong>
-            </Link> : null}
+            </a> : null}
           </nav> : null}
         </article>
       <DetailMetadata asset={asset} markdown={detail.kind === "markdown" ? detail.item : undefined} />
