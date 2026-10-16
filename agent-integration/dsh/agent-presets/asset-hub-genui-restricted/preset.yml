@@ -1,2 +1,2 @@
 name: 悠鼎设计与交互助手
-description: 仅在明确选择时启用 Knowledge MCP 与任务型 React UI 工具；不包含 Shell、文件系统、编辑器或网络工具。
+description: 默认提供 Knowledge MCP 与任务型 React UI 工具；不包含 Shell、文件系统、编辑器或网络工具。

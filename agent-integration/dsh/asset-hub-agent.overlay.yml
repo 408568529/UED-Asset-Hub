@@ -5,7 +5,7 @@
   disabled: true
 - id: agent-presets
   config:
-    default: asset-hub-restricted
+    default: asset-hub-genui-restricted
     includeUserRoot: true
 - insert:
     - id: genui-client-bootstrap

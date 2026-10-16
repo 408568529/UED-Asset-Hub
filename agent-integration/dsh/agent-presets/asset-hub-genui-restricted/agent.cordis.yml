@@ -1,4 +1,4 @@
-# Explicit opt-in composition for Design Skill and task-specific React UI work.
+# Default restricted composition for knowledge and task-specific React UI work.
 # The host Knowledge MCP rows remain visible; no shell, filesystem, editor, web,
 # skill, delegation, workflow, or arbitrary-code tool is mounted here.
 - id: persona

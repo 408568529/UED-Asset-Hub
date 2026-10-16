@@ -29,6 +29,7 @@ const pluginTarball = await readFile(pluginLock.packageTarball);
 assert.match(edgeSource, /dsh-genui|startsWith\("\/genui\/"\)/);
 assert.match(edgeSource, /"apps\/cli\/src\/bin\.ts", "--profile", "web", "--patch"[\s\S]*?"--no-open", "--host"/);
 assert.doesNotMatch(runtimeOverlay, /- id: genui\s+disabled: true/);
+assert.match(runtimeOverlay, /default: asset-hub-genui-restricted/);
 assert.doesNotMatch(restrictedPreset, /name: dsh-plugin-genui/);
 assert.match(presetSource, /name: dsh-plugin-genui/);
 assert.match(presetSource, /artifactRoot: !!js process\.env\.DSH_GENUI_ARTIFACT_ROOT/);
@@ -220,14 +221,17 @@ try {
   assert.equal(received.at(-1).payload.payload.agentPreset, "asset-hub-genui-restricted");
   const defaults = await call("/api/session.create", { rpcId: "default", payload: {} });
   assert.equal(defaults.body.result.ok, true);
+  assert.equal(received.at(-1).payload.payload.agentPreset, "asset-hub-genui-restricted");
+  const knowledgeOnly = await call("/api/session.create", { rpcId: "knowledge", payload: { agentPreset: "asset-hub-restricted" } });
+  assert.equal(knowledgeOnly.body.result.ok, true);
   assert.equal(received.at(-1).payload.payload.agentPreset, "asset-hub-restricted");
   const denied = await call("/api/session.create", { rpcId: "denied", payload: { agentPreset: "arbitrary-user-preset" } });
   assert.equal(denied.body.result.ok, false);
   assert.equal(denied.body.result.error.code, "agent-preset-restricted");
-  assert.equal(received.length, 2, "unapproved presets must not reach DSH");
+  assert.equal(received.length, 3, "unapproved presets must not reach DSH");
   assert.equal((await call("/api/agentPreset.select", { rpcId: "select", payload: { agentPreset: "asset-hub-genui-restricted" } })).body.result.ok, true);
   assert.equal((await call("/api/agentPreset.select", { rpcId: "select-denied", payload: { agentPreset: "arbitrary-user-preset" } })).body.result.error.code, "agent-preset-restricted");
-  console.log("[UED Agent] GenUI preset opt-in, restricted default, authentication, and arbitrary-preset rejection passed.");
+  console.log("[UED Agent] Default GenUI preset, explicit knowledge-only selection, authentication, and arbitrary-preset rejection passed.");
 } finally {
   proxy.kill("SIGTERM");
   await new Promise((resolve) => proxy.once("exit", resolve));

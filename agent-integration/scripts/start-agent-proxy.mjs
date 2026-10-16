@@ -365,7 +365,7 @@ async function handlePresetBoundaryRequest(request, response, url) {
   }
 
   if (url.pathname === "/api/session.create") {
-    const agentPreset = payload?.payload?.agentPreset || restrictedPreset;
+    const agentPreset = payload?.payload?.agentPreset || genuiPreset;
     if (!allowedPresets.has(agentPreset)) {
       rpcError(response, payload, "agent-preset-restricted", "悠鼎 Agent 只允许使用已批准的 Agent 预设。", { agentPreset, allowed: [...allowedPresets] });
       return true;
