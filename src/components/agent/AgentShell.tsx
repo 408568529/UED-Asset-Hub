@@ -1,14 +1,11 @@
 import { AgentOfficialWorkbench } from "@/components/agent/AgentOfficialWorkbench";
-import Link from "next/link";
+import { AgentManagementToolbar } from "@/components/agent/AgentManagementToolbar";
 
-export function AgentShell() {
+export function AgentShell({ canManage = false }: { canManage?: boolean }) {
   return (
     <main className="flex min-h-0 flex-1 flex-col bg-[#101216]">
-      <div className="agent-workbench-toolbar flex shrink-0 items-center justify-between border-b border-white/10 bg-[#101216] px-5 py-3 text-sm text-white/70">
-        <span>Agent 工作台</span>
-        <Link href="/agent/settings" className="border border-white/25 px-3 py-1.5 font-medium text-white transition hover:border-lime-300 hover:text-lime-200">模型设置</Link>
-      </div>
-      <AgentOfficialWorkbench />
+      <AgentManagementToolbar canManage={canManage} />
+      <AgentOfficialWorkbench canManage={canManage} />
     </main>
   );
 }

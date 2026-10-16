@@ -60,7 +60,7 @@ function configurationMessage(runtime: RuntimeState) {
   }
 }
 
-export function AgentOfficialWorkbench() {
+export function AgentOfficialWorkbench({ canManage = false }: { canManage?: boolean }) {
   const initialCache = useRef<CachedWorkbench | null>(cachedWorkbench && Date.now() - cachedWorkbench.checkedAt < 60_000 ? cachedWorkbench : null);
   const [state, setState] = useState<WorkbenchState>(() => initialCache.current ? { status: "ready", url: initialCache.current.url, generation: initialCache.current.generation } : { status: "loading" });
   const [frameKey, setFrameKey] = useState(0);
@@ -322,9 +322,9 @@ export function AgentOfficialWorkbench() {
           <p className="text-base font-medium text-white">{title}</p>
           <p>{message}</p>
           <div className="flex flex-wrap gap-3">
-            {modelSettingsRequired ? <Link href="/agent/settings" className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">前往模型设置</Link> : null}
+            {canManage && modelSettingsRequired ? <Link href="/agent/settings" className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">前往模型设置</Link> : null}
             {state.kind === "agent-unavailable" ? <button type="button" onClick={() => refreshRuntimeStatus()} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">重新连接</button> : null}
-            {state.kind === "runtime-action" ? <button type="button" onClick={startRuntime} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">{actionLabel}</button> : null}
+            {canManage && state.kind === "runtime-action" ? <button type="button" onClick={startRuntime} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">{actionLabel}</button> : null}
             {state.kind === "status-failed" || configurationRequired || state.kind === "runtime-waiting" || state.kind === "runtime-admin" ? <button type="button" onClick={() => refreshRuntimeStatus()} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">重新检查</button> : null}
           </div>
         </div>

@@ -4,6 +4,7 @@ import http from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { resolveProxySessionConfig } from "../../scripts/host-security-config.mjs";
+import { allowsPublicAgentRequest } from "./agent-public-access.mjs";
 const require = createRequire(import.meta.url);
 const httpProxy = require("http-proxy");
 
@@ -454,7 +455,8 @@ const server = http.createServer(async (request, response) => {
   const previewGrantPresent = url.searchParams.has(previewGrantQuery);
   const previewGrantValid = hasValidPreviewGrant(request, url);
   const previewGrantAuthorized = !sessionAuthorized && previewGrantValid;
-  if (!sessionAuthorized && !previewGrantAuthorized) return unauthorized(response);
+  const publicAuthorized = allowsPublicAgentRequest(request, url);
+  if (!sessionAuthorized && !previewGrantAuthorized && !publicAuthorized) return unauthorized(response);
   if (previewGrantPresent) {
     request.__uedPreviewGrantPresent = true;
     url.searchParams.delete(previewGrantQuery);
@@ -480,7 +482,9 @@ const sockets = new Set();
 server.on("connection", (socket) => { sockets.add(socket); socket.once("close", () => sockets.delete(socket)); });
 
 server.on("upgrade", (request, socket, head) => {
-  if (!hasAdminSession(request)) {
+  const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
+  const publicDownlink = (url.pathname === "/api/events.mux" || url.pathname === "/api/events.host") && allowsPublicAgentRequest(request, url);
+  if (!hasAdminSession(request) && !publicDownlink) {
     socket.write("HTTP/1.1 401 Unauthorized\\r\\nConnection: close\\r\\n\\r\\n");
     socket.destroy();
     return;

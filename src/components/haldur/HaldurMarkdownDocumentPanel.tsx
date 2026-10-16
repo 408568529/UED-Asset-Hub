@@ -11,14 +11,14 @@ import type { HaldurDesignSkillSnapshot } from "@/types/haldurDesignSkill";
 
 export type HaldurMarkdownDocument = { path: string; name: string; content: string; revision: string; size: number; readOnly: boolean };
 
-export function HaldurMarkdownDocumentPanel({ document, onClose, onSaved }: { document: HaldurMarkdownDocument; onClose: () => void; onSaved: (snapshot: HaldurDesignSkillSnapshot) => void }) {
+export function HaldurMarkdownDocumentPanel({ document, onClose, onSaved, canManage = false }: { canManage?: boolean; document: HaldurMarkdownDocument; onClose: () => void; onSaved: (snapshot: HaldurDesignSkillSnapshot) => void }) {
   const [content, setContent] = useState(document.content);
   const [mode, setMode] = useState<"read" | "edit">("read");
   const [editorView, setEditorView] = useState<"source" | "preview">("source");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const dirty = content !== document.content;
-  const canEdit = !document.readOnly;
+  const canEdit = canManage && !document.readOnly;
 
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty) event.preventDefault(); };
