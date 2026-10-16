@@ -79,13 +79,28 @@ body:has(.asset-visual-theme) :is([data-slot="dialog-content"], [data-radix-popp
 .asset-visual-theme .haldur-file-columns { background: var(--uedv-sidebar); font-family: var(--uedv-font); font-size: 12px; letter-spacing: normal; text-transform: none; }
 .asset-visual-theme .haldur-file-row:hover { background: var(--uedv-hover); }
 .asset-visual-theme .haldur-file-row > button > span:first-child { border: 0; border-radius: 8px; background: var(--uedv-hover); color: var(--uedv-text); }
-.asset-visual-theme .haldur-markdown-document { --haldur-document-gutter: clamp(20px, 3vw, 40px); }
-.asset-visual-theme .haldur-markdown-document > header { border: 0; padding: 24px var(--haldur-document-gutter); }
-.asset-visual-theme .haldur-markdown-document > header > div:first-child { flex: 1 1 320px; }
-.asset-visual-theme .haldur-markdown-document > header h2 { font-size: 28px; line-height: 38px; font-weight: 600; }
-.asset-visual-theme .haldur-markdown-document > header p { overflow-wrap: anywhere; }
-.asset-visual-theme .haldur-markdown-document > .haldur-document-content { padding: 8px var(--haldur-document-gutter) 40px; }
+.asset-visual-theme .haldur-markdown-document { --haldur-document-gutter: 24px; }
+.asset-visual-theme .haldur-markdown-document > header { border: 0; padding: 24px var(--haldur-document-gutter) 0; }
+.asset-visual-theme .haldur-document-actions { display: flex; min-height: 36px; align-items: center; justify-content: space-between; gap: 16px; }
+.asset-visual-theme .haldur-document-back { min-height: 36px; padding: 0; font-size: 13px; line-height: 20px; font-weight: 400; color: hsl(var(--muted-foreground)); }
+.asset-visual-theme .haldur-document-back:hover { color: var(--uedv-text); }
+.asset-visual-theme .haldur-document-intro { max-width: 880px; margin-top: 24px; }
+.asset-visual-theme .haldur-document-intro h2 { margin: 0; font-size: 28px; line-height: 38px; font-weight: 600; letter-spacing: normal; }
+.asset-visual-theme .haldur-document-intro p { margin: 8px 0 0; color: var(--uedv-secondary); font-size: 15px; line-height: 26px; overflow-wrap: anywhere; }
+.asset-visual-theme .haldur-markdown-document > .haldur-document-content { padding: 24px var(--haldur-document-gutter) 40px; }
+.asset-visual-theme .haldur-document-content > section { max-width: 880px; }
 .asset-visual-theme .haldur-markdown-document > .haldur-document-tabs { padding-inline: var(--haldur-document-gutter); }
+@media (min-width: 1280px) {
+  .asset-visual-theme .haldur-markdown-document { --haldur-document-gutter: 32px; }
+  .asset-visual-theme .haldur-markdown-document > header { padding-top: 32px; }
+}
+@media (min-width: 1440px) {
+  .asset-visual-theme .haldur-markdown-document { --haldur-document-gutter: 48px; }
+}
+@media (max-width: 639px) {
+  .asset-visual-theme .haldur-markdown-document { --haldur-document-gutter: 16px; }
+  .asset-visual-theme .haldur-document-intro h2 { font-size: 26px; line-height: 36px; }
+}
 .asset-visual-theme .haldur-markdown-document h2 { overflow-wrap: anywhere; }
 .asset-visual-theme .haldur-markdown-document .markdown-reading { max-width: none; }
 .asset-visual-theme .haldur-markdown-document .markdown-reading > :first-child { margin-top: 0; }
