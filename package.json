@@ -20,6 +20,7 @@
     "verify:haldur-design-skill-export": "tsx scripts/verify-haldur-design-skill-export.ts",
     "verify:haldur-design-skill-governance": "tsx scripts/verify-haldur-design-skill-governance.ts",
     "verify:haldur-design-skill-markdown": "tsx scripts/verify-haldur-design-skill-markdown.ts",
+    "verify:haldur-knowledge": "tsx scripts/verify-haldur-knowledge.ts",
     "verify:knowledge-gateway": "tsx scripts/verify-knowledge-gateway.ts",
     "verify:formal-data-readonly": "tsx scripts/verify-formal-data-readonly.ts",
     "verify:e2e-fixture": "node scripts/verify-e2e-fixture.mjs",
