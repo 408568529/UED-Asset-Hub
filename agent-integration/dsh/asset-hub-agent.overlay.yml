@@ -8,6 +8,8 @@
     default: asset-hub-restricted
     includeUserRoot: true
 - insert:
+    - id: genui-client-bootstrap
+      name: '@ued/asset-hub-genui-client-bootstrap'
     - id: directory-picker-browse
       name: '@deepseek-ai/dsh-host-directory-picker-browse'
     - id: ui-directory-picker-browse

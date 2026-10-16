@@ -160,6 +160,9 @@ async function windowsPipeSecurityAdapterSpecification() {
 }
 
 async function installAgentPresets(runtimePaths) {
+  const bootstrapSource = path.join(projectDir, "agent-integration", "dsh", "genui-client-bootstrap");
+  const bootstrapDestination = await ensureRuntimeSubdirectory({ dataRoot: runtimePaths.dataRoot, agentRoot: runtimePaths.agentRoot, relativePath: "dsh-home/profiles/web/node_modules/@ued/asset-hub-genui-client-bootstrap" });
+  for (const file of ["package.json", "index.mjs"]) await copyFile(path.join(bootstrapSource, file), path.join(bootstrapDestination, file));
   for (const preset of ["asset-hub-restricted", "asset-hub-genui-restricted"]) {
     const source = path.join(projectDir, "agent-integration", "dsh", "agent-presets", preset);
     const destination = await ensureRuntimeSubdirectory({ dataRoot: runtimePaths.dataRoot, agentRoot: runtimePaths.agentRoot, relativePath: `dsh-home/.agent-presets/${preset}` });
