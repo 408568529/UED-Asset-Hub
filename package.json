@@ -15,6 +15,8 @@
     "verify:haldur-design-skill-directories": "tsx scripts/verify-haldur-design-skill-directories.ts",
     "verify:haldur-design-skill-files": "tsx scripts/verify-haldur-design-skill-files.ts",
     "verify:haldur-design-skill-workbench": "tsx scripts/verify-haldur-design-skill-workbench.ts",
+    "verify:haldur-file-preview": "tsx scripts/verify-haldur-file-preview.ts",
+    "verify:haldur-overwrite-failure": "tsx scripts/verify-haldur-overwrite-failure.ts",
     "verify:haldur-design-skill-export": "tsx scripts/verify-haldur-design-skill-export.ts",
     "verify:haldur-design-skill-governance": "tsx scripts/verify-haldur-design-skill-governance.ts",
     "verify:haldur-design-skill-markdown": "tsx scripts/verify-haldur-design-skill-markdown.ts",

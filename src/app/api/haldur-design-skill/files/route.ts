@@ -1,3 +1,4 @@
+import { decodeHaldurHeader } from "@/lib/haldur/uploadHeaders";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { hasHaldurCapability } from "@/lib/haldurPermissions";
@@ -20,13 +21,18 @@ function responseForError(error: unknown) {
 function requiredHeader(request: Request, name: string) {
   const value = request.headers.get(name)?.trim();
   if (!value) throw new HaldurDirectoryOperationError("INVALID_PATH", `缺少 ${name}。`, 400);
-  return value;
+  return decodePathHeader(request, value);
+}
+
+function decodePathHeader(request: Request, value: string) {
+  try { return decodeHaldurHeader(value, request.headers.get("x-haldur-path-encoding")); }
+  catch { throw new HaldurDirectoryOperationError("INVALID_PATH", "文件名或目录编码无效。", 400); }
 }
 
 function parentPathHeader(request: Request) {
   const value = request.headers.get("x-haldur-parent-path");
   if (value === null) throw new HaldurDirectoryOperationError("INVALID_PATH", "缺少 x-haldur-parent-path。", 400);
-  return value.trim();
+  return decodePathHeader(request, value);
 }
 
 async function* requestBodyChunks(body: ReadableStream<Uint8Array>) {

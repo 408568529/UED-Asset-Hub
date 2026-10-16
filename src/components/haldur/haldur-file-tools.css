@@ -1,0 +1,15 @@
+.haldur-file-modal .ant-modal { top: 4dvh; padding-bottom: 0; }
+.haldur-file-modal .ant-modal-container { border-radius: 12px; max-height: 92dvh; display: flex; flex-direction: column; }
+.haldur-file-modal .ant-modal-header, .haldur-file-modal .ant-modal-footer { flex-shrink: 0; }
+.haldur-file-modal .ant-modal-body { overflow: auto; min-height: 0; }
+.haldur-preview-modal .ant-modal-body { display: flex; flex-direction: column; overflow: hidden; }
+.haldur-preview-heading { display: flex; flex-direction: column; gap: 4px; padding-right: 32px; min-width: 0; }
+.haldur-preview-heading > span:last-child { font-size: 12px; color: var(--ant-color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
+.haldur-preview-actions { flex: 0 0 auto; margin: 0 0 12px; }
+.haldur-preview-host { flex: 1 1 auto; min-height: 0; width: 100%; height: min(70dvh, 800px); border: 1px solid var(--ant-color-border-secondary); border-radius: 8px; display: block; background: var(--ant-color-bg-container); }
+.haldur-upload-target { overflow-wrap: anywhere; margin: 0 0 16px; }
+.haldur-upload-results { max-height: 42dvh; overflow: auto; margin-top: 16px; }
+.haldur-upload-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; border-bottom: 1px solid var(--ant-color-border-secondary); padding: 12px 0; }
+.haldur-upload-row-name { overflow-wrap: anywhere; }
+.haldur-upload-row-message { font-size: 12px; color: var(--ant-color-text-secondary); }
+@media (max-width: 600px) { .haldur-file-modal .ant-modal { top: 12px; } .haldur-preview-host { height: 65dvh; } .haldur-upload-row { grid-template-columns: minmax(0, 1fr); } }
