@@ -79,7 +79,13 @@ body:has(.asset-visual-theme) :is([data-slot="dialog-content"], [data-radix-popp
 .asset-visual-theme .haldur-file-columns { background: var(--uedv-sidebar); font-family: var(--uedv-font); font-size: 12px; letter-spacing: normal; text-transform: none; }
 .asset-visual-theme .haldur-file-row:hover { background: var(--uedv-hover); }
 .asset-visual-theme .haldur-file-row > button > span:first-child { border: 0; border-radius: 8px; background: var(--uedv-hover); color: var(--uedv-text); }
-.asset-visual-theme .haldur-markdown-document > header { border: 0; }
+.asset-visual-theme .haldur-markdown-document { --haldur-document-gutter: clamp(20px, 3vw, 40px); }
+.asset-visual-theme .haldur-markdown-document > header { border: 0; padding: 24px var(--haldur-document-gutter); }
+.asset-visual-theme .haldur-markdown-document > header > div:first-child { flex: 1 1 320px; }
+.asset-visual-theme .haldur-markdown-document > header h2 { font-size: 28px; line-height: 38px; font-weight: 600; }
+.asset-visual-theme .haldur-markdown-document > header p { overflow-wrap: anywhere; }
+.asset-visual-theme .haldur-markdown-document > .haldur-document-content { padding: 8px var(--haldur-document-gutter) 40px; }
+.asset-visual-theme .haldur-markdown-document > .haldur-document-tabs { padding-inline: var(--haldur-document-gutter); }
 .asset-visual-theme .haldur-markdown-document h2 { overflow-wrap: anywhere; }
 .asset-visual-theme .haldur-markdown-document .markdown-reading { max-width: none; }
 .asset-visual-theme .haldur-markdown-document .markdown-reading > :first-child { margin-top: 0; }
