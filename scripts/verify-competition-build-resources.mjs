@@ -20,7 +20,7 @@ try {
   await writeFile(files[0].path,'tampered');await assert.rejects(cleanupBuild(record,gate),/hash mismatch/);await access(path.join(work,'source'));
   await writeFile(files[0].path,'actual-zip-fixture');
   await mkdir(path.join(work,'temp','dsh-home'));await writeFile(path.join(work,'temp','dsh-home','preserved'),'state');
-  const result=await cleanupBuild(record,gate);assert.equal(result.removed.length,1);assert.equal(result.skipped.length,2);await assert.rejects(access(path.join(work,'source')));await access(files[0].path);await access(path.join(work,'temp','dsh-home','preserved'));
+  const result=await cleanupBuild(record,gate);assert.equal(typeof result.usedBeforeCleanup,'number');assert.equal(typeof result.usedAfterCleanup,'number');assert.equal(typeof result.buildDisk.maximumUsedObserved,'number');assert.equal(result.removed.length,1);assert.equal(result.skipped.length,2);await assert.rejects(access(path.join(work,'source')));await access(files[0].path);await access(path.join(work,'temp','dsh-home','preserved'));
   const failed=path.join(scope,'failed');await assert.rejects(runBuild({scope,work:failed,disposable:['source'],command:process.execPath,args:['-e',`require('fs').mkdirSync(${JSON.stringify(failed)});process.exit(7)`]}),/Build failed/);await access(failed);
   const other=path.join(scope,'other'), slow=path.join(scope,'slow');
   const running=runBuild({scope,work:slow,disposable:[],command:process.execPath,args:['-e','setTimeout(()=>{},1200)']});

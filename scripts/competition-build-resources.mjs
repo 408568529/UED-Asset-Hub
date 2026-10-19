@@ -17,6 +17,7 @@ async function regularPath(target) {
     const parent = path.dirname(current); if (parent === current) break; current = parent;
   }
 }
+async function used(root) { const s = await statfs(root); return Number(s.blocks - s.bfree) * Number(s.bsize); }
 async function free(root) { const s = await statfs(root); return Number(s.bavail) * Number(s.bsize); }
 function processes() {
   if (process.platform === 'win32') {
@@ -59,10 +60,10 @@ export async function runBuild({ scope, work, disposable, command, args = [] }) 
     return rows.filter(p => !ancestors.includes(p.pid) && (p.command.toLowerCase().includes(work.toLowerCase()) || tracked.get(p.pid) === createHash('sha256').update(p.command).digest('hex'))); };
   const id = randomUUID(), recordFile = path.join(control, id + '.json');
   let released = false;
-  const record = { schemaVersion: VERSION, id, scope: await realpath(scope), work, disposable, ownerPid: process.pid, state: 'BUILDING', startedAt: new Date().toISOString(), cachePolicy: 'One owned cache for pinned Node 22.23.2; shared user caches untouched', children: [], disk: { freeBefore: await free(scope), minimumFreeObserved: await free(scope), sampleIntervalMs: 2000 } };
+  const record = { schemaVersion: VERSION, id, scope: await realpath(scope), work, disposable, ownerPid: process.pid, state: 'BUILDING', startedAt: new Date().toISOString(), cachePolicy: 'One owned cache for pinned Node 22.23.2; shared user caches untouched', children: [], disk: { freeBefore: await free(scope), minimumFreeObserved: await free(scope), usedBefore: await used(scope), maximumUsedObserved: await used(scope), sampleIntervalMs: 2000 } };
   await handle.writeFile(JSON.stringify({ id, recordFile, ownerPid: process.pid }));
   let timer, child, monitoring, buildLog;
-  const sample = async () => { ownedActive(); record.trackedChildren = [...tracked].map(([pid, commandSha256]) => ({pid, commandSha256})); record.disk.minimumFreeObserved = Math.min(record.disk.minimumFreeObserved, await free(scope)); await save(recordFile, record); };
+  const sample = async () => { ownedActive(); record.trackedChildren = [...tracked].map(([pid, commandSha256]) => ({pid, commandSha256})); record.disk.minimumFreeObserved = Math.min(record.disk.minimumFreeObserved, await free(scope)); record.disk.maximumUsedObserved = Math.max(record.disk.maximumUsedObserved, await used(scope)); await save(recordFile, record); };
   try {
     // The only retained cache is owned by this scope and all users hold this same exclusive lock.
     const cache = path.join(control, 'cache-node-22.23.2');
@@ -87,7 +88,7 @@ export async function runBuild({ scope, work, disposable, command, args = [] }) 
     const remaining = ownedActive().filter(p => p.pid !== child.pid);
     record.state = code === 0 && !remaining.length ? 'BUILT' : 'FAILED';
     record.exitCode = code; record.remainingPids = remaining.map(p => p.pid);
-    record.finishedAt = new Date().toISOString(); record.disk.freeAfterBuild = await free(scope);
+    record.finishedAt = new Date().toISOString(); record.disk.freeAfterBuild = await free(scope); record.disk.usedAfterBuild = await used(scope);
     await save(recordFile, record);
     if (remaining.length) throw new Error('Build processes remain; intermediates and lock retained.');
     await handle.close(); await rm(lock); released = true;
@@ -128,7 +129,7 @@ export async function cleanupBuild(recordFile, gateFile) {
   const zip = gate.files.find(f => f.role === 'zip'), sha = gate.files.find(f => f.role === 'sha256');
   if (!(await readFile(sha.path, 'utf8')).trim().startsWith(zip.sha256 + ' ')) throw new Error('ZIP SHA-256 receipt mismatch.');
   const protectedPaths = [...gate.protectedPaths, ...gate.files.map(f => f.path), recordFile, gateFile].map(p => path.resolve(p));
-  const log = { id: r.id, gateSha256: await hash(gateFile), startedAt: new Date().toISOString(), removed: [], skipped: [], freeBeforeCleanup: await free(r.scope) };
+  const log = { id: r.id, gateSha256: await hash(gateFile), startedAt: new Date().toISOString(), removed: [], skipped: [], freeBeforeCleanup: await free(r.scope), usedBeforeCleanup: await used(r.scope) };
   const logFile = recordFile + '.cleanup.json'; await save(logFile, log);
   for (const name of r.disposable) {
     if (!allowed.has(name)) throw new Error('Ownership record includes an unknown cleanup target.');
@@ -143,7 +144,7 @@ export async function cleanupBuild(recordFile, gateFile) {
     } catch (e) { if (e.code !== 'ENOENT') log.skipped.push({ target, reason: e.message }); }
     await save(logFile, log);
   }
-  log.freeAfterCleanup = await free(r.scope); log.actualVolumeFreeDelta = log.freeAfterCleanup - log.freeBeforeCleanup;
+  log.freeAfterCleanup = await free(r.scope); log.usedAfterCleanup = await used(r.scope); log.actualVolumeFreeDelta = log.freeAfterCleanup - log.freeBeforeCleanup;
   log.logicalBytesRemoved = log.removed.reduce((sum, item) => sum + item.logicalBytes, 0);
   log.sampledPeakVolumeConsumption = Number.isFinite(r.disk.freeBefore) && Number.isFinite(r.disk.minimumFreeObserved) ? r.disk.freeBefore - r.disk.minimumFreeObserved : 'NOT_RECORDED';
   log.buildDisk = r.disk;
