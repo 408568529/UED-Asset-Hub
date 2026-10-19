@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { snapshotDependencyTree, restoreDependencyLinks } from './competition-dependency-tree.mjs';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { prepareCompetitionPackage } from './competition-prepare-package.mjs';
 import { localDistributionEnvironment } from './competition-launcher.mjs';
 const [packageRoot, sourceRoot, git] = process.argv.slice(2);
 if (!packageRoot || !sourceRoot || !git) throw new Error('Provide a prepared package, official pinned DSH source and portable Git executable.');
@@ -20,4 +21,5 @@ try {
   await restoreDependencyLinks(restored, links, null, true);
   assert.equal(execFileSync(git, ['-C', restored, 'status', '--porcelain=v1'], { env: environment, encoding: 'utf8' }).trim(), '');
 } finally { await rm(temporary, { recursive: true, force: true }); }
-console.log('PASS: portable native Git ignores inherited global configuration and validates exact clean pinned DSH source. Restored Git-tracked directory symlinks also preserve a clean checkout; no credentials read or services started.');
+await prepareCompetitionPackage(packageRoot);
+console.log('PASS: portable native Git ignores inherited global configuration and validates exact clean pinned DSH source. Restored Git-tracked directory symlinks also preserve a clean checkout; complete package source/runtime authority validation passed; no credentials read or services started.');

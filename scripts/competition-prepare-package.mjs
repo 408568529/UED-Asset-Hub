@@ -12,7 +12,10 @@ export async function prepareCompetitionPackage(packageRoot) {
   const manifest = JSON.parse(await readFile(path.join(root, "competition-manifest.json"), "utf8"));
   if (manifest.dshCommit !== "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e") throw new Error("Pinned DSH source identity mismatch.");
   await restoreDependencyLinks(path.join(dependencyRoot, "dsh-source"), manifest.sourceLinks, null, true);
-  await restoreDependencyLinks(path.join(dependencyRoot, "dsh-runtime"), manifest.runtimeLinks);
+  const trackedLinks = new Set(manifest.sourceLinks.map((link) => link.path));
+  // The authority validator compares tracked symlink text in both trees exactly.
+  await restoreDependencyLinks(path.join(dependencyRoot, "dsh-runtime"), manifest.runtimeLinks.filter((link) => trackedLinks.has(link.path)), null, true);
+  await restoreDependencyLinks(path.join(dependencyRoot, "dsh-runtime"), manifest.runtimeLinks.filter((link) => !trackedLinks.has(link.path)));
   await restoreDependencyLinks(path.join(dependencyRoot, "genui-home"), manifest.profileLinks, path.join(dependencyRoot, "dsh-runtime"));
   const source = path.join(dependencyRoot, "dsh-source");
   const git = toolPaths(root).git;
