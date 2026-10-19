@@ -23,7 +23,7 @@ Windows x64 与 macOS Apple Silicon 分别提供独立 ZIP。当前为候选交�
 3. 填写本人获准使用的 DeepSeek API Key、Base URL 和模型并保存。需要联网且可能产生模型费用。
 4. 后续启动复用同一外置数据目录和原有配置，不重复要求输入 Key。修改或删除仍在原设置页操作。
 
-启动器不提供独立 API Key 输入或凭据管理界面，不预置 Key，不向 ZIP、Git、README、命令行或日志写入 Key。不得把凭据发给开发者。继承的模型 Key 环境变量与后台配置冲突时会阻断启动，不显示其内容。
+启动器不提供独立 API Key 输入或凭据管理界面，不预置 Key，不向 ZIP、Git、README、命令行或日志写入 Key。不得把凭据发给开发者。本机入口隔离继承的模型 Key 环境变量，避免遮蔽后台文件配置，不显示其内容。
 
 **凭据存储安全边界：** 原 DSH credentials-local 默认将 API Key 保存于 `<AGENT_RUNTIME_DIR>/dsh-home/.credentials.yaml`，依靠原有文件权限和账户访问控制，不能称为加密存储；密码掩码不代表磁盘加密。本轮不新增 DPAPI API Key 适配、不修改 DSH 核心及其原有安全机制。发行启动所需管理员配置位于外置 `config/host-login.json`，也受账户权限保护，不能描述成加密。备份数据及配置时须保护其中敏感信息。
 
@@ -32,6 +32,18 @@ Windows x64 与 macOS Apple Silicon 分别提供独立 ZIP。当前为候选交�
 重复双击启动入口会识别本安装并打开原地址，不启动第二套服务。双击 `03-停止运行` 通过原管理员受控停止接口停止本安装，等待子进程退出和端口释放，不强杀其他进程。
 
 再次启动复用数据、会话、GenUI 及模型设置，不重复安装或重置。目录丢失、哈希错误、缺依赖或端口占用会明确停止；不会悄悄创建空数据库或杀掉占用进程。默认端口为 3247、3248、3347、3348、3349。原 Mac 3047 和 Windows 正式服务独立保留。
+
+## 可选：局域网共享模式（Windows 既有 HTTPS 部署方式）
+
+V2.5 保留 Windows 正式版本的局域网多人访问能力。编号双击入口默认用于本机模式；共享由管理员明确配置后通过既有 Windows 部署/启动入口运行同一 Hub、Supervisor、DSH 与 GenUI，不把本机 HTTP 入口直接开放到局域网。
+
+1. 复用现有 HTTPS 前置代理（如 IIS ARR/WebSocket）。由管理员准备与局域网访问域名匹配、客户端信任的证书、DNS 和访问规则；本轮不自动签发证书。将随包 `app/service/windows/UEDAssetHubEdge.web.config.template` 按目标实例端口配置为转发到 127.0.0.1 的 Supervisor，并保留 Host 与 WebSocket。
+2. 在该共享实例的受保护外部配置中显式设置 `NODE_ENV=production`、`PUBLIC_ORIGIN=https://该实例的访问域名`、`ADMIN_SESSION_SECURE=true`、`HOST_BIND_HOST=127.0.0.1`。不得设置 `UED_LOCAL_DISTRIBUTION_MODE`、`UED_LOCAL_TEST_MODE` 或 `UED_LOCAL_DEMO_MODE`；不得将 `ADMIN_SESSION_SECURE` 改成 false。
+3. 复用原 Windows 服务/隔离发行启动流程及管理员、Session Secret、Gateway Token 的原有受保护配置。随包 `app/service/windows/internal-runtime-config.example.psd1` 只保存外部路径和端口；使用原 `app/scripts/start-internal-release.ps1 -ConfigPath <外部配置>` 或既有服务入口启动。使用随包便携 Node/Git 的进程 PATH；不修改系统 PATH。不要把任何真实密码、Key 或 Token 写入模板、README 或 ZIP。
+4. 数据、媒体、Agent、Haldur 路径可沿用既有分散目录；不得用本机首次向导覆盖服务器目录。同一目录不能同时运行两种模式，切换前用原实例的受控停止入口停止并确认端口释放。共享实例沿用其原有服务停止流程，本机 `03` 入口只控制本机向导创建的实例。
+5. 客户端通过配置的 HTTPS 域名访问 Hub 和 `/agent/settings`，仍需管理员登录。Agent Proxy、Knowledge MCP 和 DSH 继续保持内部回环与原有鉴权/沙箱规则；不得直接将内部端口映射到局域网。浏览器 Cookie 须为 HttpOnly、SameSite 且 Secure。共享模式的实际隔离回归结果另见交付报告。
+
+现有 Windows 正式服务、证书、站点、数据路径和访问方式不由本候选包自动改写。本机模式的成功不能代替局域网 HTTPS 多人访问验收；没有跨机器实际证据时标记 NOT_VERIFIED。
 
 ## 依赖、来源和边界
 

@@ -52,7 +52,7 @@ function Get-UedArchiveManifest([string]$ZipPath, [string]$ExpectedSha256) {
     if (-not $files.ContainsKey('release-manifest.json')) { Stop-InternalRelease 'release-manifest.json is missing.' }
     $reader = [System.IO.StreamReader]::new($files['release-manifest.json'].Open(), [System.Text.Encoding]::UTF8, $true)
     try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
-    if ($manifest.schemaVersion -ne 1 -or $manifest.channel -ne 'INTERNAL_RELEASE' -or $manifest.releaseVersion -notmatch '^internal-[a-z0-9.-]{1,80}$' -or $manifest.builtAtUtc -notmatch '^\d{4}-\d\d-\d\dT' -or $manifest.source.commit -notmatch '^[a-f0-9]{40}$' -or $manifest.source.tree -notmatch '^[a-f0-9]{40}$') { Stop-InternalRelease 'release manifest identity is invalid.' }
+    if ($manifest.schemaVersion -ne 1 -or $manifest.channel -ne 'INTERNAL_RELEASE' -or $manifest.releaseVersion -notmatch '^internal-[a-z0-9.-]{1,80}$' -or ($manifest.builtAtUtc -isnot [datetime] -and $manifest.builtAtUtc -notmatch '^\d{4}-\d\d-\d\dT') -or $manifest.source.commit -notmatch '^[a-f0-9]{40}$' -or $manifest.source.tree -notmatch '^[a-f0-9]{40}$') { Stop-InternalRelease 'release manifest identity is invalid.' }
     if (-not $manifest.files -or $manifest.fileCount -ne $manifest.files.Count) { Stop-InternalRelease 'release manifest file count is invalid.' }
     $expected = @{}
     foreach ($file in $manifest.files) {

@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { toolPaths } from "./competition-check.mjs";
 import { restoreDependencyLinks } from "./competition-dependency-tree.mjs";
@@ -15,9 +16,13 @@ export async function prepareCompetitionPackage(packageRoot) {
   await restoreDependencyLinks(path.join(dependencyRoot, "genui-home"), manifest.profileLinks, path.join(dependencyRoot, "dsh-runtime"));
   const source = path.join(dependencyRoot, "dsh-source");
   const git = toolPaths(root).git;
-  const runGit = (args) => execFileSync(git, args, { encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const systemPaths = process.platform === "win32" ? [path.join(process.env.SystemRoot || "C:\\Windows", "System32"), process.env.SystemRoot || "C:\\Windows"] : ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+  const environment = { ...process.env, PATH: [path.dirname(git), path.dirname(process.execPath), ...systemPaths].join(path.delimiter), GIT_OPTIONAL_LOCKS: "0", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: os.devNull };
+  for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_EXEC_PATH", "NODE_PATH", "NODE_OPTIONS", "NODE_COMPILE_CACHE"]) delete environment[key];
+  if (process.platform === "darwin") environment.GIT_EXEC_PATH = path.join(root, "tools/git/libexec/git-core");
+  const runGit = (args) => execFileSync(git, args, { encoding: "utf8", env: environment, stdio: ["ignore", "pipe", "pipe"] }).trim();
   if ((await lstat(source)).isSymbolicLink() || await realpath(source) !== source || runGit(["-C", source, "rev-parse", "HEAD"]) !== manifest.dshCommit || runGit(["-C", source, "status", "--porcelain=v1"])) throw new Error("Existing DSH authority is not the exact clean checkout; no overwrite was attempted.");
-  execFileSync(process.execPath, [path.join(root, "app/scripts/verify-dsh-runtime-source.mjs"), source, path.join(dependencyRoot, "dsh-runtime")], { cwd: path.join(root, "app"), stdio: ["ignore", "pipe", "pipe"] });
+  execFileSync(process.execPath, [path.join(root, "app/scripts/verify-dsh-runtime-source.mjs"), source, path.join(dependencyRoot, "dsh-runtime")], { cwd: path.join(root, "app"), env: environment, stdio: ["ignore", "pipe", "pipe"] });
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

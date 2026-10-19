@@ -154,6 +154,10 @@ $dshInfoPath = Join-Path $build 'dsh-info.json'
 
 Invoke-Checked $nodeExe @($npmCli, 'ci', '--ignore-scripts', '--no-audit', '--no-fund') $sourceRoot
 Invoke-Checked $nodeExe @($npmCli, 'run', 'build') $sourceRoot
+# Next regenerates this declaration; restore only this isolated build clone's tracked input.
+$originalNextEnv = ((& $git.Source -C $sourceRoot show 'HEAD:next-env.d.ts') -join "`n") + "`n"
+if ($LASTEXITCODE -ne 0) { throw 'Could not read the committed Next declaration.' }
+[IO.File]::WriteAllText((Join-Path $sourceRoot 'next-env.d.ts'), $originalNextEnv, [Text.UTF8Encoding]::new($false))
 foreach ($script in @('build-windows-job-helper.mjs','build-windows-pipe-security-adapter.mjs','build-windows-dpapi-credential-helper.mjs')) {
   Invoke-Checked $nodeExe @("scripts/$script", '--mode', 'developer-source-output') $sourceRoot
 }

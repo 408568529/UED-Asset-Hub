@@ -50,9 +50,9 @@ export async function buildCompetitionDirectory({ releaseRoot, toolsReceipt, dsh
   const sourceLinks = await snapshotDependencyTree(sourceCheckout, path.join(destination, "dependencies/dsh-source"));
   const runtimeLinks = await snapshotDependencyTree(path.join(dsh.dependencyRoot, "dsh-runtime"), path.join(destination, "dependencies/dsh-runtime"));
   const presetCheckData = destination + ".preset-check-data"; await mkdir(presetCheckData);
-  const priorDirectory = process.cwd(); process.chdir(sourceRoot);
+  const priorDirectory = process.cwd(); process.chdir(releaseRoot);
   let presetInstaller;
-  try { presetInstaller = (await import(pathToFileURL(path.join(sourceRoot, "scripts/host-supervisor.mjs")).href)).installAgentPresets; }
+  try { presetInstaller = (await import(pathToFileURL(path.join(releaseRoot, "scripts/host-supervisor.mjs")).href)).installAgentPresets; }
   finally { process.chdir(priorDirectory); }
   await presetInstaller({ dataRoot: await realpath(presetCheckData), agentRoot: await realpath(path.dirname(dsh.genuiHome)) });
   for (const name of await readdir(dsh.genuiHome)) if (!["profiles", "genui-packages", ".agent-presets"].includes(name)) throw new Error("Plugin preparation includes user state.");

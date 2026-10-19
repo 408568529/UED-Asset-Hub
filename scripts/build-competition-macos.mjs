@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildCompetitionDirectory } from "./build-competition-delivery.mjs";
 
-const [inputDirectory, toolsReceipt, dshBundle, buildRoot] = process.argv.slice(2);
+const [inputDirectory, toolsReceipt, dshBundle, buildRoot, preparedDshReceipt] = process.argv.slice(2);
 if (process.platform !== "darwin" || process.arch !== "arm64" || process.versions.node !== "22.23.2") throw new Error("Use the pinned portable Node on native macOS arm64.");
 const root = path.resolve(buildRoot);
 const tools = JSON.parse(await readFile(toolsReceipt, "utf8")), input = JSON.parse(await readFile(path.join(inputDirectory, "source-input.json"), "utf8"));
@@ -27,6 +27,8 @@ const npm = path.join(tools.nodeRoot, "lib/node_modules/npm/bin/npm-cli.js");
 if (spawnSync(tools.node, [npm, "--version"], { env: environment, encoding: "utf8" }).stdout.trim() !== "10.9.8") throw new Error("Pinned npm 10.9.8 required.");
 run(tools.node, [npm, "ci", "--ignore-scripts", "--no-audit", "--no-fund"], source);
 run(tools.node, [npm, "run", "build"], source);
+// Next regenerates this declaration; restore only this build clone's tracked input.
+await writeFile(path.join(source, "next-env.d.ts"), execFileSync(tools.git, ["-C", source, "show", "HEAD:next-env.d.ts"], { env: environment }));
 const closurePath = path.join(root, "runtime-closure.json");
 run(tools.node, ["scripts/internal-release-contract.mjs", "closure", "--root", source, "--output", closurePath], source);
 run(tools.node, [npm, "prune", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], source);
@@ -54,12 +56,17 @@ await copyRegularTree(path.join(source, "agent-integration/dsh"), path.join(rele
 const { writeInternalReleaseManifest } = await import(pathToFileURL(path.join(source, "scripts/internal-release-contract.mjs")).href);
 const dshVersion = JSON.parse(await readFile(path.join(source, "agent-integration/dsh/version.json"), "utf8"));
 await writeInternalReleaseManifest({ payloadRoot: release, sourceCommit: input.commit, sourceTree: input.tree, releaseVersion: `internal-0.1.1-${input.commit.slice(0, 12)}`, builtAtUtc: new Date().toISOString(), build: { node: "v22.23.2", npm: "10.9.8", platform: "darwin-arm64", visualStudio: "not-applicable:macOS", msvcCompiler: "not-applicable:macOS" }, dsh: { version: dshVersion.version, packageManager: "pnpm@11.7.0", license: "MIT", commit: dshVersion.sourceCommit, tree: dshVersion.sourceTree } });
+let dshReceipt = preparedDshReceipt;
+if (!dshReceipt) {
 const dependencyRoot = path.join(root, "prepared-dependencies"); await mkdir(dependencyRoot);
 const dshSource = path.join(dependencyRoot, "dsh-source"), runtime = path.join(dependencyRoot, "dsh-runtime"), profileRoot = path.join(root, "profile-seed"), dshHome = path.join(profileRoot, "dsh-home");
 await mkdir(dshHome, { recursive: true });
 for (const target of [dshSource, runtime]) { run(tools.git, ["clone", "--no-checkout", "--config", "core.symlinks=true", dshBundle, target]); run(tools.git, ["-C", target, "checkout", "--detach", dshVersion.sourceCommit]); }
-const corepack = path.join(tools.nodeRoot, "lib/node_modules/corepack/dist/corepack.js"), packageEnvironment = { DSH_HOME: dshHome, DSH_TELEMETRY_DISABLED: "1" };
-run(tools.node, [corepack, "pnpm", "--store-dir", path.join(root, "pnpm-store"), "install", "--frozen-lockfile"], runtime, packageEnvironment);
+const corepack = path.join(tools.nodeRoot, "lib/node_modules/corepack/dist/corepack.js");
+const shims = path.join(root, "package-manager-bin"); await mkdir(shims);
+run(tools.node, [corepack, "enable", "--install-directory", shims]); environment.PATH = shims + ":" + environment.PATH;
+const packageEnvironment = { DSH_HOME: dshHome, DSH_TELEMETRY_DISABLED: "1" };
+run(tools.node, [corepack, "pnpm", "--store-dir", path.join(root, "pnpm-store"), "install", "--frozen-lockfile", "--fetch-timeout", "600000", "--network-concurrency", "4"], runtime, packageEnvironment);
 run(tools.node, [corepack, "pnpm", "run", "build"], runtime, packageEnvironment);
 await rm(path.join(runtime, ".git"), { recursive: true });
 run(tools.node, [path.join(source, "scripts/verify-dsh-runtime-source.mjs"), dshSource, runtime], source, packageEnvironment);
@@ -71,7 +78,8 @@ const profilePath = path.join(dshHome, "profiles/web/package.json"), profile = J
 profile.dsh.profile.bundles = profile.dsh.profile.bundles.filter((name) => name !== "dsh-plugin-genui"); await writeFile(profilePath, JSON.stringify(profile, null, 2) + "\n");
 for (const patch of ["genui-client-load-liveness.mjs", "genui-haldur-reading.mjs"]) run(tools.node, [path.join(source, "agent-integration/scripts", patch), dshHome], source, packageEnvironment);
 const receipt = { schemaVersion: 1, platform: "darwin-arm64", nodeVersion: "22.23.2", dshCommit: dshVersion.sourceCommit, genui: "0.15.1", dependencyRoot, genuiHome: dshHome, sourceBundleSha256: createHash("sha256").update(await readFile(dshBundle)).digest("hex"), userDataIncluded: false, servicesStarted: false };
-const dshReceipt = path.join(root, "dsh-preparation.json"); await writeFile(dshReceipt, JSON.stringify(receipt, null, 2) + "\n");
+dshReceipt = path.join(root, "dsh-preparation.json"); await writeFile(dshReceipt, JSON.stringify(receipt, null, 2) + "\n");
+}
 const candidate = path.join(root, "UED-Asset-Hub-macOS-arm64");
 await buildCompetitionDirectory({ releaseRoot: release, toolsReceipt, dshReceipt, sourceBundle: dshBundle, destination: candidate, sourceRoot: source });
 const zip = path.join(root, `UED-Asset-Hub-V2.5-${input.commit.slice(0, 12)}-macOS-arm64.zip`);
