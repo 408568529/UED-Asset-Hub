@@ -1,0 +1,90 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { HaldurReadingPolicy, READ, SEARCH, isHaldurRead } from '../agent-integration/scripts/haldur-reading-policy.mjs';
+import { patchGenuiHaldurReading } from '../agent-integration/scripts/genui-haldur-reading.mjs';
+
+const policy = new HaldurReadingPolicy(), agent = {}, other = {};
+const exec = (name, args = {}, owner = agent) => ({ name, arguments: args, agent: owner });
+const mutation = exec('genui_create');
+const body = '# Entry\n## 核心流程\n1. [原则](./principles.md)\n2. [总览](./overview.md)\n3. [框架](./framework.md)\n7. [评审](./review.md)\n## 视觉来源优先级\n';
+function read(path, content, { offset = 0, total = Array.from(content).length, sha256 = createHash('sha256').update(content).digest('hex'), nextOffset = null } = {}) {
+  const call = exec(READ, { path, offset, ...(offset ? { sha256 } : {}) });
+  assert.equal(policy.check(call), undefined);
+  policy.observe(call, { isError: false, value: { content: [{ type: 'text', text: JSON.stringify({ relativePath: path, content, hasContent: true, sha256, offset, end: offset + Array.from(content).length, totalCharacters: total, nextOffset, truncated: offset > 0 || nextOffset !== null }) }] } });
+  return sha256;
+}
+assert.equal(policy.check(mutation), undefined, 'Ordinary GenUI unchanged');
+policy.beginTurn(agent, [{ source: { kind: 'user' }, content: [{ type: 'text', text: '用 Haldur 规范直接生成页面' }] }]);
+assert.match(policy.check(mutation), /SKILL.md/, 'Explicit Haldur intent blocks generation even before the first read');
+policy.beginTurn(agent, [{ source: { kind: 'user' }, content: [{ type: 'text', text: '普通计算器' }] }]);
+assert.equal(policy.check(mutation), undefined, 'An unrelated new turn remains unaffected');
+assert.match(policy.check(exec(READ, { path: 'framework.md' })), /SKILL.md first/);
+assert.match(policy.check(mutation), /SKILL.md/);
+read('SKILL.md', body);
+assert.match(policy.check(exec(READ, { path: 'framework.md' })), /principles.md/);
+read('principles.md', '原则');
+const sha = read('overview.md', '甲😀', { total: 4, nextOffset: 2 });
+assert.match(policy.check(exec(READ, { path: 'framework.md' })), /overview.md/);
+assert.match(policy.check(exec(READ, { path: 'overview.md', offset: 3, sha256: sha })), /Continuation/);
+assert.match(policy.check(exec(READ, { path: 'overview.md', offset: 2, sha256: 'f'.repeat(64) })), /Continuation/);
+assert.match(policy.check(mutation), /overview.md/);
+read('overview.md', '乙😀', { offset: 2, total: 4, sha256: sha });
+read('framework.md', '框架');
+assert.match(policy.check(mutation), /review.md/);
+read('review.md', '标准');
+assert.equal(policy.check(mutation), undefined, 'Complete contiguous pages, including truncated final segment, unlock mutation');
+const failed = exec(READ, { path: 'colors.md' });
+assert.equal(policy.check(failed), undefined);
+policy.observe(failed, { isError: true });
+assert.match(policy.check(exec('genui_update')), /colors.md/);
+assert.equal(policy.check(exec('genui_state_read')), undefined, 'Existing results/state remain readable');
+assert.equal(policy.check(exec('genui_create', {}, other)), undefined, 'Agent scopes isolated');
+read('colors.md', '颜色');
+assert.equal(policy.check(mutation), undefined);
+for (let i = policy.usage.get(agent).pages; i < 64; i++) read('colors.md', '颜色');
+assert.match(policy.check(exec(READ, { path: 'colors.md' })), /64 per turn/);
+for (let i = 0; i < 6; i++) assert.equal(policy.check(exec(SEARCH)), undefined);
+assert.match(policy.check(exec(SEARCH)), /6 per turn/);
+policy.reset(agent);
+assert.equal(policy.check(exec(SEARCH)), undefined);
+read('SKILL.md', 'unsupported entry');
+assert.match(policy.check(mutation), /supported core-flow/);
+
+const source = await readFile(process.argv[2], 'utf8');
+const patched = patchGenuiHaldurReading(source);
+assert.equal(patchGenuiHaldurReading(patched), patched, 'Idempotent pinned patch');
+assert.throws(() => patchGenuiHaldurReading(source + '\n'), /pinned/);
+assert.throws(() => patchGenuiHaldurReading(patched + '\n'), /identity/);
+function nativeBudget(text) {
+  const region = text.split('//#region src/runtime/discovery-budget.ts')[1].split('//#endregion')[0];
+  return new (new Function('isHaldurRead', region + ';return DiscoveryBudget;')(isHaldurRead))();
+}
+const original = nativeBudget(source), updated = nativeBudget(patched);
+const a = {};
+assert.equal(original.check(exec(SEARCH, {}, a)), undefined);
+for (let i = 0; i < 3; i++) assert.equal(original.check(exec(READ, {}, a)), undefined);
+assert.match(original.check(exec(READ, {}, a)), /read limit/, 'Reproduces original failure after one search plus three reads');
+for (let i = 0; i < 64; i++) assert.equal(updated.check(exec(READ, {}, a)), undefined);
+for (let i = 0; i < 4; i++) assert.equal(updated.check(exec('mcp__asset_hub__get_knowledge_asset', {}, a)), undefined);
+assert.match(updated.check(exec('mcp__asset_hub__get_knowledge_asset', {}, a)), /read limit/);
+assert.match(updated.check(exec('mcp__asset_hub__get_knowledge_asset', {}, a)), /Do not create or update/);
+console.log(JSON.stringify({ status: 'PASS', checks: ['original quota reproduction', 'bounded Haldur-only budget', 'other-source limits unchanged', 'SKILL order and complete prerequisites', 'Unicode contiguous pagination and pinned hash', 'missing/error/incomplete/unknown entry block mutations', 'ordinary GenUI/state reads/other agents unchanged', 'turn reset', 'pinned integrity and idempotency'], patchedServerSha256: createHash('sha256').update(patched).digest('hex') }, null, 2));
+const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises');
+const { tmpdir } = await import('node:os');
+const pathModule = await import('node:path');
+const { installGenuiHaldurReadingPatch } = await import('../agent-integration/scripts/genui-haldur-reading.mjs');
+const home = await mkdtemp(pathModule.join(tmpdir(), 'ued-genui-reading-install-'));
+try {
+  const packageRoot = pathModule.join(home, 'profiles/web/node_modules/dsh-plugin-genui');
+  await mkdir(pathModule.join(packageRoot, 'lib'), { recursive: true });
+  await writeFile(pathModule.join(packageRoot, 'package.json'), JSON.stringify({ name: 'dsh-plugin-genui', version: '0.15.1' }));
+  await writeFile(pathModule.join(packageRoot, 'lib/index.js'), source);
+  assert.equal((await installGenuiHaldurReadingPatch(home)).applied, true);
+  assert.equal((await installGenuiHaldurReadingPatch(home)).applied, false);
+  assert.equal(await readFile(pathModule.join(packageRoot, 'lib/index.js'), 'utf8'), patched);
+  await writeFile(pathModule.join(packageRoot, 'lib/index.js'), source + 'tampered');
+  await assert.rejects(installGenuiHaldurReadingPatch(home), /pinned/);
+  assert.equal(await readFile(pathModule.join(packageRoot, 'lib/index.js'), 'utf8'), source + 'tampered');
+  console.log('PASS: disposable installer, idempotency and unknown-byte fail-closed; no live runtime written.');
+} finally { await rm(home, { recursive: true, force: true }); }
