@@ -36,6 +36,7 @@ export function Button({ className, variant = "primary", size = "md", asChild, .
     <Comp
       data-ui-control
       data-slot="button"
+      data-variant={variant}
       className={cn(buttonVariants({ variant, size }), className)}
       {...props}
     />

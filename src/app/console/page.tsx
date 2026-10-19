@@ -4,7 +4,7 @@ const modules = ["内容管理", "分类管理", "标签管理", "专题管理",
 
 export default function ConsolePage() {
   return (
-    <div className="mx-auto max-w-6xl px-5 py-12">
+    <div className="legacy-page">
       <div className="mb-8">
         <Badge>Admin Preview</Badge>
         <h1 className="mt-4 text-5xl font-black">轻量管理入口</h1>
@@ -14,7 +14,7 @@ export default function ConsolePage() {
       </div>
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
         {modules.map((module) => (
-          <section key={module} className="rounded-[1.5rem] bg-white p-6 shadow-card">
+          <section key={module} className="rounded-[var(--radius-container)] bg-white p-6 shadow-card">
             <h2 className="text-2xl font-bold">{module}</h2>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">占位模块。后续接入真实 API、权限策略和运营配置。</p>
           </section>

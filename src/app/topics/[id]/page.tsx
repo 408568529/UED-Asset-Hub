@@ -13,8 +13,8 @@ export default async function TopicDetailPage({ params }: { params: Promise<{ id
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-5 py-12">
-      <section className="overflow-hidden rounded-[2rem] bg-white shadow-card">
+    <div className="legacy-page">
+      <section className="overflow-hidden rounded-[var(--radius-container)] bg-white shadow-card">
         <div className="relative aspect-[21/8] min-h-72">
           <Image src={topic.coverUrl} alt={topic.title} fill className="object-cover" priority />
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />

@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceNavLink } from "@/components/layout/WorkspaceNavLink";
+
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -172,7 +174,7 @@ export function KnowledgeLibraryWorkspace({ result, query, children }: { result:
             {sections.map((section) => {
               const Icon = section.icon;
               const active = activeSection === section.id;
-              return <Link key={section.id} href={buildHref(query, { asset: undefined, section: section.id, type: undefined, category: undefined, tag: undefined })} className={`flex min-h-10 items-center gap-2 px-2.5 text-sm font-medium transition ${active ? "knowledge-nav-active" : "text-muted-foreground hover:bg-[hsl(var(--surface-raised))] hover:text-foreground"}`}><Icon size={15} />{section.label}</Link>;
+              return <WorkspaceNavLink key={section.id} href={buildHref(query, { asset: undefined, section: section.id, type: undefined, category: undefined, tag: undefined })} active={active} className={active ? "knowledge-nav-active" : undefined}><Icon size={15} />{section.label}</WorkspaceNavLink>;
             })}
           </nav>
           <div className="lg:hidden"><SecondaryNavigation activeSection={activeSection} query={query} /></div>

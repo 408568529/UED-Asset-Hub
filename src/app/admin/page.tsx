@@ -1,3 +1,4 @@
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { AdminGuard } from "@/components/admin/AdminGuard";
 import { AdminList } from "@/components/admin/AdminList";
 import { AdminOverview } from "@/components/admin/AdminOverview";
@@ -43,7 +44,7 @@ export default async function AdminPage() {
     <AdminGuard>
       <main>
         <AdminWorkspace>
-          <header className="admin-page-header"><div><h1 className="text-lg font-black tracking-[-0.02em]">内容管理</h1><p className="mt-0.5 text-xs text-muted-foreground">浏览、筛选与维护团队内容资产</p></div><AdminToolbar /></header>
+          <WorkspacePageHeader className="admin-page-header" title="内容管理" description="浏览、筛选与维护团队内容资产" actions={<AdminToolbar />} />
           <AdminOverview assetTotal={managedAssets.length} monthlyNewCount={managedAssets.filter((asset) => new Date(asset.createdAt).getTime() >= monthStart.getTime()).length} lastUpdatedLabel={formatRelativeTime(latestUpdatedAt)} />
           <div className="admin-page-content">
             <AdminList

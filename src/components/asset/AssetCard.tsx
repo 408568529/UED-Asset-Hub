@@ -16,7 +16,7 @@ export function AssetCard({ asset, large = false }: { asset: Asset; large?: bool
       className="group bg-transparent"
     >
       <Link href={`/assets/${asset.id}`} className="block">
-        <div className={large ? "relative aspect-[16/10] overflow-hidden rounded-[2rem]" : "relative aspect-[5/4] overflow-hidden rounded-[2rem]"}>
+        <div className={large ? "relative aspect-[16/10] overflow-hidden rounded-[var(--radius-container)]" : "relative aspect-[5/4] overflow-hidden rounded-[var(--radius-container)]"}>
           <Image src={asset.coverUrl} alt={asset.title} fill className="object-cover transition duration-700 group-hover:scale-105" sizes="(max-width: 768px) 100vw, 33vw" />
           <div className="absolute left-5 top-5 rounded-full bg-[#f7f6f0]/90 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] backdrop-blur">
             {categoryMeta[asset.category].name}

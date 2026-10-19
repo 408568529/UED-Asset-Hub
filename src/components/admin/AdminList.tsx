@@ -218,7 +218,7 @@ export function AdminList({
   }
 
   return (
-    <section>
+    <section className="admin-asset-list">
       <div className="mb-7">
         <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <TabsList>
@@ -234,13 +234,15 @@ export function AdminList({
           ))}
           </TabsList>
         </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_11rem]">
+        <div className="admin-asset-filters mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_11rem]">
           <Input
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
             placeholder="搜索资产名称 / 介绍 / 标签"
+            aria-label="搜索资产"
           />
           <Select
+            aria-label="资产排序"
             value={sortMode}
             onChange={(event) => setSortMode(event.target.value as SortMode)}
           >
@@ -253,7 +255,7 @@ export function AdminList({
 
       {message ? <p className="mb-4 text-sm text-red-600">{message}</p> : null}
 
-      <div className="border border-border bg-[hsl(var(--surface-raised))]">
+      <div className="admin-asset-table border border-border bg-[hsl(var(--surface-raised))]">
         <div className="hidden border-b border-border bg-[hsl(var(--surface-subtle)/0.46)] px-5 py-3 md:grid md:grid-cols-[minmax(0,1fr)_8.5rem_7.5rem_10rem] md:items-center md:gap-5">
           <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">资产</span>
           <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">类型</span>
@@ -261,9 +263,9 @@ export function AdminList({
           <span className="text-right font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">操作</span>
         </div>
         {rows.map((row) => (
-          <article key={`${row.category}-${row.id}`} className="group relative grid gap-4 border-b border-border px-5 py-5 transition-colors last:border-b-0 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:origin-bottom before:scale-y-0 before:bg-primary before:transition-transform hover:bg-[hsl(var(--surface-subtle)/0.35)] hover:before:scale-y-100 md:grid-cols-[minmax(0,1fr)_8.5rem_7.5rem_10rem] md:items-center md:gap-5">
+          <article key={`${row.category}-${row.id}`} className="admin-asset-row group relative grid gap-4 border-b border-border px-5 py-5 transition-colors last:border-b-0 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:origin-bottom before:scale-y-0 before:bg-primary before:transition-transform hover:bg-[hsl(var(--surface-subtle)/0.35)] hover:before:scale-y-100 md:grid-cols-[minmax(0,1fr)_8.5rem_7.5rem_10rem] md:items-center md:gap-5">
             <div>
-              <h3 className="text-lg font-black leading-tight tracking-[-0.02em] md:text-xl">{row.title}</h3>
+              <h3 className="admin-asset-title">{row.title}</h3>
               <p className="mt-1.5 line-clamp-2 max-w-3xl text-sm leading-6 text-muted-foreground">{row.description}</p>
               {row.meta ? <p className="mt-2 font-mono text-xs text-muted-foreground">{row.meta}</p> : null}
             </div>
