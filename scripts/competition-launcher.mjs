@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
-import { access, lstat, mkdir, open, unlink, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, open as openFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -20,7 +20,7 @@ export function localDistributionEnvironment(config, packageRoot, dataRoot, logi
     PATH: [path.dirname(tools.node), path.dirname(tools.git), ...systemPaths].join(path.delimiter), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: os.devNull, GIT_OPTIONAL_LOCKS: "0",
     NODE_ENV: "production", UED_LOCAL_DISTRIBUTION_MODE: "true", UED_LOCAL_DISTRIBUTION_ROOT: dataRoot, UED_LOCAL_DISTRIBUTION_PACKAGE: packageRoot,
     HOST_BIND_HOST: "127.0.0.1", ADMIN_SESSION_SECURE: "false", PUBLIC_ORIGIN: `http://127.0.0.1:${config.HOST_PORT}`, UED_STAGING_SHUTDOWN_ENABLED: "true",
-    TMP: path.join(config.ASSET_HUB_RUNTIME_DIR, "tmp"), TEMP: path.join(config.ASSET_HUB_RUNTIME_DIR, "tmp"), TMPDIR: path.join(config.ASSET_HUB_RUNTIME_DIR, "tmp")
+    TMP: path.join(config.ASSET_HUB_RUNTIME_DIR, "tmp"), TEMP: path.join(config.ASSET_HUB_RUNTIME_DIR, "tmp"), TMPDIR: process.platform === "darwin" ? "/private/tmp" : path.join(config.ASSET_HUB_RUNTIME_DIR, "tmp")
   });
   if (process.platform === "darwin") environment.GIT_EXEC_PATH = path.join(packageRoot, "tools/git/libexec/git-core");
   return environment;
@@ -84,7 +84,7 @@ export async function runLocalDistribution(action, packageRoot, { open = true } 
     if (alive(stale.pid)) throw new Error("本安装正在启动或停止，请稍后再试。");
     await unlink(lockPath);
   } catch (error) { if (error.code !== "ENOENT") throw error; }
-  const lock = await open(lockPath, "wx", 0o600);
+  const lock = await openFile(lockPath, "wx", 0o600);
   try {
     await lock.writeFile(JSON.stringify({ pid: process.pid })); await lock.close();
     let state = null;

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { randomBytes, randomUUID } from "node:crypto";
+import { access, mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { initializeCompetitionData } from "./competition-first-run.mjs";
@@ -30,5 +31,24 @@ try {
   const linked = path.join(root, "linked-parent");
   await symlink(packageRoot, linked, process.platform === "win32" ? "junction" : "dir");
   await assert.rejects(initializeCompetitionData({ ...options, dataRoot: path.join(linked, "new-data") }), /link|separate/);
+  if (process.platform === "darwin") {
+    const { localDistributionEnvironment } = await import("./competition-launcher.mjs");
+    const { createRuntimeControlBridge, requestRuntimeControl, runtimeControlEndpoint } = await import("./runtime-control-bridge.mjs");
+    const longRuntime = path.join(root, "长目录".repeat(24), "asset-runtime");
+    await mkdir(path.join(longRuntime, "tmp"), { recursive: true });
+    const shipping = localDistributionEnvironment({ ...result.environment, ASSET_HUB_RUNTIME_DIR: longRuntime }, packageRoot, dataRoot);
+    const priorTmp = process.env.TMPDIR;
+    process.env.TMPDIR = shipping.TMPDIR;
+    const endpoint = runtimeControlEndpoint({ supervisorDirectory: longRuntime, instanceId: randomUUID() });
+    const token = randomBytes(32).toString("base64url");
+    const bridge = createRuntimeControlBridge({ endpoint, token, inspect: () => ({ status: "ready", credentialStatus: "configured", generation: 0, shell: "ready" }) });
+    try {
+      assert.ok(Buffer.byteLength(endpoint) < 104, "long selected paths must not truncate the private Unix control socket");
+      await bridge.start();
+      assert.equal((await stat(endpoint)).mode & 0o777, 0o600);
+      assert.equal((await requestRuntimeControl({ endpoint, token, operation: "status" })).status, "ready");
+    } finally { await bridge.stop(); if (priorTmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = priorTmp; }
+    console.log("[V2.5] long macOS data path with private authenticated IPC: PASS");
+  }
   console.log("[V2.5] first-run consent, Chinese/spaced paths, quoting, empty storage, existing data, missing roots and linked paths: PASS");
 } finally { await rm(root, { recursive: true, force: true }); }
