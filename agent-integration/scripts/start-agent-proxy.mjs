@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { resolveProxySessionConfig } from "../../scripts/host-security-config.mjs";
 import { allowsPublicAgentRequest } from "./agent-public-access.mjs";
+import { hasValidPreviewGrant, previewGrantLifetimeMs, previewGrantQuery } from "./genui-preview-grant.mjs";
 const require = createRequire(import.meta.url);
 const httpProxy = require("http-proxy");
 
@@ -34,8 +35,6 @@ const allowedPresets = new Set([restrictedPreset, genuiPreset]);
 await mkdir(workspaceRoot, { recursive: true });
 const workspaceRootRealPath = await realpath(workspaceRoot);
 
-const previewGrantQuery = "ued_preview_grant";
-const previewGrantLifetimeMs = 5 * 60 * 1000;
 
 function createPreviewGrant(artifactId, versionId) {
   const payload = Buffer.from(JSON.stringify({ artifactId, versionId, expiresAt: Date.now() + previewGrantLifetimeMs })).toString("base64url");
@@ -43,24 +42,6 @@ function createPreviewGrant(artifactId, versionId) {
   return `${payload}.${signature}`;
 }
 
-function hasValidPreviewGrant(request, url) {
-  if (request.method !== "GET" || url.searchParams.getAll(previewGrantQuery).length !== 1) return false;
-  const grant = url.searchParams.get(previewGrantQuery) || "";
-  const [payload, signature, extra] = grant.split(".");
-  if (!payload || !signature || extra !== undefined) return false;
-  let scope;
-  try { scope = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")); } catch { return false; }
-  if (typeof scope?.artifactId !== "string" || typeof scope?.versionId !== "string"
-    || !Number.isSafeInteger(scope?.expiresAt) || scope.expiresAt <= Date.now()
-    || scope.expiresAt > Date.now() + previewGrantLifetimeMs) return false;
-  const assetMatch = url.pathname.match(/^\/genui\/assets\/([^/]+)\/([^/]+)\/.+$/);
-  if (url.pathname !== "/genui/bridge.js"
-    && (!assetMatch || assetMatch[1] !== encodeURIComponent(scope.artifactId) || assetMatch[2] !== encodeURIComponent(scope.versionId))) return false;
-  const expected = createHmac("sha256", sessionSecret).update(`genui-preview-asset-v1.${payload}`).digest("base64url");
-  const actualBytes = Buffer.from(signature);
-  const expectedBytes = Buffer.from(expected);
-  return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
-}
 
 function addPreviewAssetGrant(html, artifactId, versionId, grant) {
   const assetPrefix = `/genui/assets/${encodeURIComponent(artifactId)}/${encodeURIComponent(versionId)}/`;
@@ -453,7 +434,7 @@ const server = http.createServer(async (request, response) => {
   }
   const sessionAuthorized = hasAdminSession(request);
   const previewGrantPresent = url.searchParams.has(previewGrantQuery);
-  const previewGrantValid = hasValidPreviewGrant(request, url);
+  const previewGrantValid = hasValidPreviewGrant(request, url, sessionSecret);
   const previewGrantAuthorized = !sessionAuthorized && previewGrantValid;
   const publicAuthorized = allowsPublicAgentRequest(request, url);
   if (!sessionAuthorized && !previewGrantAuthorized && !publicAuthorized) return unauthorized(response);

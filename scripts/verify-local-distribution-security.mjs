@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { createServer, request } from "node:http";
 import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -30,17 +31,24 @@ try {
   const req = (method, host, origin) => ({ method, headers: new Headers({ host, ...(origin ? { origin } : {}) }) });
   assert.equal(acceptsLocalDistributionRequest(req("POST", "127.0.0.1:3247", "http://127.0.0.1:3247"), environment), true);
   for (const bad of [req("POST", "127.0.0.1:3247"), req("POST", "127.0.0.1:3247", "http://evil.test"), req("GET", "evil.test:3247")]) assert.equal(acceptsLocalDistributionRequest(bad, environment), false);
+  const grantPayload = Buffer.from(JSON.stringify({ artifactId: "fixture", versionId: "version", expiresAt: Date.now() + 60_000 })).toString("base64url");
+  const grant = grantPayload + "." + createHmac("sha256", environment.ADMIN_SESSION_SECRET).update("genui-preview-asset-v1." + grantPayload).digest("base64url");
+  const sandboxRequest = { method: "GET", url: `/genui/assets/fixture/version/app.js?ued_preview_grant=${grant}`, headers: new Headers({ host: "127.0.0.1:3247", origin: "null", "sec-fetch-site": "cross-site" }) };
+  assert.equal(acceptsLocalDistributionRequest(sandboxRequest, environment), true);
+  for (const patch of [{ method: "POST" }, { url: sandboxRequest.url.replace("/fixture/", "/other/") }, { url: "/api/auth/login?ued_preview_grant=" + grant }, { url: sandboxRequest.url + "invalid" }]) assert.equal(acceptsLocalDistributionRequest({ ...sandboxRequest, ...patch }, environment), false);
   upstream = createServer((_req, response) => { response.writeHead(200); response.end("upstream"); });
   await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
   const reserve = createServer(); await new Promise((resolve) => reserve.listen(0, "127.0.0.1", resolve)); const port = reserve.address().port; await new Promise((resolve) => reserve.close(resolve));
   Object.assign(process.env, environment, { HOST_PORT: String(port), PUBLIC_ORIGIN: `http://127.0.0.1:${port}` });
   edge = createEdgeServer({ host: "127.0.0.1", port, internalPort: upstream.address().port, proxyPort: upstream.address().port }); await edge.start();
-  const status = (host, headers = {}, method = "GET", address = "127.0.0.1") => new Promise((resolve, reject) => {
-    const call = request({ hostname: address, port, method, headers: { Host: host, ...headers }, timeout: 1500 }, (response) => { response.resume(); resolve(response.statusCode); });
+  const status = (host, headers = {}, method = "GET", address = "127.0.0.1", route = "/") => new Promise((resolve, reject) => {
+    const call = request({ hostname: address, port, path: route, method, headers: { Host: host, ...headers }, timeout: 1500 }, (response) => { response.resume(); resolve(response.statusCode); });
     call.on("timeout", () => call.destroy(new Error("timeout"))); call.on("error", reject); call.end();
   });
   assert.equal(await status(`127.0.0.1:${port}`), 200);
   assert.equal(await status(`evil.test:${port}`), 403);
+  assert.equal(await status(`127.0.0.1:${port}`, { Origin: "null", "Sec-Fetch-Site": "cross-site" }, "GET", "127.0.0.1", sandboxRequest.url), 200);
+  assert.equal(await status(`127.0.0.1:${port}`, { Origin: "null", "Sec-Fetch-Site": "cross-site" }, "GET", "127.0.0.1", sandboxRequest.url + "invalid"), 403);
   assert.equal(await status(`127.0.0.1:${port}`, { Origin: "http://evil.test" }, "POST"), 403);
   assert.equal(await status(`127.0.0.1:${port}`, {}, "POST"), 403);
   const lan = Object.values(os.networkInterfaces()).flat().find((item) => item?.family === "IPv4" && !item.internal)?.address;

@@ -1,5 +1,6 @@
 import { readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
+import { hasValidPreviewGrant } from "../agent-integration/scripts/genui-preview-grant.mjs";
 
 const children = {
   DATA_DIR: "hub-data", TRAINING_MEDIA_DIR: "training-media", AGENT_RUNTIME_DIR: "agent-runtime",
@@ -35,9 +36,14 @@ export function acceptsLocalDistributionRequest(request, environment = process.e
   const expectedHost = `127.0.0.1:${environment.HOST_PORT}`;
   if (header("host") !== expectedHost) return false;
   const origin = header("origin");
-  if (origin && origin !== `http://${expectedHost}`) return false;
+  // Preserve the existing opaque GenUI sandbox's scoped, signed read-only asset grant.
+  let previewAsset = false;
+  if (origin === "null" && request.url) {
+    try { previewAsset = hasValidPreviewGrant(request, new URL(request.url, `http://${expectedHost}`), environment.ADMIN_SESSION_SECRET); } catch {}
+  }
+  if (origin && origin !== `http://${expectedHost}` && !previewAsset) return false;
   if (!["GET", "HEAD", "OPTIONS"].includes(request.method || "GET") && origin !== `http://${expectedHost}`) return false;
-  if (header("sec-fetch-site") && !["same-origin", "none"].includes(header("sec-fetch-site"))) return false;
+  if (header("sec-fetch-site") && !["same-origin", "none"].includes(header("sec-fetch-site")) && !previewAsset) return false;
   if (header("x-forwarded-host") && header("x-forwarded-host") !== expectedHost) return false;
   return !header("x-forwarded-proto") || header("x-forwarded-proto") === "http";
 }
