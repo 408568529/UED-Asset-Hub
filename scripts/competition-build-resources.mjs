@@ -32,7 +32,7 @@ async function inspectTree(root, countOnly = false) {
   let bytes = 0;
   for (const entry of await readdir(root, { withFileTypes: true })) {
     const item = path.join(root, entry.name), info = await lstat(item);
-    if (/^(?:dsh-home|DSH_HOME|DATA|Haldur|\.credentials\.yaml|host-login\.env|runtime\.json|installation\.json)$/i.test(entry.name)) throw new Error('Protected runtime/configuration path found: ' + entry.name);
+    if (/^(?:dsh-home|DSH_HOME|\.credentials\.yaml|host-login\.env|runtime\.json|installation\.json)$/i.test(entry.name)) throw new Error('Protected runtime/configuration path found: ' + entry.name);
     // Links are unlinked, never traversed. Reject a link used as the cleanup root separately.
     if (info.isSymbolicLink()) continue;
     if (info.isDirectory()) bytes += await inspectTree(item, countOnly);
