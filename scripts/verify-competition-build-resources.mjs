@@ -3,7 +3,8 @@ import { mkdtemp, mkdir, writeFile, readFile, access, rm, symlink, realpath } fr
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { runBuild, cleanupBuild } from './competition-build-resources.mjs';
+import { runBuild, cleanupBuild, processIdentity } from './competition-build-resources.mjs';
+assert.notEqual(processIdentity({pid: 7, started: 'old', command: 'same'}), processIdentity({pid: 7, started: 'new', command: 'same'}), 'Reused PID and command must not inherit ownership');
 const scope = await realpath(await mkdtemp(path.join(tmpdir(), 'ued-resource-test-')));
 const digest = value => createHash('sha256').update(value).digest('hex');
 try {

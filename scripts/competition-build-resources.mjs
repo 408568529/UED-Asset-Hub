@@ -21,10 +21,13 @@ async function used(root) { const s = await statfs(root); return Number(s.blocks
 async function free(root) { const s = await statfs(root); return Number(s.bavail) * Number(s.bsize); }
 function processes() {
   if (process.platform === 'win32') {
-    const raw = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress'], { encoding: 'utf8' });
-    return [].concat(JSON.parse(raw || '[]')).map(p => ({ pid: p.ProcessId, parent: p.ParentProcessId, command: p.CommandLine || '' }));
+    const raw = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine,@{n="Started";e={$_.CreationDate.ToUniversalTime().ToString("o")}} | ConvertTo-Json -Compress'], { encoding: 'utf8' });
+    return [].concat(JSON.parse(raw || '[]')).map(p => ({ pid: p.ProcessId, parent: p.ParentProcessId, command: p.CommandLine || '', started: p.Started }));
   }
   return execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf8' }).trim().split('\n').map(line => { const m = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/); if (!m) throw new Error('Process audit failed.'); return { pid: +m[1], parent: +m[2], command: m[3] }; });
+}
+export function processIdentity(p) {
+  return createHash('sha256').update(JSON.stringify([p.pid, p.started || null, p.command])).digest('hex');
 }
 function activeIn(root, rows, exclusions = []) {
   return rows.filter(p => !exclusions.includes(p.pid) && p.command.toLowerCase().includes(root.toLowerCase()));
@@ -55,15 +58,23 @@ export async function runBuild({ scope, work, disposable, command, args = [] }) 
   const ancestors = [process.pid]; const initialRows = processes();
   for (let pid = process.ppid; pid && !ancestors.includes(pid); pid = initialRows.find(p => p.pid === pid)?.parent) ancestors.push(pid);
   const tracked = new Map();
-  const ownedActive = () => { const rows = processes(); const ids = new Set([child?.pid]); let changed = true; while (changed) { changed = false; for (const p of rows) if (ids.has(p.parent) && !ids.has(p.pid)) { ids.add(p.pid); changed = true; } }
-    for (const p of rows) if (ids.has(p.pid)) tracked.set(p.pid, createHash('sha256').update(p.command).digest('hex'));
-    return rows.filter(p => !ancestors.includes(p.pid) && (p.command.toLowerCase().includes(work.toLowerCase()) || tracked.get(p.pid) === createHash('sha256').update(p.command).digest('hex'))); };
+  let childIdentity;
+  const ownedActive = () => {
+    const rows = processes(), ids = new Set();
+    const root = rows.find(p => p.pid === child?.pid);
+    if (!childIdentity && root && !initialRows.some(p => processIdentity(p) === processIdentity(root))) childIdentity = processIdentity(root);
+    for (const p of rows) if (processIdentity(p) === childIdentity || tracked.get(p.pid) === processIdentity(p)) ids.add(p.pid);
+    let changed = true;
+    while (changed) { changed = false; for (const p of rows) if (ids.has(p.parent) && !ids.has(p.pid) && !initialRows.some(before => processIdentity(before) === processIdentity(p))) { ids.add(p.pid); changed = true; } }
+    for (const p of rows) if (ids.has(p.pid)) tracked.set(p.pid, processIdentity(p));
+    return rows.filter(p => !ancestors.includes(p.pid) && (p.command.toLowerCase().includes(work.toLowerCase()) || tracked.get(p.pid) === processIdentity(p)));
+  };
   const id = randomUUID(), recordFile = path.join(control, id + '.json');
   let released = false;
   const record = { schemaVersion: VERSION, id, scope: await realpath(scope), work, disposable, ownerPid: process.pid, state: 'BUILDING', startedAt: new Date().toISOString(), cachePolicy: 'One owned cache for pinned Node 22.23.2; shared user caches untouched', children: [], disk: { freeBefore: await free(scope), minimumFreeObserved: await free(scope), usedBefore: await used(scope), maximumUsedObserved: await used(scope), sampleIntervalMs: 2000 } };
   await handle.writeFile(JSON.stringify({ id, recordFile, ownerPid: process.pid }));
   let timer, child, monitoring, buildLog;
-  const sample = async () => { ownedActive(); record.trackedChildren = [...tracked].map(([pid, commandSha256]) => ({pid, commandSha256})); record.disk.minimumFreeObserved = Math.min(record.disk.minimumFreeObserved, await free(scope)); record.disk.maximumUsedObserved = Math.max(record.disk.maximumUsedObserved, await used(scope)); await save(recordFile, record); };
+  const sample = async () => { ownedActive(); record.trackedChildren = [...tracked].map(([pid, processIdentitySha256]) => ({pid, processIdentitySha256})); record.disk.minimumFreeObserved = Math.min(record.disk.minimumFreeObserved, await free(scope)); record.disk.maximumUsedObserved = Math.max(record.disk.maximumUsedObserved, await used(scope)); await save(recordFile, record); };
   try {
     // The only retained cache is owned by this scope and all users hold this same exclusive lock.
     const cache = path.join(control, 'cache-node-22.23.2');
