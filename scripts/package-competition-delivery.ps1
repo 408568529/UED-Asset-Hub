@@ -30,7 +30,7 @@ if($LASTEXITCODE -ne 0){throw 'Competition package assembly failed. The isolated
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $name='UED-Asset-Hub-V2.5-candidate-'+$archive.Manifest.source.commit.Substring(0,12)+'-win-x64.zip'
 $zip=Join-Path $output $name
-[IO.Compression.ZipFile]::CreateFromDirectory($candidate,$zip,[IO.Compression.CompressionLevel]::Optimal,$false,[Text.Encoding]::UTF8)
+[IO.Compression.ZipFile]::CreateFromDirectory($candidate,$zip,[IO.Compression.CompressionLevel]::Optimal,$true,[Text.Encoding]::UTF8)
 $digest=(Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText(($zip+'.sha256'),($digest+'  '+$name+"`n"),[Text.UTF8Encoding]::new($false))
 [pscustomobject]@{zip=$zip;sha256=$digest;source=$archive.Manifest.source;status='CANDIDATE_NOT_NEW_MACHINE_VERIFIED'}|ConvertTo-Json -Compress

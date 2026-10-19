@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "platform": "darwin-arm64",
+  "node": {
+    "version": "22.23.2",
+    "url": "https://nodejs.org/dist/v22.23.2/node-v22.23.2-darwin-arm64.tar.gz",
+    "archiveSha256": "61130f394c1630d211dd50aecc4353d379480f36d3ac913cd85dbba1aed585c6",
+    "executableSha256": "18e387c90ab8a8400183e8bdd396376e1e875b91b4c874b894dcade7b35bf572"
+  },
+  "git": {
+    "version": "2.53.0",
+    "url": "https://www.kernel.org/pub/software/scm/git/git-2.53.0.tar.xz",
+    "archiveSha256": "5818bd7d80b061bbbdfec8a433d609dc8818a05991f731ffc4a561e2ca18c653",
+    "sourceRelease": "https://www.kernel.org/pub/software/scm/git/",
+    "distribution": "native-build-from-pinned-source; local Git validation only; no curl/network helper"
+  },
+  "pnpm": "11.7.0",
+  "dshCommit": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+  "genui": "0.15.1"
+}

@@ -47,9 +47,9 @@ $text="@{`n"; foreach($entry in $config.GetEnumerator()) { $text += '  ' + $entr
 [IO.File]::WriteAllText($configPath,$text,[Text.UTF8Encoding]::new($false))
 & (Join-Path $release 'scripts\install-internal-dsh-runtime.ps1') -ReleaseRoot $release -ConfigPath $configPath -SourceBundlePath $SourceBundlePath -ExpectedSourceBundleSha256 $SourceBundleSha256
 if ($LASTEXITCODE -ne 0) { throw 'Existing pinned DSH/official Plugin Manager preparation failed.' }
-$home=Join-Path $root 'profile-seed\dsh-home'
-foreach($name in @('.credentials.yaml','.env','sessions','genui-artifacts')) { if(Test-Path -LiteralPath (Join-Path $home $name)) { throw 'Prepared plugin seed contains forbidden user state; delivery stopped.' } }
+$dshHome=Join-Path $root 'profile-seed\dsh-home'
+foreach($name in @('.credentials.yaml','.env','sessions','genui-artifacts')) { if(Test-Path -LiteralPath (Join-Path $dshHome $name)) { throw 'Prepared plugin seed contains forbidden user state; delivery stopped.' } }
 $env:DSH_HOME=$null
-$evidence=[ordered]@{schemaVersion=1;platform='win32-x64';nodeVersion='22.23.2';dshCommit='b150a551b8d465e31e418e1b2eaf5e79bbb7d28e';genui='0.15.1';dependencyRoot=(Join-Path $root 'dependencies');genuiHome=$home;sourceBundleSha256=$SourceBundleSha256;userDataIncluded=$false;servicesStarted=$false}
+$evidence=[ordered]@{schemaVersion=1;platform='win32-x64';nodeVersion='22.23.2';dshCommit='b150a551b8d465e31e418e1b2eaf5e79bbb7d28e';genui='0.15.1';dependencyRoot=(Join-Path $root 'dependencies');genuiHome=$dshHome;sourceBundleSha256=$SourceBundleSha256;userDataIncluded=$false;servicesStarted=$false}
 $evidence|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $root 'dsh-preparation.json') -Encoding utf8
 $evidence|ConvertTo-Json -Compress

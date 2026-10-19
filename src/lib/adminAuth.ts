@@ -1,6 +1,7 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { acceptsLocalDistributionRequest } from "../../scripts/local-distribution-config.mjs";
 import { ADMIN_SESSION_COOKIE, ADMIN_SESSION_MAX_AGE, getAdminSecurityConfig } from "@/config/admin";
 
 type AdminSessionPayload = {
@@ -50,10 +51,12 @@ export function createAdminSession() {
 }
 
 export function isAdminRequest(request: Request) {
+  if (!acceptsLocalDistributionRequest(request)) return false;
   return verifySession(getRequestCookie(request));
 }
 
 export async function hasAdminSession() {
+  if (!acceptsLocalDistributionRequest({ headers: await headers(), method: "GET" })) return false;
   const cookieStore = await cookies();
   return verifySession(cookieStore.get(ADMIN_SESSION_COOKIE)?.value);
 }

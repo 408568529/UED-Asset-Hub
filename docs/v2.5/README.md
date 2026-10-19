@@ -1,56 +1,44 @@
-# UED Asset Hub V2.5 — Windows比赛候选包
+# UED Asset Hub V2.5 本机发行候选包
 
-**当前为开发/候选阶段：完整Windows依赖、双击首装与复启仍待验收，NEW_MACHINE_NOT_VERIFIED。没有通过验收前，不称为开箱即用。**
+Windows x64 与 macOS Apple Silicon 分别提供独立 ZIP。当前为候选交付；真实干净环境首启尚未完成，状态为 **NEW_MACHINE_NOT_VERIFIED**，不得据此宣称“解压即用”。具体构建和隔离验收结果见随交付报告。
 
-## 一、解压
+## 1. 解压并检测
 
-限定Windows x64。核对对应候选ZIP的SHA-256，完整解压到C盘之外的程序目录，保留app、dependencies、tools、licenses和competition-manifest.json。程序不放入持久数据根。候选包不是已验收的正式发行；缺任一必要构件时入口停止，不使用系统中碰巧存在的Node/Git替代随包依赖。
+核对 ZIP 对应 SHA-256，完整解压程序文件夹。Windows 程序和新数据必须放在 C 盘之外；macOS 仅支持 Apple Silicon。保留 app、dependencies、tools、licenses 和 competition-manifest.json。
 
-## 二、首次启动并选择持久目录
+双击 `01-检测运行环境.cmd`（Windows）或 `01-检测运行环境.command`（Mac）。检测系统、架构、完整性、便携工具、权限和端口，通过时显示“可以启动”。检测只读，不初始化业务目录、不读取凭据、不清理进程、不修改系统 PATH。若 Windows 缺少文件符号链接权限，按检测提示由本机管理员配置权限后重试；不会自动修改系统策略。
 
-双击“轻点击我启动.cmd”。选择C盘之外的父目录并明确确认创建新的UED-Asset-Hub-Data总目录；若已存在该目录则拒绝覆盖。向导建立hub-data、training-media、agent-runtime、asset-hub-runtime、Haldur-Design-Skill、haldur-runtime及config，只复制新构建的插件依赖，不带作者DATA、会话或成果。空索引由现有存储层按合法空数据读取，不植入真实知识或样例。
+## 2. 首次启动
 
-已有安装使用现有外置runtime.psd1配置进行只读兼容预检，可保留分散的数据路径。不能自动把Windows原目录替换为新总目录；不会自动迁移或拷Mac数据。取消操作不写DATA；中断时保留诊断，不递归删除已有内容。再次启动发现保存目录丢失时报错，不悄悄重建空库。
+双击 `02-轻点击我启动` 对应平台入口。选择外部持久化目录的父目录，明确确认创建新的 `UED-Asset-Hub-Data`，设置管理员用户名及至少 12 位的强密码。没有默认密码。已存在的数据目录不会覆盖，取消操作不会初始化业务数据。
 
-**现有安全前提仍需满足：管理员启动配置、受信HTTPS入口、Windows运行权限，以及上游Git来源所需文件符号链接权限。当前向导只准备目录/依赖，不生成管理员密码或证书，也不修改DSH安全机制；这些条件未具备时会阻断启动，尚不能视为普通空白电脑完整首装。**
+数据目录内包含 hub-data、training-media、agent-runtime、asset-hub-runtime、Haldur-Design-Skill、haldur-runtime 和 config。程序与数据分离；不包含作者 DATA、DSH_HOME、会话或 GenUI 成果。程序目录仅保存非敏感安装位置、运行状态和构件链接信息。首次启动只恢复预备构件的链接和初始化全新数据，不 clone、不安装 npm/pnpm 包、不编译 DSH、不安装 GenUI。
 
-## 三、登录后台并配置DeepSeek
+启动后自动打开 `http://127.0.0.1:3247`。发行包显式启用独立本机模式，Hub、DSH、Gateway、Proxy 入口均绑定 127.0.0.1；局域网不能访问。不需用户准备 HTTPS 证书。本机 HTTP Session Cookie 使用 HttpOnly、SameSite=Lax；只有通过本机发行校验时才允许非 Secure Cookie，并保留管理员鉴权、Host、Origin/CSRF 检查。Windows Service、局域网和公网部署仍须原 HTTPS / Secure Cookie 配置，此入口不承担服务器升级。
 
-1. 使用该安装已有的管理员账号进入 `/admin/login`。
-2. 进入悠鼎Agent的“模型设置”，地址为 `/agent/settings`。未登录时会跳转登录页，登录后再进入设置页。
-3. 输入本人获准使用的DeepSeek API Key，确认Base URL和模型，点击保存；可使用现有测试连接。
-4. 后续启动保留同一个外置AGENT_RUNTIME_DIR/DSH_HOME，不再要求输入Key。修改/删除仍使用原设置页。
+## 3. 在已有后台配置 DeepSeek
 
-API调用需要网络、有效账号与额度，费用由使用者承担。启动器不收集或预置Key；不把Key放入ZIP、Git、README、命令行或日志。不要用别人的Key或把凭据发给开发者。
+1. 用首次设置的管理员账号进入 `/admin/login`。
+2. 打开悠鼎 Agent 的“模型设置” `/agent/settings`。
+3. 填写本人获准使用的 DeepSeek API Key、Base URL 和模型并保存。需要联网且可能产生模型费用。
+4. 后续启动复用同一外置数据目录和原有配置，不重复要求输入 Key。修改或删除仍在原设置页操作。
 
-**存储边界：默认credentials-local将凭据保存在 `<AGENT_RUNTIME_DIR>/dsh-home/.credentials.yaml`。依赖原有文件权限和账户访问控制，属于本地文件存储，不是本轮提供的加密存储。输入框掩码不代表磁盘加密。请保护该账户和数据目录，备份也包含敏感信息。** 本轮不新增DPAPI API Key适配，不改变DSH核心或原有安全机制。若进程继承DEEPSEEK_API_KEY，它会遮蔽文件配置并成为只读；本入口会拒绝此冲突并提示使用后台配置，不显示变量内容。
+启动器不提供独立 API Key 输入或凭据管理界面，不预置 Key，不向 ZIP、Git、README、命令行或日志写入 Key。不得把凭据发给开发者。继承的模型 Key 环境变量与后台配置冲突时会阻断启动，不显示其内容。
 
-## 四、使用、停止与再次启动
+**凭据存储安全边界：** 原 DSH credentials-local 默认将 API Key 保存于 `<AGENT_RUNTIME_DIR>/dsh-home/.credentials.yaml`，依靠原有文件权限和账户访问控制，不能称为加密存储；密码掩码不代表磁盘加密。本轮不新增 DPAPI API Key 适配、不修改 DSH 核心及其原有安全机制。发行启动所需管理员配置位于外置 `config/host-login.json`，也受账户权限保护，不能描述成加密。备份数据及配置时须保护其中敏感信息。
 
-启动器使用随包Node/Git，校验app和DSH来源/构件后调用既有Host Supervisor管理Hub、DSH、Gateway、Proxy和GenUI；需要Key时在整栈达到可配置状态后打开模型设置。重复双击识别本安装进程并打开原地址，不另起一套栈。端口冲突直接报错，不杀其他进程，不无限重试。
+## 4. 停止与再次启动
 
-双击“停止运行.cmd”调用原有管理员鉴权的受控停止接口，并等待本安装Supervisor退出、端口释放。现有安全启动环境仍须可用；控制失败时保留状态与诊断，不强杀其他进程。Ctrl+C或关闭控制台不能替代停止验收。再次启动复用原DATA、模型配置、会话和GenUI状态，不重新安装插件。
+重复双击启动入口会识别本安装并打开原地址，不启动第二套服务。双击 `03-停止运行` 通过原管理员受控停止接口停止本安装，等待子进程退出和端口释放，不强杀其他进程。
 
-## 功能与实际构建范围
+再次启动复用数据、会话、GenUI 及模型设置，不重复安装或重置。目录丢失、哈希错误、缺依赖或端口占用会明确停止；不会悄悄创建空数据库或杀掉占用进程。默认端口为 3247、3248、3347、3348、3349。原 Mac 3047 和 Windows 正式服务独立保留。
 
-知识库、Haldur-Design-Skill（批量上传、HTML/SVG预览、Agent读取真实SKILL.md）、悠鼎Agent、Knowledge MCP、GenUI、培训与测试环境以最终构建烟测为准。52原则还在原视觉工作区的未提交成果中，本轮未获单独纳入确认，当前候选基线不包含它。设计规范检查是AI辅助审查，需人工复核，不能称为确定性验收。
+## 依赖、来源和边界
 
-52原则若后续纳入，原站图片按需联网，须保留来源和版权许可边界；公开访问不等于获得转载许可。
+随包 Node 22.23.2、Git 2.53.0（Windows 为 2.53.0.windows.2）、固定 DSH 0.1.1-rc.2 / b150a551、GenUI 0.15.1 和对应平台依赖。Git 用于保留官方源码 HEAD、干净状态及来源校验，不能删除验证来掩盖依赖。macOS Git 仅用于本地来源验证，未提供网络传输能力。npm、pnpm、Corepack、编译工具链仅供维护者构建，普通用户不需要安装。受限 Preset、GenUI 沙箱、文件访问和权限隔离继续保留。
 
-## 依赖与网络
+本地运行不需要首次下载编译；模型调用、网页外部资源仍需网络。许可证、版权通知、对应源码和来源见 licenses 及各依赖目录。Node 官方校验来源：https://nodejs.org/dist/v22.23.2/SHASUMS256.txt ；Git Windows：https://github.com/git-for-windows/git/releases/tag/v2.53.0.windows.2 ；Git 上游源码：https://www.kernel.org/pub/software/scm/git/ 。
 
-固定Node22.23.2 Windows x64、MinGit2.53.0.2、DSH0.1.1-rc.2（b150a551）、GenUI0.15.1。维护者使用原构建器与官方Plugin Manager准备Windows完整构件；pnpm11.7.0、Corepack、npm和MSVC仅用于维护者准备。若普通使用者还需手工clone、npm/pnpm或VS编译，则交付FAIL。
+macOS 候选包未做 Developer ID 公证；系统若阻止未知来源程序，请由用户确认来源后按 macOS 安全设置操作，不提供关闭 Gatekeeper 的脚本。原生构建、隔离测试不等于干净机器 Finder 双击验收。
 
-工具与原生模块准备可能访问官方Node、GitHub、npm及其构件分发站。本轮不默认承诺离线首装；完整候选冻结并迁移实测通过后才可确认本地启动的离线范围。DeepSeek调用、原站图片或成果声明的外部资源仍可能需要联网。
-
-## 端口、升级与备份
-
-全新比赛实例默认3247/3248/3347/3348/3349，实际访问地址使用已有安全PUBLIC_ORIGIN配置；端口必须互不相同且未被其他实例占用。原Windows3080–3082和Mac3047均为独立环境，不修改或替换。
-
-升级保留外置数据/配置，沿用已有不可变Release、active/previous指针与非覆盖式回滚；移动整个解压目录或切换程序版本前，按已有安装配置重新预检，不自动改写旧路径。程序回滚不等于数据回滚。备份应覆盖外置数据、媒体、Haldur、Agent会话/GenUI及配置；凭据文件也属敏感内容，权限和恢复身份需要单独保护。
-
-## 故障与比赛材料
-
-缺依赖、哈希不符、符号链接权限不足、原目录缺失、端口占用、管理员/HTTPS配置未就绪时停止并显示阶段，不跳过验证。保留本次独立目录用于恢复，不删除旧服务或旧Release来腾环境。
-
-运行ZIP与比赛原始材料分开提交：源码、Prompt、示例配置、Skill、作品说明、成本申报及许可清单按比赛渠道整理，均不得含真实业务数据、Key、密码、Cookie或Token。保留随包Node/Git/DSH/GenUI及依赖实际许可证、版权notice和对应来源。许可再分发核对与新机验收未完成前，该包仅为本地候选。
+已有 Windows 服务器沿用原配置和存储路径，不由此启动器迁移。升级、回滚需保留外置数据及配置；程序回滚不等于数据回滚。52 原则未提交内容未纳入当前基线。功能可用性和真实模型调用以验收报告明确列出的证据为准。

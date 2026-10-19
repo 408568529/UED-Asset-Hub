@@ -88,7 +88,13 @@ if ($useBundle) {
   Assert-NoReparseAncestor ([System.IO.Path]::GetFullPath($SourceBundlePath))
   $bundleHash = (Get-FileHash -LiteralPath $SourceBundlePath -Algorithm SHA256).Hash
   if ($bundleHash -ne $ExpectedSourceBundleSha256) { throw 'Pinned DSH source bundle SHA-256 mismatch.' }
-  & git bundle verify ([System.IO.Path]::GetFullPath($SourceBundlePath))
+  # Git requires a repository context even for a self-contained bundle.
+  # Use a new verification-only repository, never the user's or Hub's .git.
+  $bundleVerificationRoot = Join-Path $parent '.bundle-verification.git'
+  if (Test-Path -LiteralPath $bundleVerificationRoot) { throw 'Bundle verification scratch directory already exists.' }
+  & git init --bare $bundleVerificationRoot
+  if ($LASTEXITCODE -ne 0) { throw 'Unable to create isolated bundle verification context.' }
+  & git -C $bundleVerificationRoot bundle verify ([System.IO.Path]::GetFullPath($SourceBundlePath))
   if ($LASTEXITCODE -ne 0) { throw 'Pinned DSH source bundle failed Git verification.' }
 }
 

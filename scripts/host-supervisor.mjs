@@ -21,6 +21,7 @@ import { createBoundedNdjsonWriter } from "./bounded-ndjson-writer.mjs";
 import { probeDshSessionList, probeKnowledgeGatewayMcp } from "../agent-integration/scripts/runtime-readiness.mjs";
 import { installGenuiHaldurReadingPatch } from "../agent-integration/scripts/genui-haldur-reading.mjs";
 import { resolveHostPorts } from "./runtime-ports.mjs";
+import { acceptsLocalDistributionRequest } from "./local-distribution-config.mjs";
 
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require("@next/env");
@@ -105,7 +106,7 @@ async function assertPortAvailable(portNumber, label, { reasonCode = null } = {}
   });
 }
 
-function createEdgeServer({ host, port: publicPort, internalPort, proxyPort }) {
+export function createEdgeServer({ host, port: publicPort, internalPort, proxyPort }) {
   const edge = httpProxy.createProxyServer({ changeOrigin: true, ws: true });
   const sockets = new Set();
   const belongsToAgentRuntime = (request, requestUrl) => {
@@ -118,6 +119,8 @@ function createEdgeServer({ host, port: publicPort, internalPort, proxyPort }) {
     if (response && "writeHead" in response) { response.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" }); response.end("Asset Hub internal service is unavailable."); }
   });
   const server = http.createServer((request, response) => {
+    if (process.env.UED_LOCAL_DISTRIBUTION_MODE === "true") response.setHeader("X-UED-Local-Instance", process.env.UED_LOCAL_DISTRIBUTION_INSTANCE || "");
+    if (!acceptsLocalDistributionRequest(request)) { response.writeHead(403); response.end("Forbidden"); return; }
     const requestUrl = new URL(request.url || "/", "http://localhost");
     if (requestUrl.pathname === "/api/knowledge-gateway" || requestUrl.pathname.startsWith("/api/knowledge-gateway/")) { response.writeHead(404, { "Content-Type": "application/json" }); response.end(JSON.stringify({ error: { code: "not-found", message: "Not found." } })); return; }
     if (requestUrl.pathname === "/agent-runtime") { response.writeHead(308, { Location: "/agent-runtime/" }); response.end(); return; }
@@ -126,6 +129,7 @@ function createEdgeServer({ host, port: publicPort, internalPort, proxyPort }) {
   });
   server.on("connection", (socket) => { sockets.add(socket); socket.once("close", () => sockets.delete(socket)); });
   server.on("upgrade", (request, socket, head) => {
+    if (!acceptsLocalDistributionRequest(request)) { socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"); return; }
     const requestUrl = new URL(request.url || "/", "http://localhost");
     if (belongsToAgentRuntime(request, requestUrl)) { if (requestUrl.pathname.startsWith("/agent-runtime/")) request.url = request.url?.replace(/^\/agent-runtime/, "") || "/"; edge.ws(request, socket, head, { target: `http://127.0.0.1:${proxyPort}` }); return; }
     edge.ws(request, socket, head, { target: `http://127.0.0.1:${internalPort}` });
@@ -160,7 +164,7 @@ async function windowsPipeSecurityAdapterSpecification() {
   return { path: helperPath, manifestPath, sha256: manifest.sha256 };
 }
 
-async function installAgentPresets(runtimePaths) {
+export async function installAgentPresets(runtimePaths) {
   await installGenuiHaldurReadingPatch(path.join(runtimePaths.agentRoot, "dsh-home"));
   const bootstrapSource = path.join(projectDir, "agent-integration", "dsh", "genui-client-bootstrap");
   const bootstrapDestination = await ensureRuntimeSubdirectory({ dataRoot: runtimePaths.dataRoot, agentRoot: runtimePaths.agentRoot, relativePath: "dsh-home/profiles/web/node_modules/@ued/asset-hub-genui-client-bootstrap" });

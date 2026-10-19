@@ -22,8 +22,16 @@ try {
   await copyPreparedProfile(source, path.join(root, "new-profile"));
   await assert.rejects(restoreDependencyLinks(destination, [{ path: "../escape", target: "packages/a", kind: "directory" }]), /Unsafe/);
   await assert.rejects(restoreDependencyLinks(destination, [{ path: "node_modules/a", target: "packages", kind: "directory" }]), /differs/);
+  const runtime = path.join(root, "runtime"); await mkdir(path.join(runtime, "package"), { recursive: true });
+  await mkdir(path.join(source, "profiles/node_modules"), { recursive: true });
+  await symlink(path.join(runtime, "package"), path.join(source, "profiles/node_modules/core"), process.platform === "win32" ? "junction" : "dir");
+  const fallbackRoot = path.join(root, "profile-fallback");
+  const fallbackLinks = await snapshotDependencyTree(source, fallbackRoot, runtime);
+  await restoreDependencyLinks(fallbackRoot, fallbackLinks, runtime);
+  assert.equal(await realpath(path.join(fallbackRoot, "profiles/node_modules/core")), path.join(runtime, "package"));
+  await assert.rejects(restoreDependencyLinks(fallbackRoot, [{ path: "node_modules/unapproved", target: "package", kind: "directory", scope: "runtime" }], runtime), /Only the upstream/);
   const external = path.join(root, "external"); await mkdir(external);
   await symlink(external, path.join(source, "node_modules/external"), process.platform === "win32" ? "junction" : "dir");
-  await assert.rejects(snapshotDependencyTree(source, path.join(root, "invalid-copy")), /escapes/);
+  await assert.rejects(snapshotDependencyTree(source, path.join(root, "invalid-copy"), runtime), /escapes/);
   console.log("[V2.5] relocatable junction graph, cycles, idempotency, profile copy, traversal and external-link rejection: PASS");
 } finally { await rm(root, { recursive: true, force: true }); }

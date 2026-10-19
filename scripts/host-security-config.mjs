@@ -2,6 +2,7 @@ import { validateProductionSessionSecurity } from "./windows-security-foundation
 import os from "node:os";
 import path from "node:path";
 import { realpathSync } from "node:fs";
+import { isLocalDistributionEnvironment } from "./local-distribution-config.mjs";
 
 const invalidPasswordPatterns = [/(?:example|sample|placeholder|changeme)/i, /^<.*>$/u, /请设置/u];
 const knownDefaultPasswords = new Set(["admin123", "password", "password123", "123456", "12345678"]);
@@ -67,8 +68,10 @@ function isPersistentMacDemoEnvironment(environment) {
 
 export function resolveHostSecurityConfig(environment = process.env) {
   const productionSession = validateProductionSessionSecurity(environment);
+  const localDistribution = isLocalDistributionEnvironment(environment);
+  if (environment.UED_LOCAL_DISTRIBUTION_MODE && !localDistribution) invalid("UED_LOCAL_DISTRIBUTION_MODE");
   const localSyntheticTest = isLocalSyntheticTestEnvironment(environment);
-  const localHttpDemo = localSyntheticTest || isPersistentMacDemoEnvironment(environment);
+  const localHttpDemo = localDistribution || localSyntheticTest || isPersistentMacDemoEnvironment(environment);
   if (!productionSession.ok && !(localHttpDemo && ["ADMIN_SESSION_SECURE", "PUBLIC_ORIGIN"].includes(productionSession.field))) invalid(productionSession.field);
   const { username, sessionSecret } = resolveProxySessionConfig(environment);
   const password = readRequired(environment, "ADMIN_PASSWORD");

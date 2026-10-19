@@ -24,7 +24,7 @@ let capture;
 if (plan.mode === "release-native") capture = await captureNativeBuild({ plan, sourceRoot: root });
 else {
 const compiler = process.env.CXX || "cl.exe";
-const result = spawnSync(compiler, ["/nologo", "/std:c++17", "/EHsc", "/O2", "/W4", `/Fo${path.join(plan.tempDir, "pipe-security.obj")}`, `/Fd${path.join(plan.tempDir, "pipe-security.pdb")}`, source, "/link", "/OUT:" + plan.executable, "/PDB:" + path.join(plan.tempDir, "pipe-security-link.pdb"), "Advapi32.lib"], { cwd: plan.tempDir, stdio: "inherit", shell: false, env: { ...process.env, TMP: plan.tempDir, TEMP: plan.tempDir } });
+const result = spawnSync(compiler, ["/nologo", "/std:c++17", "/EHsc", "/O2", "/MT", "/W4", `/Fo${path.join(plan.tempDir, "pipe-security.obj")}`, `/Fd${path.join(plan.tempDir, "pipe-security.pdb")}`, source, "/link", "/OUT:" + plan.executable, "/PDB:" + path.join(plan.tempDir, "pipe-security-link.pdb"), "Advapi32.lib"], { cwd: plan.tempDir, stdio: "inherit", shell: false, env: { ...process.env, TMP: plan.tempDir, TEMP: plan.tempDir } });
 if (result.status !== 0) process.exit(result.status || 1);
 const executable = await readFile(plan.executable);
 const sha256 = createHash("sha256").update(executable).digest("hex");

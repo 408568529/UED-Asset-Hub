@@ -49,12 +49,12 @@ export async function initializeCompetitionData({ packageRoot, dependencyRoot, d
       if ((/^\.env(?:\.|$)/i.test(entry.name) && entry.name !== ".env.example") || /^\.credentials/i.test(entry.name)) throw new Error("The prepared profile contains forbidden user state.");
       const canonical = await realpath(file);
       if (!within(dependencies, canonical)) throw new Error("A prepared profile link escapes the dependency package.");
-      if ((await lstat(canonical)).isDirectory()) await inspectSeed(file);
+      if ((await lstat(canonical)).isDirectory() && within(seed, canonical)) await inspectSeed(file);
     }
   };
   await assertNoLinkedAncestors(seed);
   await inspectSeed(seed);
-  for (const entry of await readdir(seed)) if (!["profiles", "genui-packages"].includes(entry)) throw new Error("The prepared profile must contain only plugin dependencies.");
+  for (const entry of await readdir(seed)) if (!["profiles", "genui-packages", ".agent-presets"].includes(entry)) throw new Error("The prepared profile must contain only plugin dependencies and restricted presets.");
   await access(path.join(seed, "profiles", "web", "node_modules", "dsh-plugin-genui", "package.json"));
   try {
     await lstat(data);
@@ -72,12 +72,11 @@ export async function initializeCompetitionData({ packageRoot, dependencyRoot, d
       const child = path.join(data, name);
       await mkdir(child, { mode: 0o700 }); created.push(child);
     }
-    await copyPreparedProfile(seed, path.join(data, "agent-runtime", "dsh-home"));
+    await copyPreparedProfile(seed, path.join(data, "agent-runtime", "dsh-home"), path.join(dependencies, "dsh-runtime"));
     const environment = Object.fromEntries(Object.entries(dataChildren).map(([key, name]) => [key, path.join(data, name)]));
     Object.assign(environment, { DSH_SOURCE_DIR: path.join(dependencies, "dsh-source"), DSH_RUNTIME_SOURCE_DIR: path.join(dependencies, "dsh-runtime") }, portDefaults);
-    const configPath = path.join(data, "config", "runtime.psd1");
-    const quote = (value) => `'${value.replaceAll("'", "''")}'`;
-    await writeFile(configPath, "@{\n" + Object.entries(environment).map(([key, value]) => `  ${key} = ${quote(value)}`).join("\n") + "\n}\n", { flag: "wx", mode: 0o600 });
+    const configPath = path.join(data, "config", "runtime.json");
+    await writeFile(configPath, JSON.stringify(environment, null, 2) + "\n", { flag: "wx", mode: 0o600 });
     await writeFile(path.join(data, "config", "installation.json"), JSON.stringify({ schemaVersion: 1, packageRoot: code, dataRoot: data, configPath }, null, 2) + "\n", { flag: "wx", mode: 0o600 });
     await writeFile(path.join(data, ".setup-in-progress.json"), JSON.stringify({ schemaVersion: 1, phase: "directories-and-profile-prepared" }) + "\n");
     await rename(path.join(data, ".setup-in-progress.json"), path.join(data, "config", "setup-receipt.json"));

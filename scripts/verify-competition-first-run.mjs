@@ -17,7 +17,7 @@ try {
   await assert.rejects(initializeCompetitionData({ ...options, dataRoot: path.join(packageRoot, "data") }), /separate/);
   const result = await initializeCompetitionData(options);
   const config = await readFile(result.configPath, "utf8");
-  assert.ok(config.includes("O''Brien"));
+  assert.equal(JSON.parse(config).DATA_DIR, path.join(dataRoot, "hub-data"));
   assert.ok(!/API_KEY|PASSWORD|SESSION_SECRET/.test(config));
   assert.equal(JSON.parse(await readFile(path.join(dataRoot, "agent-runtime", "dsh-home", "profiles", "web", "node_modules", "dsh-plugin-genui", "package.json"), "utf8")).version, "0.15.1");
   assert.equal((await readdir(result.environment.DATA_DIR)).length, 0);

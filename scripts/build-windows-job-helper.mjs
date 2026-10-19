@@ -23,7 +23,7 @@ await mkdir(plan.tempDir, { recursive: true });
 let capture;
 if (plan.mode === "release-native") capture = await captureNativeBuild({ plan, sourceRoot: root });
 else {
-const compiler = spawn("cl.exe", ["/nologo", "/std:c++17", "/EHsc", "/O2", `/Fo${path.join(plan.tempDir, "job-helper.obj")}`, `/Fd${path.join(plan.tempDir, "job-helper.pdb")}`, `/Fe:${plan.executable}`, source], { cwd: plan.tempDir, stdio: "inherit", shell: false, env: { ...process.env, TMP: plan.tempDir, TEMP: plan.tempDir } });
+const compiler = spawn("cl.exe", ["/nologo", "/std:c++17", "/EHsc", "/O2", "/MT", `/Fo${path.join(plan.tempDir, "job-helper.obj")}`, `/Fd${path.join(plan.tempDir, "job-helper.pdb")}`, `/Fe:${plan.executable}`, source], { cwd: plan.tempDir, stdio: "inherit", shell: false, env: { ...process.env, TMP: plan.tempDir, TEMP: plan.tempDir } });
 const code = await new Promise((resolve) => compiler.once("exit", resolve));
 if (code !== 0) throw new Error("Windows Job Helper build failed. Run from an x64 Native Tools command prompt.");
 }
