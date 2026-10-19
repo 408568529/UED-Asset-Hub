@@ -48,7 +48,7 @@ export async function initializeLocalAdministrator(packageRoot, input) {
 }
 
 async function request(origin, route, init = {}) {
-  return fetch(origin + route, { ...init, headers: { Origin: origin, ...init.headers }, signal: AbortSignal.timeout(5000), redirect: "error" });
+  return fetch(origin + route, { ...init, headers: { Origin: origin, ...init.headers }, signal: AbortSignal.timeout(route === "/api/runtime/status" ? 35_000 : 5000), redirect: "error" });
 }
 async function authenticate(origin, login) {
   const response = await request(origin, "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: login.ADMIN_USERNAME, password: login.ADMIN_PASSWORD }) });
