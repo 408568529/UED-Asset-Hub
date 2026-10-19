@@ -30,9 +30,12 @@ $env:npm_config_devdir=Join-Path $root 'node-gyp-cache'
 # Upstream tracks file symlinks; do not silently replace them or weaken provenance validation.
 $probeTarget=Join-Path $root 'temp\symlink-target'; $probeLink=Join-Path $root 'temp\symlink-probe'
 [IO.File]::WriteAllText($probeTarget,'synthetic')
-& $tools.node -e 'const fs=require("node:fs");fs.symlinkSync(process.argv[1],process.argv[2],"file");fs.unlinkSync(process.argv[2]);' $probeTarget $probeLink
+$probeScript=Join-Path $root 'temp\symlink-probe.mjs'
+[IO.File]::WriteAllText($probeScript,'import {symlinkSync,unlinkSync} from "node:fs"; symlinkSync(process.argv[2],process.argv[3],"file"); unlinkSync(process.argv[3]);',[Text.UTF8Encoding]::new($false))
+& $tools.node $probeScript $probeTarget $probeLink
 if ($LASTEXITCODE -ne 0) { throw 'Windows file-symlink permission is required by the existing DSH source contract. No policy or validator was changed.' }
 Remove-Item -LiteralPath $probeTarget
+Remove-Item -LiteralPath $probeScript
 $config = [ordered]@{
   DATA_DIR=(Join-Path $root 'empty-data\hub-data'); TRAINING_MEDIA_DIR=(Join-Path $root 'empty-data\training-media')
   AGENT_RUNTIME_DIR=(Join-Path $root 'profile-seed'); ASSET_HUB_RUNTIME_DIR=(Join-Path $root 'empty-data\asset-hub-runtime')
