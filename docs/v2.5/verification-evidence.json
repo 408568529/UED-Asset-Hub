@@ -1,0 +1,49 @@
+{
+  "sourceHeadUnchanged": true,
+  "sourceStatusUnchanged": true,
+  "protectedSourceFilesHashMatched": 14,
+  "mac3047ListenerPidUnchanged": 14612,
+  "checks": [
+    {
+      "command": "node scripts/verify-internal-release-contract.mjs",
+      "result": "PASS",
+      "scope": "AST regression, missing dependencies, standalone manifest verifier without TypeScript, file hash/link/path contracts"
+    },
+    {
+      "command": "node scripts/verify-g036-offline-dsh-git-authority.mjs",
+      "result": "PASS",
+      "scope": "synthetic offline Git authority; 12 semantic symlink cases; no network; not real Windows runtime"
+    },
+    {
+      "command": "node scripts/verify-windows-credential-bundle.mjs",
+      "result": "PASS",
+      "scope": "schema only; no native DPAPI execution"
+    },
+    {
+      "command": "node scripts/verify-haldur-reading-policy.mjs /private/tmp/ued-v25-genui-official-index.js",
+      "result": "PASS",
+      "scope": "bundled official GenUI lib/index.js extracted to temp, disposable profile; no live runtime touched"
+    }
+  ],
+  "initialFailures": [
+    {
+      "check": "internal-release-contract",
+      "reason": "regex treated import inside generated patch string as real module",
+      "resolution": "AST fix and regressions passed"
+    },
+    {
+      "check": "g036",
+      "reason": "typescript not installed in fresh clone",
+      "resolution": "isolated npm ci --ignore-scripts; rerun passed"
+    },
+    {
+      "check": "haldur-reading-policy",
+      "reason": "initial invocation omitted required official index.js argument",
+      "resolution": "extract only official code member from bundled tgz and pass argument; rerun passed"
+    }
+  ],
+  "runtime": "macOS Node v24.15.0",
+  "windowsNewMachine": "NEW_MACHINE_NOT_VERIFIED",
+  "nativeDpapi": "NOT_VERIFIED",
+  "windowsPowerShellBuild": "NOT_VERIFIED"
+}

@@ -1,0 +1,31 @@
+{
+  "head": "de63f916bf5739ae71b4e3f35127f12c703f9e75",
+  "status": " M src/components/layout/ModuleNav.tsx\n M src/config/modules.ts\n?? docs/qa/52-principles-20261019.md\n?? scripts/verify-design-principles.mjs\n?? src/app/design-principles/\n?? src/components/design-principles/\n?? src/content/\n",
+  "files": {
+    "docs/qa/52-principles-20261019.md": "7ef56f161222ea63d2b7250cf12530aeb669161a888c337ee334d3439b9a2e90",
+    "scripts/verify-design-principles.mjs": "a2cbbab2649bde128892375a9acd76ca6a8f9278a994477fe0ed5847a469259a",
+    "src/app/design-principles/[slug]/page.tsx": "f4f892ad93d3adb9761b0bc2d30515fb54953b2c21ae83d1ff24eacdac79c232",
+    "src/app/design-principles/layout.tsx": "8a92a4ed9ab4ae06f74345afad15609678f34588f70cfb3a904020b2284eb6e9",
+    "src/app/design-principles/page.tsx": "d0755096ef44f9160e50c224f9b293ffd40c2670350ec871d5b4ac1ece247230",
+    "src/components/design-principles/PrincipleChrome.tsx": "55f9334b90589bf1c0e73d4bca77758041286ee0e500bb5d6f23af04c0c45b1d",
+    "src/components/design-principles/PrincipleDetail.tsx": "c70f9f44a7a42c9e769a228a9e5445f745549bfdc742aed14601d445cc156727",
+    "src/components/design-principles/PrincipleGallery.tsx": "268831aeb7d8862a3e553ce45b8c80f08661be906e8f877647e6d8f0814122e6",
+    "src/components/design-principles/PrincipleMedia.tsx": "a391ed1d47ab56074f29b9e6dd70e46a1deae4958a4c67c42bba63615f7b6982",
+    "src/components/design-principles/principles.css": "67c0901a614f7810f26aebad3622fc66f28af162d16da3aa08da3032e1a57e2e",
+    "src/components/layout/ModuleNav.tsx": "00bdb05ad5384097fc7a70e7470b6f8a32f667a7af0addde05eaf1f2cad61b1c",
+    "src/config/modules.ts": "f1396cbd9e05948fa2ae8808fb739606b856a5f584178405e2deaef4648731be",
+    "src/content/design-principles/index.ts": "5d7c68ec6971dd5462ae6144810225712288ca2a2deb85fe6765775048231366",
+    "src/content/design-principles/principles.json": "f06d410aeb0eb8d08ae937f3445e9cb79cdb6adc677590742997deb6114b23d0"
+  },
+  "date": "2026-10-19",
+  "timezone": "Asia/Shanghai",
+  "sourceTree": "42966b0e69d92a05da243779660cebf5dd120cc7",
+  "isolatedRepository": "/private/tmp/ued-v25-competition-delivery",
+  "branch": "codex/v2.5-competition-delivery",
+  "isolation": "independent local clone with --no-hardlinks; original index/refs unchanged",
+  "protected3047ListenerPid": 14612,
+  "windowsAccessed": false,
+  "credentialsRead": false,
+  "zipBuilt": false,
+  "newMachineStatus": "NEW_MACHINE_NOT_VERIFIED"
+}

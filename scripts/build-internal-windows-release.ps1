@@ -157,6 +157,8 @@ Invoke-Checked $nodeExe @($npmCli, 'run', 'build') $sourceRoot
 foreach ($script in @('build-windows-job-helper.mjs','build-windows-pipe-security-adapter.mjs','build-windows-dpapi-credential-helper.mjs')) {
   Invoke-Checked $nodeExe @("scripts/$script", '--mode', 'developer-source-output') $sourceRoot
 }
+$closurePath = Join-Path $build 'runtime-closure.json'
+Invoke-Checked $nodeExe @('scripts/internal-release-contract.mjs', 'closure', '--root', $sourceRoot, '--output', $closurePath) $sourceRoot
 Invoke-Checked $nodeExe @($npmCli, 'prune', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund') $sourceRoot
 
 $null = [System.IO.Directory]::CreateDirectory($payloadRoot)
@@ -167,8 +169,6 @@ if (Test-Path -LiteralPath (Join-Path $sourceRoot 'public') -PathType Container)
 Remove-Item -LiteralPath (Join-Path $payloadRoot 'node_modules') -Recurse -Force -ErrorAction SilentlyContinue
 Copy-RegularTree (Join-Path $sourceRoot 'node_modules') (Join-Path $payloadRoot 'node_modules') -SkipBin
 
-$closurePath = Join-Path $build 'runtime-closure.json'
-Invoke-Checked $nodeExe @('scripts/internal-release-contract.mjs', 'closure', '--root', $sourceRoot, '--output', $closurePath) $sourceRoot
 $closure = Get-Content -LiteralPath $closurePath -Raw | ConvertFrom-Json
 foreach ($relative in $closure) { Copy-RegularFile (Join-Path $sourceRoot $relative) (Join-Path $payloadRoot ($relative.Replace('/', '\'))) }
 foreach ($relative in @(

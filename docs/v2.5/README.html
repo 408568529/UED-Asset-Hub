@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>UED Asset Hub V2.5 交付准备说明</title><style>body{margin:40px auto;padding:0 24px;max-width:960px;color:#202630;background:#fafafa;font:16px/1.8 system-ui,sans-serif}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}</style><body><pre># UED Asset Hub V2.5 — 比赛交付说明（准备稿）
+
+**当前状态：未生成 V2.5 Windows 运行包；双击首装与加密配置尚未实现。NEW_MACHINE_NOT_VERIFIED。以下四步是验收目标，不能作为现有包的可执行安装说明。**
+
+## 一、解压
+
+最终运行包限定 Windows x64。使用与 manifest 对应、SHA-256 校验通过的 ZIP，解压到独立程序目录，完整保留 app、tools、licenses 和校验清单。当前没有可下载的 V2.5 ZIP 和整包哈希。
+
+## 二、首次启动并选择目录
+
+目标入口严格为“轻点击我启动.cmd”。首次向导应选择一个新的持久数据总目录，检查权限、空间、中文/空格路径、重解析点和目录冲突，确认后建立独立数据树。程序与依赖代码在数据根之外。遇到原有安装仅做预检，不覆盖或重建；原路径不存在时报错。**向导待实现。**
+
+## 三、配置管理员及 DeepSeek
+
+由使用者本人在目标机设置管理员和自己获准使用的 DeepSeek API Key；调用收费 API 需自行承担额度和费用。目标为 Windows DPAPI 加密静态存储；账户范围待确认，Web 保存链尚需改造。当前 DSH 默认 YAML 凭据不是加密存储，不能用于“加密已完成”的交付声明。不要把真实 Key、密码或作者配置加入源码、ZIP、日志或比赛材料。
+
+## 四、使用与停止/再次启动
+
+目标为同一入口完成校验、启动 Supervisor 管理的 Hub/DSH/Gateway/Proxy/GenUI，健康后自动打开实际地址。重复双击应打开同一实例；其他进程占用端口时报错。停止入口为“停止运行.cmd”，只停止本安装受管进程并验证收敛；再次启动保留配置、会话、数据和 GenUI 状态，不重复安装或输入 Key。**双击/停止入口待实现，当前无可实测的流程。**
+
+## 功能范围与实际证据
+
+当前提交含知识库、Haldur-Design-Skill、悠鼎 Agent、Knowledge MCP、GenUI、培训、测试环境相关实现。Haldur 的批量上传、HTML/SVG 预览、Agent 读取真实 SKILL.md 等以最终构建和烟测为准。52原则存在于原视觉工作区未提交改动中，尚未纳入本分支。设计规范检查是 AI 辅助审查，需人工复核；不得宣称确定性自动验收。
+
+52原则若纳入，原站图片按需联网，保留来源及版权许可说明。公开可访问不等于获得转载许可，不捆绑未获许可素材。
+
+## 依赖与联网边界
+
+依赖矩阵见 DEPENDENCIES.md。DSH 固定 0.1.1-rc.2，GenUI 固定 0.15.1。既有内部构建采用 Node 22.23.2/npm 10.9.8，另一个 Service 构建通道固定22.23.3/npm10.9.9，V2.5 最终工具链、匹配哈希与日常校验尚未统一验收。Node、Git、完整 Windows DSH Runtime/GenUI profile 尚未收口；仅有 GenUI tgz 不足以运行。
+
+本轮不承诺离线首装。维护者准备会使用官方 GitHub、npm、Node 分发站；用户首次是否需要这些站点，以最终随包依赖实测为准。普通用户不应手工 npm/pnpm、Git clone 或安装 VS 编译；若仍需这些操作则交付阻断。模型调用需网络与 DeepSeek 服务；外链图片和成果声明的外部资源同样可能需要联网。
+
+## 端口、目录与已有服务器
+
+默认端口配置复用既有 runtime-ports 合约；实际绑定和浏览器地址须由本实例健康状态给出，禁止杀其他端口进程。持久目录映射见 IMPLEMENTATION.md。既有 Windows 服务器可沿用原始、分散的 DATA/媒体/Agent/Haldur 路径，不能用新装总目录替换原配置。Mac 3047 为独立演示环境。
+
+## 备份、恢复与升级
+
+备份应覆盖外置 DATA、媒体、Haldur、Agent 会话/GenUI 成果和配置；一致性及停机方式以现有受控生命周期为准。DPAPI 凭据备份有主机/账户绑定，复制密文到另一机器或身份不保证可恢复，应由用户重新配置。升级复用不可变发行与 active/previous 指针，程序回滚不等于数据回滚；本轮未实施升级或数据迁移。
+
+## 故障与恢复
+
+缺工具/依赖、哈希不符、端口冲突、目录丢失、身份不符或密文无法解密应停止并保留明确原因，不跳过验证或无限重试。向导中断应保留已存在文件与可定位的阶段，仅回收本次确切创建且仍为空的内容。不要删除旧目录、旧包或现用缓存来模拟干净新机。
+
+## 比赛原始材料与许可
+
+运行 ZIP 与比赛原始材料分别提交。源码、Prompt、示例配置、Skill、作品说明、成本申报与许可清单按比赛渠道要求整理；均须脱敏，不含真实业务数据和凭据。保留 Node/Git/DSH/GenUI 和所有随包依赖的实际许可及第三方 notices；当前未完成全包许可盘点，不能据单个 MIT 标记推断所有依赖均可分发。
+
+## 验收状态
+
+隔离基线已建立；安全设计待确认；Windows 构建、中文双击、首次目录选择、凭据加密闭环、再次启动与功能烟测均尚未通过。本稿在实际验收后必须更新为与最终包一致的操作说明。逐项门禁见 ACCEPTANCE.md。
+</pre></body></html>

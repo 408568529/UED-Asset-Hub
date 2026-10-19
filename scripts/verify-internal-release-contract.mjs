@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile, symlink } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm, writeFile, symlink } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { createInternalReleaseManifest, deriveInternalRuntimeModuleClosure, verifyInternalReleaseManifest } from "./internal-release-contract.mjs";
@@ -42,6 +43,9 @@ try {
   });
   await writeFile(path.join(payloadRoot, "release-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   await verifyInternalReleaseManifest({ payloadRoot });
+  const standaloneVerifier = path.join(temporaryRoot, "internal-release-contract.mjs");
+  await copyFile(new URL("./internal-release-contract.mjs", import.meta.url), standaloneVerifier);
+  execFileSync(process.execPath, [standaloneVerifier, "verify", "--root", payloadRoot], { stdio: "pipe" });
 
   const manifestPath = path.join(payloadRoot, "release-manifest.json");
   const savedManifest = `${JSON.stringify(manifest, null, 2)}\n`;
@@ -82,6 +86,19 @@ try {
   assert.equal(resolveHostPorts({ DSH_PORT: "3180", AGENT_PROXY_PORT: "3181", HOST_PORT: "3182", HOST_INTERNAL_PORT: "3183", KNOWLEDGE_GATEWAY_MCP_PORT: "3184" }).dsh, 3180);
   assert.throws(() => resolveHostPorts({ DSH_PORT: "3180", AGENT_PROXY_PORT: "3180" }), /must be unique/);
   assert.throws(() => resolveHostPorts({ DSH_PORT: "70000" }), /valid TCP port/);
+  const analysisRoot = path.join(temporaryRoot, "analysis");
+  await mkdir(path.join(analysisRoot, "scripts"), { recursive: true });
+  await writeFile(path.join(analysisRoot, "scripts", "entry.mjs"), [
+    'const patch = \'import { policy } from "./generated-policy.mjs";\';',
+    '// import "./comment-only.mjs";',
+    'import "./side-effect.mjs";',
+    'export { value } from "./exported.mjs";',
+    'const load = () => import("./lazy.mjs");'
+  ].join("\n"));
+  for (const name of ["side-effect.mjs", "exported.mjs", "lazy.mjs"]) await writeFile(path.join(analysisRoot, "scripts", name), "export const value = true;\n");
+  assert.deepEqual(await deriveInternalRuntimeModuleClosure(analysisRoot, ["scripts/entry.mjs"]), ["scripts/entry.mjs", "scripts/exported.mjs", "scripts/lazy.mjs", "scripts/side-effect.mjs"]);
+  await rm(path.join(analysisRoot, "scripts", "lazy.mjs"));
+  await assert.rejects(() => deriveInternalRuntimeModuleClosure(analysisRoot, ["scripts/entry.mjs"]), /runtime import is missing/);
   const closure = await deriveInternalRuntimeModuleClosure(path.resolve("."), [
     "scripts/start-host.mjs",
     "scripts/windows-graceful-bootstrap.mjs",
@@ -94,6 +111,7 @@ try {
   assert.ok(closure.includes("scripts/windows-graceful-pipe.mjs"));
   assert.ok(closure.includes("scripts/windows-managed-shutdown-client.mjs"));
   assert.ok(closure.includes("agent-integration/scripts/start-knowledge-gateway-mcp.mjs"));
+  assert.ok(closure.includes("agent-integration/scripts/haldur-reading-policy.mjs"));
   assert.ok(closure.every((file) => file.startsWith("scripts/") || file.startsWith("agent-integration/scripts/")));
   console.log("[internal-release] manifest identity, file hashes, path traversal, tamper and link checks passed.");
 } finally {
