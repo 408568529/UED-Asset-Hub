@@ -18,6 +18,17 @@ foreach($target in @($work,$output)){
   if(Test-Path -LiteralPath $target){throw 'Packaging and output require unique new directories.'}
 }
 if($work.StartsWith($output.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase) -or $output.StartsWith($work.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase) -or $work -ieq $output){throw 'Packaging and output directories must be separate.'}
+# Serialize maintainer builds and record ownership before any build work is created.
+$resourceTool=Join-Path $PSScriptRoot 'competition-build-resources.mjs'
+$resourceNode=(Get-Command node.exe -ErrorAction Stop).Source
+& $resourceNode $resourceTool validate $work
+if($LASTEXITCODE -ne 0){
+  $buildArguments=@('-NoProfile','-NonInteractive','-File',$PSCommandPath)
+  foreach($entry in $PSBoundParameters.GetEnumerator()){$buildArguments+=('-'+$entry.Key);$buildArguments+=[string]$entry.Value}
+  & $resourceNode $resourceTool run (Split-Path -Parent $work) $work 'verified-internal-release,UED-Asset-Hub,temp' (Get-Process -Id $PID).Path @buildArguments
+  if($LASTEXITCODE -ne 0){throw 'Isolated build failed; resource record and diagnostics retained.'}
+  return
+}
 $archive=Get-UedArchiveManifest -ZipPath $HubZip -ExpectedSha256 $HubZipSha256
 $null=[IO.Directory]::CreateDirectory($work); $null=[IO.Directory]::CreateDirectory($output)
 $env:TEMP=Join-Path $work 'temp'; $env:TMP=$env:TEMP; $null=[IO.Directory]::CreateDirectory($env:TEMP)

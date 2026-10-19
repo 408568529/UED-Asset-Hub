@@ -16,6 +16,17 @@ $output = [System.IO.Path]::GetFullPath($OutputDirectory)
 foreach ($target in @($build, $output)) { if (Test-Path -LiteralPath $target) { throw 'BuildRoot and OutputDirectory must be new, unique directories.' } }
 if ($build.Equals($output, [System.StringComparison]::OrdinalIgnoreCase) -or $build.StartsWith($output.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase) -or $output.StartsWith($build.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase)) { throw 'BuildRoot and OutputDirectory must be separate.' }
 
+# Serialize maintainer builds and record ownership before any build work is created.
+$resourceTool=Join-Path $PSScriptRoot 'competition-build-resources.mjs'
+$resourceNode=(Get-Command node.exe -ErrorAction Stop).Source
+& $resourceNode $resourceTool validate $build
+if($LASTEXITCODE -ne 0){
+  $buildArguments=@('-NoProfile','-NonInteractive','-File',$PSCommandPath)
+  foreach($entry in $PSBoundParameters.GetEnumerator()){$buildArguments+=('-'+$entry.Key);$buildArguments+=[string]$entry.Value}
+  & $resourceNode $resourceTool run (Split-Path -Parent $build) $build 'source,payload,toolchain' (Get-Process -Id $PID).Path @buildArguments
+  if($LASTEXITCODE -ne 0){throw 'Isolated build failed; resource record and diagnostics retained.'}
+  return
+}
 $sourceIdentity = Get-Content -LiteralPath $SourceInputPath -Raw | ConvertFrom-Json
 $bundleHash = (Get-FileHash -LiteralPath $SourceBundlePath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($sourceIdentity.schemaVersion -ne 1 -or $sourceIdentity.channel -ne 'INTERNAL_RELEASE_INPUT' -or $sourceIdentity.commit -ne $SourceCommit -or $sourceIdentity.bundleSha256 -ne $bundleHash) { throw 'Source bundle identity does not match source-input.json.' }
@@ -30,7 +41,7 @@ Assert-NoReparseAncestor $output
 $sourceRoot = Join-Path $build 'source'
 $payloadRoot = Join-Path $build 'payload'
 $toolchainRoot = Join-Path $build 'toolchain'
-$nodeModulesCache = Join-Path $build 'npm-cache'
+$nodeModulesCache = Join-Path $env:UED_BUILD_CACHE_ROOT 'npm-cache'
 $npmUserConfig = Join-Path $build 'npmrc'
 $npmGlobalConfig = Join-Path $build 'npm-globalrc'
 $npmBootstrapRoot = Join-Path $toolchainRoot 'npm-bootstrap'

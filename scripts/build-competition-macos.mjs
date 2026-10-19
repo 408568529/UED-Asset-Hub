@@ -3,19 +3,26 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { runBuild, validateBuildOwner } from "./competition-build-resources.mjs";
 import { buildCompetitionDirectory } from "./build-competition-delivery.mjs";
 
 const [inputDirectory, toolsReceipt, dshBundle, buildRoot, preparedDshReceipt] = process.argv.slice(2);
 if (process.platform !== "darwin" || process.arch !== "arm64" || process.versions.node !== "22.23.2") throw new Error("Use the pinned portable Node on native macOS arm64.");
 const root = path.resolve(buildRoot);
+if (!await validateBuildOwner(root)) {
+  await runBuild({ scope: path.dirname(root), work: root, disposable: [...(preparedDshReceipt ? ["source"] : []), "internal-release", "UED-Asset-Hub-macOS-arm64", "temp"], command: process.execPath, args: process.argv.slice(1) });
+  process.exit(0);
+}
+const cacheRoot = process.env.UED_BUILD_CACHE_ROOT;
 const tools = JSON.parse(await readFile(toolsReceipt, "utf8")), input = JSON.parse(await readFile(path.join(inputDirectory, "source-input.json"), "utf8"));
 await mkdir(root);
-for (const name of ["temp", "npm-cache", "corepack-cache", "pnpm-store"]) await mkdir(path.join(root, name));
+await mkdir(path.join(root, "temp"));
+for (const name of ["npm-cache", "corepack-cache", "pnpm-store"]) await mkdir(path.join(cacheRoot, name), { recursive: true });
 await writeFile(path.join(root, "npmrc"), "registry=https://registry.npmjs.org/\naudit=false\nfund=false\n");
 await writeFile(path.join(root, "global-npmrc"), ""); await writeFile(path.join(root, "gitconfig"), "");
 const environment = {};
 for (const key of ["HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "DEVELOPER_DIR", "SDKROOT", "NODE_EXTRA_CA_CERTS"]) if (process.env[key]) environment[key] = process.env[key];
-Object.assign(environment, { PATH: [path.dirname(tools.node), path.dirname(tools.git), "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":"), TMPDIR: path.join(root, "temp"), TMP: path.join(root, "temp"), TEMP: path.join(root, "temp"), COREPACK_HOME: path.join(root, "corepack-cache"), COREPACK_DEFAULT_TO_LATEST: "0", COREPACK_ENABLE_DOWNLOAD_PROMPT: "0", NPM_CONFIG_CACHE: path.join(root, "npm-cache"), NPM_CONFIG_USERCONFIG: path.join(root, "npmrc"), NPM_CONFIG_GLOBALCONFIG: path.join(root, "global-npmrc"), npm_config_devdir: path.join(root, "node-gyp-cache"), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: path.join(root, "gitconfig"), GIT_EXEC_PATH: path.join(path.dirname(path.dirname(tools.git)), "libexec/git-core"), CI: "true" });
+Object.assign(environment, { PATH: [path.dirname(tools.node), path.dirname(tools.git), "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":"), TMPDIR: path.join(root, "temp"), TMP: path.join(root, "temp"), TEMP: path.join(root, "temp"), COREPACK_HOME: path.join(cacheRoot, "corepack-cache"), COREPACK_DEFAULT_TO_LATEST: "0", COREPACK_ENABLE_DOWNLOAD_PROMPT: "0", NPM_CONFIG_CACHE: path.join(cacheRoot, "npm-cache"), NPM_CONFIG_USERCONFIG: path.join(root, "npmrc"), NPM_CONFIG_GLOBALCONFIG: path.join(root, "global-npmrc"), npm_config_devdir: path.join(root, "node-gyp-cache"), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: path.join(root, "gitconfig"), GIT_EXEC_PATH: path.join(path.dirname(path.dirname(tools.git)), "libexec/git-core"), CI: "true" });
 function run(command, args, cwd = root, extraEnvironment = {}) {
   const result = spawnSync(command, args, { cwd, env: { ...environment, ...extraEnvironment }, stdio: "inherit" });
   if (result.status !== 0) throw new Error(`Maintainer build command failed: ${path.basename(command)} (exit ${result.status}). No running instance was changed.`);
@@ -66,14 +73,14 @@ const corepack = path.join(tools.nodeRoot, "lib/node_modules/corepack/dist/corep
 const shims = path.join(root, "package-manager-bin"); await mkdir(shims);
 run(tools.node, [corepack, "enable", "--install-directory", shims]); environment.PATH = shims + ":" + environment.PATH;
 const packageEnvironment = { DSH_HOME: dshHome, DSH_TELEMETRY_DISABLED: "1" };
-run(tools.node, [corepack, "pnpm", "--store-dir", path.join(root, "pnpm-store"), "install", "--frozen-lockfile", "--fetch-timeout", "600000", "--network-concurrency", "4"], runtime, packageEnvironment);
+run(tools.node, [corepack, "pnpm", "--store-dir", path.join(cacheRoot, "pnpm-store"), "install", "--frozen-lockfile", "--fetch-timeout", "600000", "--network-concurrency", "4"], runtime, packageEnvironment);
 run(tools.node, [corepack, "pnpm", "run", "build"], runtime, packageEnvironment);
 await rm(path.join(runtime, ".git"), { recursive: true });
 run(tools.node, [path.join(source, "scripts/verify-dsh-runtime-source.mjs"), dshSource, runtime], source, packageEnvironment);
 const genuiContract = JSON.parse(await readFile(path.join(source, "agent-integration/dsh/genui-plugin.json"), "utf8"));
 const tarball = path.join(source, genuiContract.packageTarball);
 if (createHash("sha256").update(await readFile(tarball)).digest("hex") !== genuiContract.packageTarballSha256) throw new Error("GenUI tarball checksum mismatch.");
-run(tools.node, ["--import", "tsx/esm", "apps/cli/src/bin.ts", "plugin", "--profile", "web", "add", tarball, "--save-exact", "--ignore-scripts", "--store-dir", path.join(root, "pnpm-store")], runtime, packageEnvironment);
+run(tools.node, ["--import", "tsx/esm", "apps/cli/src/bin.ts", "plugin", "--profile", "web", "add", tarball, "--save-exact", "--ignore-scripts", "--store-dir", path.join(cacheRoot, "pnpm-store")], runtime, packageEnvironment);
 const profilePath = path.join(dshHome, "profiles/web/package.json"), profile = JSON.parse(await readFile(profilePath, "utf8"));
 profile.dsh.profile.bundles = profile.dsh.profile.bundles.filter((name) => name !== "dsh-plugin-genui"); await writeFile(profilePath, JSON.stringify(profile, null, 2) + "\n");
 for (const patch of ["genui-client-load-liveness.mjs", "genui-haldur-reading.mjs"]) run(tools.node, [path.join(source, "agent-integration/scripts", patch), dshHome], source, packageEnvironment);

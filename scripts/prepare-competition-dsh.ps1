@@ -16,6 +16,15 @@ if ([IO.Path]::GetPathRoot($root).TrimEnd('\') -ieq $env:SystemDrive) { throw 'P
 if (Test-Path -LiteralPath $root) { throw 'Dependency preparation requires a new, isolated directory.' }
 $tools = Get-Content -LiteralPath $ToolsPreparation -Raw | ConvertFrom-Json
 if ($tools.nodeExecutableSha256 -ne '0d0f5e39f9f3d9587bc19f73eab3c2c9c4903fd02d6dbf9c853dd81b3d95fad4' -or (Get-FileHash -LiteralPath $tools.node -Algorithm SHA256).Hash.ToLowerInvariant() -ne $tools.nodeExecutableSha256) { throw 'Verified pinned Node preparation is required.' }
+$resourceTool=Join-Path $PSScriptRoot 'competition-build-resources.mjs'
+& $tools.node $resourceTool validate $root
+if($LASTEXITCODE -ne 0){
+  $buildArguments=@('-NoProfile','-NonInteractive','-File',$PSCommandPath)
+  foreach($entry in $PSBoundParameters.GetEnumerator()){$buildArguments+=('-'+$entry.Key);$buildArguments+=[string]$entry.Value}
+  & $tools.node $resourceTool run (Split-Path -Parent $root) $root 'temp' (Get-Process -Id $PID).Path @buildArguments
+  if($LASTEXITCODE -ne 0){throw 'Dependency preparation failed; diagnostics retained.'}
+  return
+}
 $env:Path = $tools.nodeRoot + ';' + (Split-Path -Parent $tools.git) + ';' + $env:Path
 $null = [IO.Directory]::CreateDirectory($root)
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
@@ -24,8 +33,8 @@ $acl.SetSecurityDescriptorSddlForm(('O:{0}G:{0}D:P(A;OICI;FA;;;{0})(A;OICI;FA;;;
 Set-Acl -LiteralPath $root -AclObject $acl
 foreach ($name in @('temp','npm-cache','corepack-cache','pnpm-store','dependencies','empty-data','profile-seed')) { $null=[IO.Directory]::CreateDirectory((Join-Path $root $name)) }
 $env:TMP=Join-Path $root 'temp'; $env:TEMP=$env:TMP
-$env:COREPACK_HOME=Join-Path $root 'corepack-cache'
-$env:NPM_CONFIG_CACHE=Join-Path $root 'npm-cache'
+$env:COREPACK_HOME=Join-Path $env:UED_BUILD_CACHE_ROOT 'corepack-cache'
+$env:NPM_CONFIG_CACHE=Join-Path $env:UED_BUILD_CACHE_ROOT 'npm-cache'
 $env:npm_config_devdir=Join-Path $root 'node-gyp-cache'
 # Upstream tracks file symlinks; do not silently replace them or weaken provenance validation.
 $probeTarget=Join-Path $root 'temp\symlink-target'; $probeLink=Join-Path $root 'temp\symlink-probe'
