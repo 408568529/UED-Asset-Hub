@@ -1,13 +1,62 @@
-# UED Asset Hub
+# UED Asset Hub V2.3
 
-UED Asset Hub 是面向设计团队的内容型资产社区。V1.8 已开放 Vibe Product、Skill Center、Font Library、Prompt Library、组件规范、标准 SOP、培训资料和测试环境管理。
+UED Asset Hub 是面向设计团队的资产与知识协作平台，提供知识库、Haldur-Design-Skill 文件工作台、悠鼎 Agent、GenUI 交互成果，以及产品、字体、Prompt、规范、培训和测试环境管理。
 
-## 启动
+## 当前视觉分支与演示环境
+
+**V2.3** 对应已验收提交 `5065f7ec1f69ac4f35fed8c513410a2bbd182cbf`（Git 标签 `V2.3`），开发分支为 `codex/visual-refresh-v1`。UI Refresh V1.5 已完成真实 Agent / GenUI 回归，V1.6 Windows 隔离候选已由用户确认验收；这些验收不代表已部署到稳定实例。后续访客权限调整在本机 3047 演示环境验证。
+
+| 入口 | 用途 |
+| --- | --- |
+| `/knowledge` | 统一知识资产列表、搜索筛选、详情和来源返回 |
+| `/knowledge?section=training` | 培训资料，视频采用圆角卡片，宽屏三列 |
+| `/haldur-design-skill` | Haldur 文件树、文档预览与文件下载 |
+| `/agent` | 原生 DSH 工作台、Knowledge MCP 检索与 GenUI 交互 |
+| `/agent/settings` | 管理员模型设置，Key 仅在受保护页面输入 |
+| `/search` | 全局资产搜索，结果进入知识库对应详情 |
+| `/admin/login` | 管理登录 |
+
+新会话默认使用受限的“悠鼎设计与交互助手”，支持 Knowledge MCP 和 GenUI；已有会话保留各自预设。模型可以检索知识、读取全文并引用来源，生成交互面板、保存状态并通过工具读回。输出质量与规范检查结论仍需按实际来源和测试样例核验。
+
+### 访客与管理权限
+
+- Haldur 支持未登录浏览文件树、阅读 Markdown、下载完整 Skill ZIP 和单个文件；上传、编辑、删除及管理接口仍需管理员登录。
+- Agent 默认要求登录。仅在明确允许共享会话的环境启用服务端 `AGENT_PUBLIC_ACCESS=true`，才开放访客会话和 GenUI 使用。3047 演示环境已获授权开启，既有会话及成果也对访客可见，不提供用户间会话隔离。
+- 访客不展示模型设置标题行；模型 Key、配置接口和运行管理仍受管理员认证保护。开放访客不会解除受限工具、Workspace、GenUI sandbox、预览授权和状态访问边界。
+- 凭据、会话、附件、GenUI 成果和运行配置保存在 Git 外；Git 只同步代码及文档。
+
+本机演示入口：[3047 Agent](http://127.0.0.1:3047/agent)。沿用现有环境，不另建运行数据备份或切换到恢复副本。
+
+### 已有 3047 环境重新启动
+
+当前环境通过现有 Host Supervisor 托管 Hub、Gateway、DSH 与 Proxy。端口均为本机回环：公开 Hub `3047`、内部 Hub `3048`、DSH `3147`、Proxy `3148`、Gateway `3149`。
+
+仅在确认该隔离栈已经停止后，使用本机已有启动脚本（可粘贴；这是本机路径，不随 Git 分发）：
+
+```bash
+python3 '/Users/zhouzhijun/Documents/UED Asset Hub Visual Refresh/runtime/start-visual-host.py'
+```
+
+详细本机配置记录在同目录 `runtime/README.md`。该脚本复用 `npm run start:host` 和已有独立 Runtime，不需要重新初始化 DSH；缺少凭据时由管理员在本环境受保护页面配置，不复制其他实例的 Key。不要在当前服务运行时执行 `build` 覆盖其构建目录。
+
+历史验收与技术说明：
+
+- [V1.4 视觉更新范围](docs/ui-refresh-v1.4-visual-rollout.md)
+- [V1.5 功能回归与首次上传修复](docs/ui-refresh-v1.5-final-regression.md)
+- [V1.5 GenUI 冷启动收尾验收](docs/ui-refresh-v1.5-genui-cold-start-closeout.md)（取代早期报告中的冷启动未关闭结论）
+
+历史报告保留当时的认证策略与环境状态；当前访客权限以本节和代码配置为准。
+
+## 普通前端开发启动
+
+以下适用于新建开发环境，不用于重启上面的 3047 演示栈。先复制 `.env.example` 为 `.env.local`，设置本环境的管理员凭据及运行目录，再安装依赖并启动：
 
 ```bash
 npm install
 npm run dev
 ```
+
+`npm run dev` 只启动 Next.js，不会自动准备完整的 DSH / Agent / GenUI 链路。完整运行环境使用下文 Host Supervisor 配置。
 
 Windows 主机从 GitHub 发布、SSH 拉取、构建启动和数据保护的完整操作说明见：[Markdown 说明](docs/Windows主机发布更新流程.md) 或 [可视化操作页](docs/Windows主机发布更新流程.html)。
 
@@ -171,9 +220,9 @@ KNOWLEDGE_GATEWAY_MCP_PORT=3082
 .\agent-integration\scripts\setup-dsh.ps1 -DshSourceDir "D:\UED-Asset-Hub-Host\UED-Asset-Hub\vendor\deepseek-harness"
 ```
 
-DSH 和 Agent Proxy 都只监听主机本机回环地址（分别为 `127.0.0.1:3080`、`127.0.0.1:3081`）。从 V2.1.0.1 起应仅使用 Host Runner 启动完整的 `Asset Hub -> Gateway MCP -> DSH -> Proxy` 链路；独立的 `start-dsh.ps1` 只保留诊断用途，且必须已提供本机 MCP URL。正式运行时 Host Runner 将 `/agent-runtime` 同源转发到 Proxy，验证 Asset Hub 管理员会话后才转发官方 DSH Web UI、HTTP 请求和 WebSocket 事件流；浏览器不会直接访问 DSH 或 Proxy。`/agent` 会自动嵌入该官方工作台，保留 DSH 的字体、布局、控件、动效与交互，只将品牌强调色映射为 Asset Hub 绿色。
+DSH 和 Agent Proxy 都只监听主机本机回环地址（分别为 `127.0.0.1:3080`、`127.0.0.1:3081`）。从 V2.1.0.1 起应仅使用 Host Runner 启动完整的 `Asset Hub -> Gateway MCP -> DSH -> Proxy` 链路；独立的 `start-dsh.ps1` 只保留诊断用途，且必须已提供本机 MCP URL。正式运行时 Host Runner 将 `/agent-runtime` 同源转发到 Proxy，默认验证 Asset Hub 管理员会话后才转发官方 DSH Web UI、HTTP 请求和 WebSocket 事件流；显式启用 `AGENT_PUBLIC_ACCESS=true` 时，仅对允许的访客路由开放转发，管理与凭据接口继续鉴权；浏览器不会直接访问 DSH 或 Proxy。`/agent` 会自动嵌入该官方工作台，保留 DSH 的字体、布局、控件、动效与交互，只将品牌强调色映射为 Asset Hub 绿色。
 
-再启动 Asset Hub 后，以管理员身份访问 `/agent`。运行状态检查：
+通过 Host Supervisor 启动完整链路后访问 `/agent`；默认需管理员登录，已启用共享访客模式时可直接使用。运行状态检查：
 
 ```bash
 npm run verify:agent-runtime
@@ -379,9 +428,11 @@ PostgreSQL / OSS / S3 / 向量数据库
 - PostgreSQL 或 Supabase
 - 资产全文检索与向量检索
 
-## 后期接入 AI API
+## 预留 AI Service 接口
 
-AI 能力集中在 `src/services/aiService.ts`，配置在 `src/config/api.ts` 和 `.env.local`。
+此处是旧版摘要、标签等页面辅助能力的接口预留，不代表当前 Agent 仅为 mock。悠鼎 Agent 的真实模型、Knowledge MCP 与 GenUI 使用前述 DSH / Host Supervisor 链路，模型 Key 由管理员通过 `/agent/settings` 管理。
+
+这些预留 AI 能力集中在 `src/services/aiService.ts`，配置在 `src/config/api.ts` 和 `.env.local`。
 
 预留环境变量：
 
@@ -401,6 +452,12 @@ OPENAI_MODEL=
 
 ## 已实现页面
 
+知识内容以 `/knowledge` 为统一入口；`/skills`、`/fonts`、`/prompts`、`/components`、`/sops` 和培训列表等旧入口重定向到对应知识库页面。下列地址同时保留管理及兼容路由。
+
+- `/knowledge` 知识库
+- `/haldur-design-skill` Haldur 文件工作台
+- `/agent` 悠鼎 Agent 与 GenUI 工作台
+- `/agent/settings` 管理员模型设置
 - `/` 首页
 - `/products` Vibe Product
 - `/skills` Skill Center
