@@ -23,7 +23,7 @@ $resourceNode=(Get-Command node.exe -ErrorAction Stop).Source
 if($LASTEXITCODE -ne 0){
   $buildArguments=@('-NoProfile','-NonInteractive','-File',$PSCommandPath)
   foreach($entry in $PSBoundParameters.GetEnumerator()){$buildArguments+=('-'+$entry.Key);$buildArguments+=[string]$entry.Value}
-  & $resourceNode $resourceTool run (Split-Path -Parent $build) $build 'source,payload,toolchain' (Get-Process -Id $PID).Path @buildArguments
+  & $resourceNode $resourceTool run (Split-Path -Parent $build) $build 'source,payload,toolchain,temp' (Get-Process -Id $PID).Path @buildArguments
   if($LASTEXITCODE -ne 0){throw 'Isolated build failed; resource record and diagnostics retained.'}
   return
 }
@@ -35,6 +35,7 @@ if (-not $git) { throw 'Git is required in the Windows build environment.' }
 
 $null = [System.IO.Directory]::CreateDirectory($build)
 $null = [System.IO.Directory]::CreateDirectory($output)
+$env:TEMP=Join-Path $build 'temp';$env:TMP=$env:TEMP;$null=[IO.Directory]::CreateDirectory($env:TEMP)
 Import-Module (Join-Path $PSScriptRoot 'Internal-Release.Common.psm1') -Force
 Assert-NoReparseAncestor $build
 Assert-NoReparseAncestor $output

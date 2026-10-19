@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const VERSION = 1;
-const allowed = new Set(['source', 'payload', 'toolchain', 'internal-release', 'verified-internal-release', 'UED-Asset-Hub', 'UED-Asset-Hub-macOS-arm64', 'temp']);
+const allowed = new Set(['source', 'payload', 'toolchain', 'internal-release', 'verified-internal-release', 'UED-Asset-Hub', 'UED-Asset-Hub-macOS-arm64', 'temp', 'npm-cache', 'corepack-cache', 'pnpm-store', 'node-gyp-cache']);
 const hash = async file => { const h = createHash('sha256'); for await (const b of createReadStream(file)) h.update(b); return h.digest('hex'); };
 const save = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
 const inside = (parent, child) => { const r = path.relative(parent, child); return r && !r.startsWith('..' + path.sep) && r !== '..' && !path.isAbsolute(r); };
@@ -45,6 +45,7 @@ async function inspectTree(root, countOnly = false) {
 export async function runBuild({ scope, work, disposable, command, args = [] }) {
   scope = path.resolve(scope); work = path.resolve(work);
   await regularPath(scope); await regularPath(work);
+  if (process.platform === 'win32' && path.parse(work).root.replace(/[\\/]+$/, '').toLowerCase() === (process.env.SystemDrive || 'C:').toLowerCase()) throw new Error('Competition builds must remain outside the system drive.');
   if (!inside(scope, work) || path.dirname(work) !== scope) throw new Error('Build must use a new immediate child of its isolated scope.');
   try { await lstat(work); throw new Error('Build work directory already exists.'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   if (disposable.some(n => !allowed.has(n))) throw new Error('Unknown disposable build subdirectory.');
@@ -77,6 +78,7 @@ export async function runBuild({ scope, work, disposable, command, args = [] }) 
     child.stdout.pipe(process.stdout, { end: false }); child.stderr.pipe(process.stderr, { end: false });
     child.stdout.pipe(buildLog, { end: false }); child.stderr.pipe(buildLog, { end: false });
     const completion = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', (code, signal) => resolve(code ?? `signal:${signal}`)); });
+    completion.catch(() => {}); // Keep spawn errors handled while the first disk/process sample is pending.
     record.children.push(child.pid); await sample();
     timer = setInterval(() => { if (!monitoring) monitoring = sample().finally(() => { monitoring = null; }); }, 2000);
     const code = await completion;
