@@ -102,7 +102,7 @@ async function assertPortAvailable(portNumber, label, { reasonCode = null } = {}
   await new Promise((resolve, reject) => {
     const probe = createServer();
     probe.once("error", () => reject(reasonCode ? lifecycleError(`${label} 端口 ${portNumber} 已被占用。`, reasonCode) : new Error(`${label} 端口 ${portNumber} 已被占用。`)));
-    probe.listen(portNumber, "0.0.0.0", () => probe.close(resolve));
+    probe.listen(portNumber, process.env.UED_LOCAL_DISTRIBUTION_MODE === "true" ? "127.0.0.1" : "0.0.0.0", () => probe.close(resolve));
   });
 }
 

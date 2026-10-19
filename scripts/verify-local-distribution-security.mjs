@@ -14,8 +14,8 @@ try {
   const packageRoot = path.join(root, "package"), dataRoot = path.join(root, "data");
   await mkdir(path.join(packageRoot, "app"), { recursive: true }); await mkdir(dataRoot);
   const source = { commit: "1".repeat(40), tree: "2".repeat(40) };
-  await writeFile(path.join(packageRoot, "competition-manifest.json"), JSON.stringify({ channel: "V2.5_COMPETITION", platform: `${process.platform}-${process.arch}`, source }));
-  await writeFile(path.join(packageRoot, "app/release-manifest.json"), JSON.stringify({ source }));
+  await writeFile(path.join(packageRoot, "competition-manifest.json"), JSON.stringify({ schemaVersion: 1, localModeVersion: 1, channel: "V2.5_COMPETITION", platform: `${process.platform}-${process.arch}`, source }));
+  await writeFile(path.join(packageRoot, "app/release-manifest.json"), JSON.stringify({ channel: "INTERNAL_RELEASE", source }));
   const environment = { NODE_ENV: "production", UED_LOCAL_DISTRIBUTION_MODE: "true", UED_LOCAL_DISTRIBUTION_ROOT: dataRoot, UED_LOCAL_DISTRIBUTION_PACKAGE: packageRoot, HOST_BIND_HOST: "127.0.0.1", HOST_PORT: "3247", PUBLIC_ORIGIN: "http://127.0.0.1:3247", ADMIN_SESSION_SECURE: "false", ADMIN_USERNAME: "test-admin", ADMIN_PASSWORD: "Synthetic-admin-only-764!", ADMIN_SESSION_SECRET: "x".repeat(48) };
   for (const [key, child] of Object.entries({ DATA_DIR: "hub-data", TRAINING_MEDIA_DIR: "training-media", AGENT_RUNTIME_DIR: "agent-runtime", ASSET_HUB_RUNTIME_DIR: "asset-hub-runtime", HALDUR_DESIGN_SKILL_ROOT: "Haldur-Design-Skill", HALDUR_DESIGN_SKILL_RUNTIME_ROOT: "haldur-runtime" })) { environment[key] = path.join(dataRoot, child); await mkdir(environment[key]); }
   assert.equal(isLocalDistributionEnvironment(environment), true);

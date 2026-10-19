@@ -24,8 +24,8 @@ export function isLocalDistributionEnvironment(environment = process.env) {
     }
     const manifest = JSON.parse(readFileSync(path.join(packageRoot, "competition-manifest.json"), "utf8"));
     const release = JSON.parse(readFileSync(path.join(packageRoot, "app/release-manifest.json"), "utf8"));
-    return manifest.channel === "V2.5_COMPETITION" && manifest.platform === `${process.platform}-${process.arch}`
-      && /^[a-f0-9]{40}$/.test(manifest.source?.commit || "") && manifest.source.commit === release.source?.commit && manifest.source.tree === release.source?.tree;
+    return manifest.schemaVersion === 1 && manifest.localModeVersion === 1 && manifest.channel === "V2.5_COMPETITION" && release.channel === "INTERNAL_RELEASE" && manifest.platform === `${process.platform}-${process.arch}`
+      && /^[a-f0-9]{40}$/.test(manifest.source?.commit || "") && /^[a-f0-9]{40}$/.test(manifest.source?.tree || "") && manifest.source.commit === release.source?.commit && manifest.source.tree === release.source?.tree;
   } catch { return false; }
 }
 
