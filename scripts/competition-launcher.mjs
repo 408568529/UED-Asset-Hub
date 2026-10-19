@@ -25,8 +25,8 @@ export function localDistributionEnvironment(config, packageRoot, dataRoot, logi
   return environment;
 }
 
-async function privateConfiguration(packageRoot, dataRoot, initialize = false) {
-  if (process.platform === "win32") execFileSync("powershell.exe", ["-NoLogo", "-NoProfile", "-File", path.join(packageRoot, "tools/competition-private-config.ps1"), "-Path", dataRoot, ...(initialize ? ["-Initialize"] : [])], { stdio: ["ignore", "pipe", "pipe"] });
+async function privateConfiguration(packageRoot, dataRoot, initialize = false, protectLogin = false) {
+  if (process.platform === "win32") execFileSync("powershell.exe", ["-NoLogo", "-NoProfile", "-File", path.join(packageRoot, "tools/competition-private-config.ps1"), "-Path", dataRoot, ...(initialize ? ["-Initialize"] : []), ...(protectLogin ? ["-ProtectLogin"] : [])], { stdio: ["ignore", "pipe", "pipe"] });
   else { const detail = await lstat(dataRoot); if (!detail.isDirectory() || detail.isSymbolicLink() || detail.uid !== process.getuid() || (detail.mode & 0o077)) throw new Error("外置数据根的账户权限不合规。"); }
 }
 
@@ -41,6 +41,7 @@ export async function initializeLocalAdministrator(packageRoot, input) {
   const { resolveHostSecurityConfig } = await import(pathToFileURL(path.join(packageRoot, "app/scripts/host-security-config.mjs")).href);
   resolveHostSecurityConfig(environment);
   await jsonWrite(path.join(path.dirname(result.configPath), "host-login.json"), login);
+  await privateConfiguration(packageRoot, result.dataRoot, false, true);
   await jsonWrite(path.join(packageRoot, "installation.json"), { schemaVersion: 1, configPath: result.configPath });
   input.password = "";
 }
