@@ -13,7 +13,7 @@
 - 本轮隔离仓库：`/private/tmp/ued-v25-competition-delivery`。使用 `git clone --no-hardlinks --no-checkout --single-branch` 从源工作区本地克隆，然后从上述 Commit 创建分支。独立 .git、独立索引、独立对象文件；不修改原仓库引用或索引。origin 仅为本地源路径。
 - 聊天 cwd 主仓库的 main 为 `fa14eaa62553109eb9cf6d6a39b545fff6b8fd38`，不是本次基线。
 - 原 3047 监听 PID 为 14612；未调用其控制接口或修改运行源码、配置、DATA。
-- 不执行 Push、合并、部署、旧 Release 清理、Windows 访问及真实凭据读取。
+- 不执行 Push、合并、生产部署、旧 Release 清理或真实凭据读取。用户本轮允许沿用SSH Windows主机的全新隔离目录进行构建验证；全部新产物位于D盘。
 
 用户提供的 V2.5 Prompt 是本次执行范围；其目标不自动构成实现或验收证据。先前诊断不授权生产部署。
 
@@ -33,14 +33,14 @@
 | DSH 来源与准备 | install-internal-dsh-runtime.ps1、来源 bundle/commit/tree 校验 | 现安装流程在目标机 install/build，原生构件回退可能需要编译工具；不能直接作为普通用户首装 |
 | GenUI | 官方 Plugin Manager、固定 tgz、受限 preset、bootstrap/liveness/Haldur 读取补丁 | tgz 不是完整 profile，必须在隔离 Windows 构建机准备完整依赖 |
 | 停止与进程收敛 | Windows Job、runtime-control-bridge、windows-managed-shutdown-client.mjs | 现 shutdown client 要求 Service 模式，不能直接当双击版通用停止入口 |
-| 凭据 | DPAPI helper、bundle schema、子进程环境白名单 | helper 是本机范围；Web 设置仍写 credentials-local；见 CREDENTIALS-DECISION.md |
+| 凭据 | DPAPI helper、bundle schema、子进程环境白名单 | 直接复用Web模型设置与credentials-local，不新增加密/凭据管理；见CREDENTIALS-DECISION.md |
 
 ## 实施顺序与验证
 
 1. 基线与保护 → 验证：独立 Git、精确 Commit/Tree、源改动哈希不变；本轮已做。
-2. 凭据方案确认 → 验证：合成假 Key 的保存、替换、删除、重启、错误账户、异常中断及磁盘明文残留；不得只测 JSON schema。
+2. 模型设置复用 → 已按用户调整范围：后台自行输入Key，沿用持久DSH_HOME；不开发DPAPI API Key适配。验证现有管理员鉴权与重启保留，不将文件权限/掩码描述为加密。
 3. Windows 依赖收口 → 复用 Internal Release 构建器，维护者在已授权的全新 Windows x64 构建目录准备 Node/Git、DSH authority/runtime、GenUI profile、helpers 和完整许可。验证架构/ABI、原生装载、锁定版本和逐文件哈希；不得复制 Mac node_modules 或作者 DSH_HOME。
-4. 首装向导 → 选新目录、路径/空间/ACL/重解析点预检、明确确认、原子写非敏感路径配置与受保护凭据、准备本实例 Runtime。验证中文/空格、取消、已存在目录、磁盘不足、逐步失败和精确恢复。
+4. 首装向导 → 选新目录、路径/空间/ACL/重解析点预检、明确确认、只写非敏感路径配置、准备本实例 Runtime。验证中文/空格、取消、已存在目录、磁盘不足、逐步失败和精确恢复。
 5. 双击启动/停止 → 入口名严格为 `轻点击我启动.cmd` 与 `停止运行.cmd`。仅在本安装身份与端口绑定核实后复用 Supervisor 和现有受控停止；存活实例只打开原地址，其他端口占用直接报错。验证重复双击竞争、健康超时、错误身份与完整进程树收敛。浏览器只在健康就绪后打开。
 6. 打包与新机验收 → 交付不可变 app、tools、licenses、manifest 与 README。源码身份包含所有已提交修复；最终构建后生成 ZIP SHA-256。干净 Windows 普通用户实际首装、停止、复启和功能烟测通过后才可声明一键可用。
 
@@ -57,10 +57,18 @@
 | AGENT_RUNTIME_DIR | agent-runtime |
 | ASSET_HUB_RUNTIME_DIR | asset-hub-runtime |
 
-DSH_HOME 由既有运行路径逻辑落在 Agent Runtime；路径配置与密文放在受保护 config。程序和工具仍在独立解压目录；DSH_SOURCE_DIR 与 DSH_RUNTIME_SOURCE_DIR 是依赖代码，放在独立安装依赖目录，不放入用户选定的数据根。现有 DSH 安装器要求二者同父目录，且与 DATA、Agent Runtime、Release 互不包含，不能绕过此要求。
+DSH_HOME 由既有运行路径逻辑落在 Agent Runtime；非敏感路径配置放在受保护config；Key仍由原有DSH设置存储。程序和工具仍在独立解压目录；DSH_SOURCE_DIR 与 DSH_RUNTIME_SOURCE_DIR 是依赖代码，放在独立安装依赖目录，不放入用户选定的数据根。现有 DSH 安装器要求二者同父目录，且与 DATA、Agent Runtime、Release 互不包含，不能绕过此要求。
 
 已有 Windows 安装继续使用原本可能分散的各路径。遇到已有数据只读核对并提示，不自动初始化、植入样例、迁移或修复。已保存路径丢失即报错，不新建空目录。首装中断只清理由本次确切创建且可验证为空的内容，其他内容保留供恢复。
 
-## 本轮停止点
+## 本轮继续实施与实际边界
 
-等待用户确认加密范围和52原则纳入方式。尚无授权的干净 Windows x64 构建/新机测试环境，本轮不连接旧 Windows 服务器。本轮另修复Internal Release依赖分析误报（AST识别真实import，分析移到prune前）；合成回归见ACCEPTANCE.md。可以完成文档与不触碰 Runtime 的隔离契约检查；不以这些检查替代首装/加密/Windows 实测。
+- 新增prepare-competition-tools.ps1：固定Node22.23.2与MinGit2.53.0.2，区分ZIP与exe哈希，在新目录下载校验。
+- 新增prepare-competition-dsh.ps1：在新目录调用原DSH安装脚本与官方Plugin Manager，缓存/TEMP在D盘，仅生成全新profile，不访问旧Runtime/DATA。
+- 新增首次目录初始化、可迁移依赖链接快照/恢复、中文CMD入口及competition-launch.ps1。入口复用现有Supervisor/管理员鉴权的停止接口，生产安全校验保持启用。
+- 新增候选包构建与ZIP脚本；成品须来自同一干净提交，不能用旧ZIP替代当前构建；没有完整构件时直接失败。
+- 目录/链接图合成测试已通过；Windows原生解析、实际依赖构建与首装证据将另记。脚本存在不等于双击和整栈已通过。
+
+Windows隔离根：`D:\UED-V25-Competition-20261019-01a15349`，包括transfer/tools/temp/cache/build/dependency preparation及候选ZIP。原服务UEDAssetHubR2C及3080–3082保持保护，不复用其DATA、Runtime或凭据。本机Developer Mode当前未启用；实际符号链接权限要通过新目录合成探针确认，不修改策略以绕过来源校验。
+
+现有生产登录要求管理员启动配置和受信HTTPS。这些前提尚未由新装向导自动准备；在不修改原安全机制/不新增凭据管理的范围内，若无法完成普通用户首装，必须列为交付阻断，不能用开发模式、默认密码或证书验证绕过作为成品。已用过的SSH主机隔离测试也不等于干净新机。

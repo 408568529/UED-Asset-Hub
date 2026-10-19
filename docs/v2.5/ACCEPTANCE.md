@@ -13,7 +13,7 @@
 | 包内容/架构/哈希/许可 | NOT_VERIFIED | GenUI tgz本轮哈希匹配；完整Windows运行依赖/工具/许可仍缺，未生成ZIP |
 | 中文双击首装、目录、管理员初始化 | NOT_VERIFIED | 入口/向导待实现；中文/空格/普通权限/取消恢复无实机证据 |
 | 再次启动、同实例、冲突与停止 | NOT_VERIFIED | 现成shutdown client只支持Service；交互受控停止需接入现有生命周期 |
-| 凭据安全 | PARTIAL | schema测试通过；当前helper本机范围、默认YAML明文链路已定位；安全方案待批准，不能报加密PASS |
+| 凭据安全 | PARTIAL | schema测试通过；当前helper本机范围、默认YAML明文链路已定位；用户已取消新增加密适配；复用原管理员设置和文件存储，不能报加密PASS |
 | 功能烟测 | NOT_VERIFIED | 未启动V2.5完整栈，未调用模型或使用真实资产 |
 | 原版本保护 | PASS | 原视觉工作区HEAD/status/十四份文件哈希、3047监听PID不变；未访问Windows，无生产/旧包变更操作 |
 | 文档 | PARTIAL | 四步README.md及同源HTML、依赖矩阵、方案与门禁已形成；因向导待实现还不是用户可照做的最终安装说明 |
@@ -25,9 +25,9 @@
 ## 当前必须解决的阻断
 
 1. 用户确认52原则是否纳入V2.5新分支；原工作区保留原状。
-2. 用户确认凭据加密范围与Web保存/替换/删除的完整方案，见CREDENTIALS-DECISION.md。未获确认前不实施此安全决定。
+2. 用户已取消新增凭据加密；当前保留原鉴权/存储，见CREDENTIALS-DECISION.md。不再等待加密方案审批。
 3. 锁定并准备Windows Node/Git/Corepack及DSH/GenUI完整构件；收紧Node范围并核对Service固定版本冲突；落实再分发许可与原生依赖闭包。
-4. 获得明确授权的独立Windows x64构建及干净普通用户测试环境。当前没有通过验收的可用新机；不得使用旧Windows正式服务或DATA代替。
+4. 用户已授权此前SSH主机的全新D盘隔离目录用于构建验证；这不是空白新机，原服务与DATA保持保护。现有管理员启动配置、受信HTTPS及文件symlink权限仍需确认满足。
 
 ## 真正新机验收的最小环境与步骤
 
@@ -45,3 +45,7 @@
 本轮只在独立V2.5仓库写文件；原工作区、3047、Windows和DATA不需回退。代码修复可在新分支审查后用git revert对应本地提交撤销；不要在原视觉工作区reset/clean/stash。未实施任何回退或数据迁移。
 
 测试原始状态和初次命令问题及纠正见verification-evidence.json。首次缺依赖/漏参数不是产品运行结果；已用正确条件重跑。PowerShell原生执行与最终Windows构建仍未验证。
+
+## 范围更新后的实现（Windows实测进行中）
+
+新增随包工具准备、依赖链接图快照/恢复、首次目录初始化、两个中文CMD、复用Supervisor的启动/鉴权停止和候选包组装脚本。目录/链接图合成测试已通过；此项不构成实际Explorer双击或整栈PASS。PowerShell/native build与首次/复启结果另记。
