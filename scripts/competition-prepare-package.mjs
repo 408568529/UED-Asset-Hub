@@ -11,13 +11,13 @@ export async function prepareCompetitionPackage(packageRoot) {
   const root = await realpath(packageRoot), dependencyRoot = path.join(root, "dependencies");
   const manifest = JSON.parse(await readFile(path.join(root, "competition-manifest.json"), "utf8"));
   if (manifest.dshCommit !== "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e") throw new Error("Pinned DSH source identity mismatch.");
-  await restoreDependencyLinks(path.join(dependencyRoot, "dsh-source"), manifest.sourceLinks);
+  await restoreDependencyLinks(path.join(dependencyRoot, "dsh-source"), manifest.sourceLinks, null, true);
   await restoreDependencyLinks(path.join(dependencyRoot, "dsh-runtime"), manifest.runtimeLinks);
   await restoreDependencyLinks(path.join(dependencyRoot, "genui-home"), manifest.profileLinks, path.join(dependencyRoot, "dsh-runtime"));
   const source = path.join(dependencyRoot, "dsh-source");
   const git = toolPaths(root).git;
   const systemPaths = process.platform === "win32" ? [path.join(process.env.SystemRoot || "C:\\Windows", "System32"), process.env.SystemRoot || "C:\\Windows"] : ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
-  const environment = { ...process.env, PATH: [path.dirname(git), path.dirname(process.execPath), ...systemPaths].join(path.delimiter), GIT_OPTIONAL_LOCKS: "0", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: os.devNull };
+  const environment = { ...process.env, PATH: [path.dirname(git), path.dirname(process.execPath), ...systemPaths].join(path.delimiter), GIT_OPTIONAL_LOCKS: "0", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : os.devNull };
   for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_EXEC_PATH", "NODE_PATH", "NODE_OPTIONS", "NODE_COMPILE_CACHE"]) delete environment[key];
   if (process.platform === "darwin") environment.GIT_EXEC_PATH = path.join(root, "tools/git/libexec/git-core");
   const runGit = (args) => execFileSync(git, args, { encoding: "utf8", env: environment, stdio: ["ignore", "pipe", "pipe"] }).trim();

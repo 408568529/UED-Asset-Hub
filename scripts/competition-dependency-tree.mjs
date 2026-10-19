@@ -30,7 +30,7 @@ export async function snapshotDependencyTree(sourceRoot, destinationRoot, runtim
   return links.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export async function restoreDependencyLinks(root, links, runtimeRoot = null) {
+export async function restoreDependencyLinks(root, links, runtimeRoot = null, directorySymlinks = false) {
   const canonical = await realpath(root);
   const runtime = runtimeRoot ? await realpath(runtimeRoot) : null;
   const resolve = (relative, base = canonical) => {
@@ -53,7 +53,7 @@ export async function restoreDependencyLinks(root, links, runtimeRoot = null) {
       if (!existing.isSymbolicLink() || await realpath(output) !== await realpath(target)) throw new Error("Existing dependency link differs from the prepared package.");
       continue;
     } catch (error) { if (error.code !== "ENOENT") throw error; }
-    const junction = process.platform === "win32" && link.kind === "directory";
+    const junction = process.platform === "win32" && link.kind === "directory" && !directorySymlinks;
     await symlink(junction ? target : path.relative(path.dirname(output), target), output, junction ? "junction" : link.kind === "directory" ? "dir" : "file");
   }
 }
