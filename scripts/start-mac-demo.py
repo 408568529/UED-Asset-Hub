@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import stat
 import subprocess
 import sys
@@ -46,6 +47,11 @@ try:
     if args.check:
         print('Persistent Mac demo configuration valid; no services started.')
     else:
+        # Next standalone output omits public assets; the viewer needs haldur-preview.js.
+        standalone = workspace / '.next-local-test/standalone'
+        if not (standalone / 'server.js').is_file():
+            raise ValueError('Standalone build is missing')
+        shutil.copytree(workspace / 'public', standalone / 'public', dirs_exist_ok=True)
         os.chdir(workspace)
         os.execvpe('npm', ['npm', 'run', 'start:host'], env)
 except (OSError, ValueError, KeyError):

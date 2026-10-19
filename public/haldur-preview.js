@@ -121,6 +121,9 @@
     // the load event is a presentation gate, not a claim that arbitrary JS succeeded.
     frame.style.visibility = "hidden";
     frame.addEventListener("load", () => { frame.style.visibility = "visible"; if (!navigationBlocked) status.textContent = [...warnings].join("\n"); }, { once: true });
-    frame.src = objectURL(markup, "text/html;charset=utf-8"); host.append(frame); status.textContent = "正在加载隔离文档…";
+    // srcdoc also works in WebKit-based embedded browsers where sandboxed blob
+    // navigation can stall. Without allow-same-origin the child remains opaque;
+    // the existing child CSP and parent navigation policy are unchanged.
+    frame.srcdoc = markup; host.append(frame); status.textContent = "正在加载隔离文档…";
   } catch (error) { status.textContent = "无法预览：" + error.message + "。可下载原文件。"; }
 })();
