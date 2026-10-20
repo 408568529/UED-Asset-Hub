@@ -78,7 +78,9 @@
     "start:agent-proxy": "node agent-integration/scripts/start-agent-proxy.mjs",
     "start:host": "node scripts/start-host.mjs",
     "lint": "node node_modules/next/dist/bin/next lint",
-    "typecheck": "node node_modules/typescript/bin/tsc --noEmit"
+    "typecheck": "node node_modules/typescript/bin/tsc --noEmit",
+    "build:competition-center": "node scripts/build-competition-center-ui.mjs",
+    "verify:competition-center": "node scripts/verify-competition-center.mjs"
   },
   "dependencies": {
     "@ant-design/nextjs-registry": "1.3.0",

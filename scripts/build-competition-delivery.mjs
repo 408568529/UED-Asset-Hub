@@ -35,7 +35,17 @@ export async function buildCompetitionDirectory({ releaseRoot, toolsReceipt, dsh
     await mkdir(path.join(destination, "tools/git/libexec/git-core"), { recursive: true });
     for (const relative of ["tools/git/bin/git", "tools/git/libexec/git-core/git"]) { await copyFile(tools.git, path.join(destination, relative)); await chmod(path.join(destination, relative), 0o755); }
   }
-  for (const file of ["competition-first-run.mjs", "competition-dependency-tree.mjs", "competition-prepare-package.mjs", "competition-check.mjs", "competition-launcher.mjs", "competition-launch.ps1", "competition-private-config.ps1"]) await copyFile(path.join(sourceRoot, "scripts", file), path.join(destination, "tools", file));
+  for (const file of ["competition-center.mjs", "competition-center.html", "competition-center-private.ps1", "competition-choose-folder.ps1", "competition-first-run.mjs", "competition-dependency-tree.mjs", "competition-prepare-package.mjs", "competition-check.mjs", "competition-launcher.mjs", "competition-launch.ps1", "competition-private-config.ps1"]) await copyFile(path.join(sourceRoot, "scripts", file), path.join(destination, "tools", file));
+  const centerAssets = path.join(sourceRoot, "delivery/competition/center");
+  const centerManifest = await readJson(path.join(centerAssets, "manifest.json"));
+  if (centerManifest.schemaVersion !== 1 || !Array.isArray(centerManifest.inputs) || !centerManifest.inputs.length || !Array.isArray(centerManifest.files) || centerManifest.files.length !== 3 || new Set(centerManifest.files.map(file => file.path)).size !== 3) throw new Error("Prepared launcher UI manifest is incomplete.");
+  for (const input of centerManifest.inputs) {
+    if (path.isAbsolute(input.path) || input.path.split("/").includes("..") || sha(await readFile(path.join(sourceRoot, input.path))) !== input.sha256) throw new Error("Launcher UI is stale; run the maintainer UI build before committing source.");
+  }
+  for (const output of centerManifest.files) {
+    if (!["center.js", "center.css", "center.js.LEGAL.txt"].includes(output.path) || sha(await readFile(path.join(centerAssets, output.path))) !== output.sha256) throw new Error("Prepared launcher UI integrity mismatch.");
+  }
+  await cp(centerAssets, path.join(destination, "tools/center"), { recursive: true, errorOnExist: true, force: false });
   // Application scripts must already belong to the hashed Internal Release.
   await verifyInternalReleaseManifest({ payloadRoot: path.join(destination, "app") });
   const suffix = process.platform === "win32" ? ".cmd" : ".command";

@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
-import { access, lstat, mkdir, open as openFile, unlink, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, open as openFile, realpath, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { initializeCompetitionData } from "./competition-first-run.mjs";
+import { initializeCompetitionData, assertNoLinkedAncestors } from "./competition-first-run.mjs";
 import { checkCompetitionEnvironment, portIsListening, readJson, toolPaths } from "./competition-check.mjs";
 import { prepareCompetitionPackage } from "./competition-prepare-package.mjs";
 
@@ -32,7 +32,11 @@ async function privateConfiguration(packageRoot, dataRoot, initialize = false, p
 }
 
 export async function initializeLocalAdministrator(packageRoot, input) {
+  if (typeof input.dataRoot !== "string" || !path.isAbsolute(input.dataRoot)) throw new Error("请选择外部数据根的绝对路径。");
   if (typeof input.password !== "string" || input.password.length < 12 || typeof input.username !== "string" || !input.username.trim()) throw new Error("请设置管理员账号和至少12位的新密码。");
+  try { await lstat(input.dataRoot); throw new Error("该目录已存在。请先识别并沿用原安装，不会初始化或覆盖。"); } catch (error) { if (error.code !== "ENOENT") throw error; }
+  const security = await import(pathToFileURL(path.join(packageRoot, "app/scripts/host-security-config.mjs")).href);
+  security.resolveHostSecurityConfig({ NODE_ENV: "production", PUBLIC_ORIGIN: "https://initialization.invalid", ADMIN_SESSION_SECURE: "true", ADMIN_USERNAME: input.username, ADMIN_PASSWORD: input.password, ADMIN_SESSION_SECRET: randomBytes(32).toString("base64url") });
   packageRoot = (await checkCompetitionEnvironment(packageRoot)).root;
   await prepareCompetitionPackage(packageRoot);
   const result = await initializeCompetitionData({ packageRoot, dependencyRoot: path.join(packageRoot, "dependencies"), dataRoot: input.dataRoot, confirmed: true });
@@ -45,6 +49,22 @@ export async function initializeLocalAdministrator(packageRoot, input) {
   await privateConfiguration(packageRoot, result.dataRoot, false, true);
   await jsonWrite(path.join(packageRoot, "installation.json"), { schemaVersion: 1, configPath: result.configPath });
   input.password = "";
+}
+
+export async function attachCompetitionInstallation(packageRoot, dataRoot) {
+  packageRoot = await realpath(packageRoot);
+  if (!path.isAbsolute(dataRoot)) throw new Error("请选择原安装的绝对数据路径。");
+  await assertNoLinkedAncestors(dataRoot);
+  await privateConfiguration(packageRoot, dataRoot);
+  const configPath = path.join(dataRoot, "config/runtime.json");
+  for (const file of [configPath, path.join(dataRoot, "config/installation.json")]) { const info = await lstat(file); if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || await realpath(file) !== file) throw new Error("原路径配置被重定向；未读取或修改。"); }
+  const marker = await readJson(path.join(dataRoot, "config/installation.json"));
+  if (marker.schemaVersion !== 1 || marker.packageRoot !== packageRoot || marker.dataRoot !== dataRoot || marker.configPath !== configPath) throw new Error("数据属于其他版本或不是本机发行安装；请使用原入口。不会迁移或覆盖。");
+  await checkCompetitionEnvironment(packageRoot, { installationConfigPath: configPath });
+  const locatorPath = path.join(packageRoot, "installation.json");
+  try { const existing = await readJson(locatorPath); if (existing.configPath !== configPath) throw new Error("程序已绑定其他数据目录，请使用原安装入口。"); }
+  catch (error) { if (error.code !== "ENOENT") throw error; await jsonWrite(locatorPath, { schemaVersion: 1, configPath }); }
+  return { dataRoot };
 }
 
 async function request(origin, route, init = {}) {
@@ -62,7 +82,7 @@ async function ownedHealth(origin, state) {
   const response = await request(origin, "/api/auth/session");
   return response.ok && response.headers.get("x-ued-local-instance") === state.instance;
 }
-function openBrowser(url) {
+export function openBrowser(url) {
   const child = process.platform === "win32" ? spawn("rundll32.exe", ["url.dll,FileProtocolHandler", url], { detached: true, stdio: "ignore", windowsHide: true }) : spawn("/usr/bin/open", [url], { detached: true, stdio: "ignore" });
   child.on("error", () => console.log("浏览器未自动打开，请手动访问显示的本机地址。")); child.unref();
 }

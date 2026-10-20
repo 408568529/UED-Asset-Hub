@@ -40,10 +40,16 @@ export async function verifyCompetitionFiles(packageRoot) {
   return { root, manifest };
 }
 
-export async function checkCompetitionEnvironment(packageRoot) {
+export async function checkCompetitionEnvironment(packageRoot, { onProgress = () => {}, installationConfigPath } = {}) {
+  onProgress("integrity", "RUNNING", "正在核对全部构件与 SHA-256；不读取凭据。");
   const { root, manifest } = await verifyCompetitionFiles(packageRoot), tools = toolPaths(root);
+  onProgress("integrity", "PASS", `Hub / DSH / GenUI Web profile，${manifest.files.length} 个文件已校验。`);
+  onProgress("system", "PASS", manifest.platform);
+  onProgress("node", "RUNNING", "核对包内 Node。");
   if (process.versions.node !== manifest.nodeVersion) throw new Error("请使用包内 Node 执行入口，不使用系统 Node。");
   await Promise.all([access(tools.node, constants.X_OK), access(tools.git, constants.X_OK)]);
+  onProgress("node", "PASS", `Node ${process.versions.node}`);
+  onProgress("git", "RUNNING", "核对便携 Git 和必要权限。");
   const gitVersion = execFileSync(tools.git, ["--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   if (gitVersion !== `git version ${manifest.gitVersion}`) throw new Error("便携 Git 版本不匹配，请重新解压完整包。");
   if (process.platform === "win32") {
@@ -55,13 +61,17 @@ export async function checkCompetitionEnvironment(packageRoot) {
       if (!developerMode && !privileges.includes("SeCreateSymbolicLinkPrivilege")) throw new Error("现有 DSH 来源校验需要 Windows 文件符号链接权限。当前账户不具备；请由系统管理员配置受允许的权限后重检，检测器不会自行修改系统策略。");
     }
   }
+  onProgress("git", "PASS", gitVersion);
+  onProgress("data", "RUNNING", "检查保存的路径与权限；不读取管理员或模型凭据内容。");
   // Read only the path locator and non-secret path configuration. Never read host-login or DSH credentials.
   let config = { HOST_PORT: "3247", HOST_INTERNAL_PORT: "3248", DSH_PORT: "3347", AGENT_PROXY_PORT: "3348", KNOWLEDGE_GATEWAY_MCP_PORT: "3349" }, state;
+  let configPath;
   try {
-    const locator = await readJson(path.join(root, "installation.json"));
-    if (locator.schemaVersion !== 1 || !path.isAbsolute(locator.configPath)) throw new Error("安装路径记录无效。");
+    const locator = installationConfigPath ? { schemaVersion: 1, configPath: installationConfigPath } : await readJson(path.join(root, "installation.json"));
+    if (locator.schemaVersion !== 1 || typeof locator.configPath !== "string" || !path.isAbsolute(locator.configPath) || path.basename(locator.configPath) !== "runtime.json" || path.basename(path.dirname(locator.configPath)) !== "config") throw new Error("安装路径记录无效。");
     if ((await lstat(locator.configPath)).isSymbolicLink() || await realpath(locator.configPath) !== path.resolve(locator.configPath)) throw new Error("保存的非敏感路径配置被链接重定向。");
     config = await readJson(locator.configPath);
+    configPath = locator.configPath;
     for (const key of ["DATA_DIR", "TRAINING_MEDIA_DIR", "AGENT_RUNTIME_DIR", "ASSET_HUB_RUNTIME_DIR", "HALDUR_DESIGN_SKILL_ROOT", "HALDUR_DESIGN_SKILL_RUNTIME_ROOT"]) {
       if (!path.isAbsolute(config[key]) || !(await lstat(config[key])).isDirectory() || await realpath(config[key]) !== path.resolve(config[key])) throw new Error("保存的数据目录不存在或被链接替换；请恢复原路径，不会自动重建。");
     }
@@ -72,6 +82,8 @@ export async function checkCompetitionEnvironment(packageRoot) {
   } catch (error) {
     if (error.code !== "ENOENT" || error.path !== path.join(root, "installation.json")) throw error;
   }
+  onProgress("data", configPath ? "PASS" : "NOT_CONFIGURED", configPath ? path.dirname(path.dirname(configPath)) : "尚未选择外置数据目录；不会自动初始化。");
+  onProgress("ports", "RUNNING", "核对五个端口和运行实例身份。");
   const ports = ["HOST_PORT", "HOST_INTERNAL_PORT", "DSH_PORT", "AGENT_PROXY_PORT", "KNOWLEDGE_GATEWAY_MCP_PORT"].map((key) => Number(config[key]));
   if (ports.some((port) => !Number.isInteger(port) || port < 1 || port > 65535) || new Set(ports).size !== 5) throw new Error("本安装端口配置无效或重复，请恢复原配置。");
   let owned = false;
@@ -79,7 +91,8 @@ export async function checkCompetitionEnvironment(packageRoot) {
     try { process.kill(state.pid, 0); const response = await fetch(`http://127.0.0.1:${config.HOST_PORT}/api/auth/session`, { signal: AbortSignal.timeout(1500) }); owned = response.ok && response.headers.get("x-ued-local-instance") === state.instance; } catch {}
   }
   for (const port of ports) if (await portIsListening(port) && !owned) throw new Error(`端口${port}已被其他实例占用。请选择不冲突的本安装端口，不会停止或清理其他进程。`);
-  return { result: "PASS", root, platform: manifest.platform, source: manifest.source, fileCount: manifest.files.length, message: "可以启动（首次启动将配置外部目录及管理员）", newMachineAcceptance: manifest.newMachineAcceptance };
+  onProgress("ports", "PASS", `${ports.join(" / ")}${owned ? "；同一安装已运行" : "；无冲突"}`);
+  return { result: "PASS", root, platform: manifest.platform, source: manifest.source, fileCount: manifest.files.length, configured: Boolean(configPath), dataRoot: configPath ? path.dirname(path.dirname(configPath)) : null, owned, ports, message: "可以启动（首次启动将配置外部目录及管理员）", newMachineAcceptance: manifest.newMachineAcceptance };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
