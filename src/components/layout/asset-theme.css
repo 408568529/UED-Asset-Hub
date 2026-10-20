@@ -67,7 +67,7 @@ body:has(.asset-visual-theme) :is([data-slot="dialog-content"], [data-radix-popp
 .asset-visual-theme .detail-surface pre:not(.markdown-source-view) { font-family: var(--uedv-font); overflow-wrap: anywhere; font-size: 15px; line-height: 26px; }
 .asset-visual-theme .detail-surface { border-radius: 8px; }
 .asset-visual-theme .knowledge-document-section pre { border-radius: 8px; overflow-wrap: anywhere; }
-.asset-visual-theme .haldur-workbench-toolbar { border: 0; background: transparent; padding-block: 24px; }
+.asset-visual-theme .haldur-workbench-toolbar { border: 0; background: var(--uedv-surface); padding-block: 24px; }
 .asset-visual-theme .haldur-workbench-toolbar > div { max-width: 1440px; }
 .asset-visual-theme .haldur-workbench-toolbar h1 { font-size: 22px; line-height: 30px; }
 .asset-visual-theme .haldur-workbench-body { width: 100%; max-width: 1440px; }
