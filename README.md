@@ -1,8 +1,19 @@
-# UED Asset Hub V2.3
+# UED Asset Hub V2.5.2
 
 UED Asset Hub 是面向设计团队的资产与知识协作平台，提供知识库、Haldur-Design-Skill 文件工作台、悠鼎 Agent、GenUI 交互成果，以及产品、字体、Prompt、规范、培训和测试环境管理。
 
-## 当前视觉分支与演示环境
+## V2.5.2：微规范独立模块
+
+本次版本正式命名为 **UED Asset Hub V2.5.2**，当前开发分支为 `codex/v2.5-competition-delivery`。微规范提供独立顶部入口、主题文件夹管理、独立存储、首次确认初始化及历史数据迁移；保留 Knowledge MCP 检索、全文读取、稳定 ID 和引用兼容性。迁移须显式授权执行，普通启动不会静默迁移或创建丢失的库。
+
+- [版本变更说明](docs/v2.5.2/CHANGELOG.md)
+- [开发记录](docs/v2.5.2/DEVELOPMENT.md)
+- [实际验收与验证边界](docs/v2.5.2/ACCEPTANCE.md)
+- [存储、初始化、迁移及回退操作](docs/micro-standards/STORAGE-AND-MIGRATION.md)
+
+3047 已使用持久化程序和资产目录，日常通过现有 `runtime/02-轻点击我启动.command` 启动。当前版本命名和 Git 备份不触发正式服务器迁移、部署或重新构建 Windows ZIP。下述 V2.3/视觉分支内容保留为历史说明；当前启动方式以本段和 V2.5 文档为准。
+
+## V2.3 视觉分支与演示环境历史
 
 **V2.3** 对应已验收提交 `5065f7ec1f69ac4f35fed8c513410a2bbd182cbf`（Git 标签 `V2.3`），开发分支为 `codex/visual-refresh-v1`。UI Refresh V1.5 已完成真实 Agent / GenUI 回归，V1.6 Windows 隔离候选已由用户确认验收；这些验收不代表已部署到稳定实例。后续访客权限调整在本机 3047 演示环境验证。
 

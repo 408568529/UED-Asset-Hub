@@ -1,4 +1,4 @@
-# 微规范独立模块与迁移
+# UED Asset Hub V2.5.2：微规范独立模块与迁移
 
 `/micro-standards` 独立管理 Markdown，复用 Knowledge 的阅读器、编辑器、主题与 Ant 组件。访客阅读、搜索、下载；管理员创建、上传、编辑、移动主题及管理文件夹。非空主题不能删除。旧 `/knowledge?asset=micro-spec:<id>`、旧创建/编辑入口兼容跳转；Knowledge 列表不再作为微规范管理入口。全局搜索/MCP继续收录，每个ID仅一份权威来源。
 
