@@ -27,10 +27,20 @@ async function main() {
   results = await gateway.searchMicroSpecs({ specTopics: ["金额展示"] }); assert.equal(results.items.length, 1);
   assert.equal((await gateway.getAsset("micro-spec", "micro-money")).asset.citation.key, full.asset.citation.key);
   assert.equal(await fs.readFile(path.join(data, "knowledge/micro-money/content.md"), "utf8"), "LEGACY-DO-NOT-READ");
+  const normalDir = path.join(data, "knowledge", "normal-guide"); await fs.mkdir(normalDir);
+  await fs.writeFile(path.join(normalDir, "metadata.json"), JSON.stringify({ ...metadata, id: "normal-guide", documentType: "knowledge" }));
+  await fs.writeFile(path.join(normalDir, "content.md"), "NORMAL-KNOWLEDGE-BODY");
+  await fs.rename(micro, micro + "-offline");
+  try {
+    const { markdownKnowledgeService } = await import("../src/services/markdownKnowledgeService");
+    assert.equal((await markdownKnowledgeService.getById("normal-guide"))?.content, "NORMAL-KNOWLEDGE-BODY");
+    const partial = await gateway.search({ q: "NORMAL-KNOWLEDGE-BODY" }); assert.equal(partial.items.length, 1); assert.equal(partial.partial, true);
+    assert.equal((await gateway.search({ q: "LEGACY-DO-NOT-READ" })).items.length, 0);
+  } finally { await fs.rename(micro + "-offline", micro); }
   const { runtimeEnvironmentProfiles } = await import(new URL("../agent-integration/scripts/runtime-boundary.mjs", import.meta.url).href) as { runtimeEnvironmentProfiles: Record<"assetHub" | "dsh" | "agentProxy", (source: Record<string, string>) => Record<string, string>> };
   assert.equal(runtimeEnvironmentProfiles.assetHub({ MICRO_STANDARD_ROOT: micro }).MICRO_STANDARD_ROOT, micro);
   assert.equal(runtimeEnvironmentProfiles.dsh({ MICRO_STANDARD_ROOT: micro }).MICRO_STANDARD_ROOT, undefined);
   assert.equal(runtimeEnvironmentProfiles.agentProxy({ MICRO_STANDARD_ROOT: micro }).MICRO_STANDARD_ROOT, undefined);
-  console.log(JSON.stringify({ status: "PASS", checks: ["search_micro_specs", "search_knowledge-single-source", "get-full-content", "stable-citation-new-href", "immediate-update-read", "topic-rename-filter", "legacy-kept-readonly", "knowledge-ui-separation", "root-not-exposed-to-DSH-proxy"], root, modelCalls: 0 }));
+  console.log(JSON.stringify({ status: "PASS", checks: ["search_micro_specs", "search_knowledge-single-source", "get-full-content", "stable-citation-new-href", "immediate-update-read", "topic-rename-filter", "legacy-kept-readonly", "knowledge-ui-separation", "root-not-exposed-to-DSH-proxy", "missing-micro-root-preserves-normal-knowledge-no-legacy-fallback"], root, modelCalls: 0 }));
 }
 main().catch(e => { console.error(e); process.exitCode = 1; });

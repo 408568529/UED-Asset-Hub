@@ -140,12 +140,15 @@ async function readMetadataFromDirectory(id: string, directory: string) {
 
 export const markdownKnowledgeService = {
   async list(): Promise<MarkdownKnowledgeListResult> {
-    const independent = independentMicroStandards ? await microStore().list() : null;
-    if (!(await knowledgeRootExists())) return { documents: independent?.documents ?? [], diagnostics: [] };
+    let independent: MarkdownKnowledgeMetadata[] = [];
+    const diagnostics: MarkdownKnowledgeDiagnostic[] = [];
+    if (independentMicroStandards) {
+      try { independent = (await microStore().list()).documents; }
+      catch { diagnostics.push({ code: "invalid-metadata", message: "独立微规范存储不可用；未使用旧副本替代。" }); }
+    }
+    if (!(await knowledgeRootExists())) return { documents: independent, diagnostics };
     const entries = await fs.readdir(KNOWLEDGE_DIR, { withFileTypes: true });
     const documents: MarkdownKnowledgeMetadata[] = [];
-    const diagnostics: MarkdownKnowledgeDiagnostic[] = [];
-
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.isSymbolicLink()) {
         diagnostics.push({ code: "invalid-entry", message: `已跳过不安全 Knowledge 条目：${entry.name}` });
@@ -158,7 +161,7 @@ export const markdownKnowledgeService = {
           diagnostics.push({ id: entry.name, code: "missing-metadata", message: "缺少 metadata.json。" });
           continue;
         }
-        if (!independent || metadata.documentType !== "micro-spec") documents.push(metadata);
+        if (!independentMicroStandards || metadata.documentType !== "micro-spec") documents.push(metadata);
       } catch (error) {
         diagnostics.push({
           id: entry.name,
@@ -168,27 +171,20 @@ export const markdownKnowledgeService = {
       }
     }
 
-    return { documents: [...documents, ...(independent?.documents ?? [])], diagnostics };
+    return { documents: [...documents, ...independent], diagnostics };
   },
 
   async readMetadata(id: string): Promise<MarkdownKnowledgeMetadata | null> {
-    if (independentMicroStandards) {
-      const migrated = await microStore().get(id);
-      if (migrated) return migrated.metadata;
-    }
     const paths = await existingDocumentDirectory(id);
     const metadata = paths ? await readMetadataFromDirectory(id, paths.directory) : null;
-    return independentMicroStandards && metadata?.documentType === "micro-spec" ? null : metadata;
+    if (independentMicroStandards && (!metadata || metadata.documentType === "micro-spec")) return (await microStore().get(id))?.metadata ?? null;
+    return metadata;
   },
 
   async readContent(id: string): Promise<string | null> {
-    if (independentMicroStandards) {
-      const migrated = await microStore().get(id);
-      if (migrated) return migrated.content;
-      const legacy = await existingDocumentDirectory(id);
-      if (legacy && (await readMetadataFromDirectory(id, legacy.directory))?.documentType === "micro-spec") return null;
-    }
     const paths = await existingDocumentDirectory(id);
+    const metadata = paths ? await readMetadataFromDirectory(id, paths.directory) : null;
+    if (independentMicroStandards && (!metadata || metadata.documentType === "micro-spec")) return (await microStore().get(id))?.content ?? null;
     return paths ? readRegularFile(path.join(paths.directory, "content.md")) : null;
   },
 
