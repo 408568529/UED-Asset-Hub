@@ -31,7 +31,7 @@ const citationKeySchema = z.string().regex(
   "citation.key must be an Asset Hub knowledge identifier."
 );
 const citationHrefSchema = z.string().regex(
-  /^\/knowledge\?asset=[^\s#]+$/,
+  /^(?:\/knowledge\?asset=[^\s#]+|\/micro-standards\?asset=[A-Za-z0-9][A-Za-z0-9_-]{0,127})$/,
   "citation.href must be an internal Asset Hub knowledge navigation path."
 );
 const citationSchema = z.object({
