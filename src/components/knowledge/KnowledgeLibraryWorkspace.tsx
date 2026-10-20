@@ -58,7 +58,11 @@ function AssetIcon({ type }: { type: KnowledgeAssetType }) {
   return <Icon size={16} aria-hidden="true" />;
 }
 
-function AssetRow({ item, query }: { item: KnowledgeAssetView; query: KnowledgeLibraryQuery }) {
+export function KnowledgeListHeader() { return <div className="knowledge-list-columns hidden grid-cols-[minmax(18rem,1.8fr)_minmax(9rem,0.75fr)_minmax(10rem,0.9fr)_5.5rem_1.25rem] gap-4 border-b border-border bg-[hsl(var(--surface-subtle)/0.5)] px-6 py-2.5 text-xs font-medium text-muted-foreground lg:grid">
+              <span>名称</span><span>类型 / 分类</span><span>标签</span><span>更新</span><span aria-hidden="true" />
+            </div>; }
+
+export function AssetRow({ item, query }: { item: KnowledgeAssetView; query: KnowledgeLibraryQuery }) {
   const href = item.assetType === "micro-spec" ? item.route.href : buildHref(query, { asset: item.key });
 
   const content = (
@@ -213,9 +217,7 @@ export function KnowledgeLibraryWorkspace({ result, query, children }: { result:
 
           <div key={isDetail ? "detail" : "list"} className="workspace-content-transition flex min-h-0 flex-1 flex-col">
           {isDetail ? children : <div className="flex min-h-0 flex-1 flex-col">
-            {!trainingCards ? <div className="knowledge-list-columns hidden grid-cols-[minmax(18rem,1.8fr)_minmax(9rem,0.75fr)_minmax(10rem,0.9fr)_5.5rem_1.25rem] gap-4 border-b border-border bg-[hsl(var(--surface-subtle)/0.5)] px-6 py-2.5 text-xs font-medium text-muted-foreground lg:grid">
-              <span>名称</span><span>类型 / 分类</span><span>标签</span><span>更新</span><span aria-hidden="true" />
-            </div> : null}
+            {!trainingCards ? <KnowledgeListHeader /> : null}
             {!allFailed && result.items.length ? <div className={trainingCards ? "knowledge-training-grid" : "library-list"}>{result.items.map((item) => trainingCards ? <TrainingAssetCard key={item.key} item={item} query={query} /> : <AssetRow key={item.key} item={item} query={query} />)}</div> : null}
             {!allFailed && !result.items.length ? <div className="flex flex-1 items-center justify-center px-5 py-16 text-center"><div><FileText className="mx-auto text-muted-foreground" size={26} aria-hidden="true" /><h2 className="mt-3 text-base font-black">没有匹配的知识资产</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">尝试更换关键词或清除筛选。</p>{hasFilters ? <Button href="/knowledge" className="mt-5">清空筛选</Button> : null}</div></div> : null}
             {allFailed ? <div className="flex flex-1 items-center justify-center px-5 py-16 text-center"><div><h2 className="text-base font-black">知识库暂时无法读取</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">数据来源暂不可用，请稍后重试。现有模块页面与后台维护功能不受影响。</p><Button href={buildHref(query, {})} className="mt-5">重新加载</Button></div></div> : null}
