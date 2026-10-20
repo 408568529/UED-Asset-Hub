@@ -142,7 +142,7 @@ body:has(.asset-visual-theme) [data-slot="dialog-content"] input { border-color:
 }
 @media (min-width: 1024px) {
   .asset-visual-theme { --app-header-height: 64px; }
-  .asset-visual-theme .haldur-workbench-body { grid-template-columns: 216px minmax(0, 1fr); }
+  .asset-visual-theme .haldur-workbench-body { grid-template-columns: 300px minmax(0, 1fr); }
   .asset-visual-theme .asset-detail-heading { grid-template-columns: minmax(0, 1fr) 260px; gap: 20px 48px; }
   .asset-visual-theme .asset-detail-marker { grid-column: 1 / -1; }
   .asset-visual-theme .asset-detail-info > div:first-child { display: block; }
