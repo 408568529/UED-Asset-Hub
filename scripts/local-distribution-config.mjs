@@ -23,6 +23,7 @@ export function isLocalDistributionEnvironment(environment = process.env) {
       const expected = path.join(root, child);
       if ((environment[key] && path.resolve(environment[key]) !== expected) || realpathSync(expected) !== expected) return false;
     }
+    if (environment.MICRO_STANDARD_ROOT && (path.resolve(environment.MICRO_STANDARD_ROOT) !== path.join(root, "micro-standards") || realpathSync(environment.MICRO_STANDARD_ROOT) !== path.join(root, "micro-standards"))) return false;
     const manifest = JSON.parse(readFileSync(path.join(packageRoot, "competition-manifest.json"), "utf8"));
     const release = JSON.parse(readFileSync(path.join(packageRoot, "app/release-manifest.json"), "utf8"));
     return manifest.schemaVersion === 1 && manifest.localModeVersion === 1 && manifest.channel === "V2.5_COMPETITION" && release.channel === "INTERNAL_RELEASE" && manifest.platform === `${process.platform}-${process.arch}`

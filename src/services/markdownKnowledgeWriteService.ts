@@ -3,7 +3,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { KNOWLEDGE_DIR } from "@/config/storage";
 import { assertMarkdownKnowledgeDocumentId, markdownKnowledgeService, MarkdownKnowledgePathError, parseMarkdownKnowledgeMetadata } from "@/services/markdownKnowledgeService";
-import { markdownKnowledgeDocumentTypes, markdownKnowledgeRelatedScopes, markdownKnowledgeSpecTopics, type MarkdownKnowledgeDocument, type MarkdownKnowledgeImportInput, type MarkdownKnowledgeInput, type MarkdownKnowledgeMetadata, type MarkdownKnowledgeRelatedScope, type MarkdownKnowledgeSpecTopic } from "@/types/markdownKnowledge";
+import { markdownKnowledgeDocumentTypes, markdownKnowledgeRelatedScopes, type MarkdownKnowledgeDocument, type MarkdownKnowledgeImportInput, type MarkdownKnowledgeInput, type MarkdownKnowledgeMetadata, type MarkdownKnowledgeRelatedScope, type MarkdownKnowledgeSpecTopic } from "@/types/markdownKnowledge";
+
+import { independentMicroStandards, microStore } from "./microStandardService";
 
 export class MarkdownKnowledgeWriteError extends Error {
   constructor(message: string) {
@@ -39,7 +41,7 @@ function validateInput(input: MarkdownKnowledgeInput) {
   const specTopic = input.specTopic;
   const relatedScopes = uniqueStrings(input.relatedScopes) as MarkdownKnowledgeRelatedScope[];
   if (input.documentType === "micro-spec") {
-    if (!markdownKnowledgeSpecTopics.some((option) => option.value === specTopic)) {
+    if (typeof specTopic !== "string" || !specTopic.trim()) {
       throw new MarkdownKnowledgeWriteError("微规范必须选择有效的规范主题。");
     }
     if (!relatedScopes.length || relatedScopes.some((scope) => !markdownKnowledgeRelatedScopes.some((option) => option.value === scope))) {
@@ -121,6 +123,10 @@ export function titleFromMarkdownFileName(fileName: string) {
 export const markdownKnowledgeWriteService = {
   async create(input: MarkdownKnowledgeInput): Promise<MarkdownKnowledgeDocument> {
     const normalized = validateInput(input);
+    if (normalized.documentType === "micro-spec" && independentMicroStandards) {
+      const id = generatedDocumentId("micro-spec");
+      return microStore().put({ metadata: createMetadata(id, normalized, new Date().toISOString()), content: normalized.content });
+    }
     await ensureKnowledgeRoot();
     const id = generatedDocumentId(normalized.documentType);
     assertMarkdownKnowledgeDocumentId(id);
@@ -156,6 +162,10 @@ export const markdownKnowledgeWriteService = {
       author: input.author ?? current.metadata.author,
       status: input.status ?? current.metadata.status
     });
+    if (normalized.documentType === "micro-spec" && independentMicroStandards) {
+      const metadata = { ...current.metadata, ...createMetadata(id, normalized, current.metadata.createdAt, current.metadata) };
+      return microStore().put({ metadata, content: normalized.content }, input.revision);
+    }
     await ensureKnowledgeRoot();
     const targetDirectory = path.join(KNOWLEDGE_DIR, id);
     const temporaryDirectory = path.join(KNOWLEDGE_DIR, `.tmp-${randomUUID()}`);

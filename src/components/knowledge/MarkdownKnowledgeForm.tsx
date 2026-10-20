@@ -2,7 +2,7 @@
 
 import { FileUp, PenLine } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LabeledField } from "@/components/admin/LabeledField";
 import { Button, Input, Select, Segmented } from "antd";
 import { Input as FileInput } from "@/components/ui/input";
@@ -40,6 +40,12 @@ export function MarkdownKnowledgeForm({ documentType, document, returnHref = "/k
   const [sourceFileName, setSourceFileName] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [topicOptions, setTopicOptions] = useState<Array<{value: string; label: string}>>([]);
+  const [revision, setRevision] = useState<number>();
+  useEffect(() => {
+    if (!isMicroSpec) return;
+    fetch("/api/micro-standards").then(async r => { const value = await r.json(); if (!r.ok) throw Error(value.message); setTopicOptions(value.topics.map((t: string) => ({ value: t, label: markdownKnowledgeSpecTopics.find(o => o.value === t)?.label ?? t }))); setRevision(value.revision); }).catch(e => setMessage(e.message));
+  }, [isMicroSpec]);
 
   async function selectMarkdownFile(file?: File) {
     if (!file) return;
@@ -84,11 +90,12 @@ export function MarkdownKnowledgeForm({ documentType, document, returnHref = "/k
 
     setSaving(true);
     try {
-      const response = await fetch(isEdit ? `/api/knowledge/${encodeURIComponent(metadata?.id ?? "")}` : "/api/knowledge", {
+      const response = await fetch(isMicroSpec ? (isEdit ? `/api/micro-standards/${encodeURIComponent(metadata?.id ?? "")}` : "/api/micro-standards") : (isEdit ? `/api/knowledge/${encodeURIComponent(metadata?.id ?? "")}` : "/api/knowledge"), {
         method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
+          revision,
           documentType,
           description,
           category,
@@ -105,7 +112,7 @@ export function MarkdownKnowledgeForm({ documentType, document, returnHref = "/k
         return;
       }
       const detailHref = new URL(returnHref, window.location.origin);
-      detailHref.searchParams.set("asset", `${result.metadata.documentType}:${result.metadata.id}`);
+      detailHref.searchParams.set("asset", isMicroSpec ? result.metadata.id : `${result.metadata.documentType}:${result.metadata.id}`);
       router.push(`${detailHref.pathname}${detailHref.search}`);
       router.refresh();
     } catch {
@@ -140,11 +147,11 @@ export function MarkdownKnowledgeForm({ documentType, document, returnHref = "/k
       {isMicroSpec ? (
         <div className="grid gap-[var(--field-column-gap)] md:grid-cols-2">
           <LabeledField label="规范主题" required>
-            <Select id="knowledge-spec-topic" value={specTopic || undefined} onChange={(value: MarkdownKnowledgeSpecTopic) => setSpecTopic(value)} placeholder="请选择规范主题" aria-label="规范主题" aria-required="true" className="w-full" status={message === "请选择规范主题。" ? "error" : undefined} options={markdownKnowledgeSpecTopics.map((topic) => ({ value: topic.value, label: topic.label }))} />
+            <Select id="knowledge-spec-topic" value={specTopic || undefined} onChange={(value: MarkdownKnowledgeSpecTopic) => setSpecTopic(value)} placeholder="请选择规范主题" aria-label="规范主题" aria-required="true" className="w-full" status={message === "请选择规范主题。" ? "error" : undefined} options={topicOptions} />
             {/* Preserve the native required constraint supplied by the previous Radix select. */}
             <select required value={specTopic} onChange={(event) => setSpecTopic(event.target.value as MarkdownKnowledgeSpecTopic)} tabIndex={-1} aria-hidden="true" className="sr-only" onInvalid={(event) => { event.preventDefault(); setMessage("请选择规范主题。"); window.document.getElementById("knowledge-spec-topic")?.focus(); }}>
               <option value="" />
-              {markdownKnowledgeSpecTopics.map((topic) => <option key={topic.value} value={topic.value}>{topic.label}</option>)}
+              {topicOptions.map((topic) => <option key={topic.value} value={topic.value}>{topic.label}</option>)}
             </select>
           </LabeledField>
           <LabeledField label="关联类目" required>

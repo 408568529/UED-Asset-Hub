@@ -1,6 +1,7 @@
 import path from "node:path";
 
 export const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
+export const MICRO_STANDARD_ROOT = process.env.MICRO_STANDARD_ROOT;
 export const META_DIR = path.join(DATA_DIR, "meta");
 export const KNOWLEDGE_DIR = path.join(DATA_DIR, "knowledge");
 const configuredAssetHubRuntimeDir = process.env.ASSET_HUB_RUNTIME_DIR;

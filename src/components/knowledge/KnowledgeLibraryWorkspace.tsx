@@ -25,7 +25,6 @@ const types: Array<{ id: KnowledgeAssetType; label: string; section: KnowledgeSe
   { id: "knowledge", label: "知识文章", section: "document" },
   { id: "sop", label: "SOP", section: "document" },
   { id: "component-spec", label: "组件规范", section: "document" },
-  { id: "micro-spec", label: "微规范", section: "document" },
   { id: "project", label: "项目沉淀", section: "document" },
   { id: "prompt", label: "Prompt", section: "ai" },
   { id: "skill", label: "Skill", section: "ai" },
@@ -60,7 +59,7 @@ function AssetIcon({ type }: { type: KnowledgeAssetType }) {
 }
 
 function AssetRow({ item, query }: { item: KnowledgeAssetView; query: KnowledgeLibraryQuery }) {
-  const href = buildHref(query, { asset: item.key });
+  const href = item.assetType === "micro-spec" ? item.route.href : buildHref(query, { asset: item.key });
 
   const content = (
     <>

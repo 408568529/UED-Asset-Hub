@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { copyPreparedProfile } from "./competition-dependency-tree.mjs";
 
 const dataChildren = Object.freeze({
-  DATA_DIR: "hub-data", TRAINING_MEDIA_DIR: "training-media", AGENT_RUNTIME_DIR: "agent-runtime",
+  MICRO_STANDARD_ROOT: "micro-standards", DATA_DIR: "hub-data", TRAINING_MEDIA_DIR: "training-media", AGENT_RUNTIME_DIR: "agent-runtime",
   ASSET_HUB_RUNTIME_DIR: "asset-hub-runtime", HALDUR_DESIGN_SKILL_ROOT: "Haldur-Design-Skill",
   HALDUR_DESIGN_SKILL_RUNTIME_ROOT: "haldur-runtime"
 });
@@ -72,6 +72,7 @@ export async function initializeCompetitionData({ packageRoot, dependencyRoot, d
       const child = path.join(data, name);
       await mkdir(child, { mode: 0o700 }); created.push(child);
     }
+    await writeFile(path.join(data, "micro-standards", ".micro-index.json"), JSON.stringify({ schemaVersion: 1, revision: 0, topics: [], documents: {} }) + "\n", { flag: "wx", mode: 0o600 });
     await copyPreparedProfile(seed, path.join(data, "agent-runtime", "dsh-home"), path.join(dependencies, "dsh-runtime"));
     const environment = Object.fromEntries(Object.entries(dataChildren).map(([key, name]) => [key, path.join(data, name)]));
     Object.assign(environment, { DSH_SOURCE_DIR: path.join(dependencies, "dsh-source"), DSH_RUNTIME_SOURCE_DIR: path.join(dependencies, "dsh-runtime") }, portDefaults);

@@ -1,3 +1,4 @@
+import { MicroStandardActions } from "@/components/micro-standards/MicroStandardActions";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Download, ExternalLink, Pencil, Play } from "lucide-react";
 import { MarkdownKnowledgeDetail } from "@/components/knowledge/MarkdownKnowledgeDetail";
@@ -61,7 +62,7 @@ export function KnowledgeWorkspaceDetail({ detail, backHref, previousArticle, ne
       : detail.kind === "font"
         ? <Button type="primary" href={`/api/fonts/${detail.item.id}/download`}><Download size={15} />下载字体</Button>
         : detail.kind === "markdown"
-          ? <Button href={appendKnowledgeReturnHref(`/admin/knowledge/${encodeURIComponent(detail.item.metadata.id)}/edit`, backHref)}><Pencil size={15} />编辑 Markdown</Button>
+          ? detail.item.metadata.documentType === "micro-spec" ? <MicroStandardActions id={detail.item.metadata.id}/> : <Button href={appendKnowledgeReturnHref(`/admin/knowledge/${encodeURIComponent(detail.item.metadata.id)}/edit`, backHref)}><Pencil size={15} />编辑 Markdown</Button>
           : null;
 
   return (

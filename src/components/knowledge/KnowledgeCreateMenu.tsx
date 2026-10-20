@@ -10,7 +10,6 @@ import { appendKnowledgeReturnHref } from "@/lib/knowledgeNavigation";
 const actions = [
   { href: "/admin/knowledge/new?type=knowledge", label: "知识文章", description: "新建 Markdown 知识文章" },
   { href: "/admin/knowledge/new?type=project", label: "项目沉淀", description: "新建 Markdown 项目沉淀" },
-  { href: "/admin/knowledge/new?type=micro-spec", label: "微规范", description: "在线创建或上传 Markdown" },
   { href: "/admin/sops/new", label: "SOP", description: "新增团队流程规范" },
   { href: "/admin/components/new", label: "组件规范", description: "新增组件文档与链接" },
   { href: "/admin/prompts/new", label: "Prompt", description: "新增可复用提示词" },

@@ -19,6 +19,8 @@ try {
   const result = await initializeCompetitionData(options);
   const config = await readFile(result.configPath, "utf8");
   assert.equal(JSON.parse(config).DATA_DIR, path.join(dataRoot, "hub-data"));
+  assert.equal(JSON.parse(config).MICRO_STANDARD_ROOT, path.join(dataRoot, "micro-standards"));
+  assert.deepEqual(JSON.parse(await readFile(path.join(dataRoot, "micro-standards", ".micro-index.json"), "utf8")), { schemaVersion: 1, revision: 0, topics: [], documents: {} });
   assert.ok(!/API_KEY|PASSWORD|SESSION_SECRET/.test(config));
   assert.equal(JSON.parse(await readFile(path.join(dataRoot, "agent-runtime", "dsh-home", "profiles", "web", "node_modules", "dsh-plugin-genui", "package.json"), "utf8")).version, "0.15.1");
   assert.equal((await readdir(result.environment.DATA_DIR)).length, 0);

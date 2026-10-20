@@ -72,7 +72,7 @@ export async function checkCompetitionEnvironment(packageRoot, { onProgress = ()
     if ((await lstat(locator.configPath)).isSymbolicLink() || await realpath(locator.configPath) !== path.resolve(locator.configPath)) throw new Error("保存的非敏感路径配置被链接重定向。");
     config = await readJson(locator.configPath);
     configPath = locator.configPath;
-    for (const key of ["DATA_DIR", "TRAINING_MEDIA_DIR", "AGENT_RUNTIME_DIR", "ASSET_HUB_RUNTIME_DIR", "HALDUR_DESIGN_SKILL_ROOT", "HALDUR_DESIGN_SKILL_RUNTIME_ROOT"]) {
+    for (const key of [...(config.MICRO_STANDARD_ROOT ? ["MICRO_STANDARD_ROOT"] : []), "DATA_DIR", "TRAINING_MEDIA_DIR", "AGENT_RUNTIME_DIR", "ASSET_HUB_RUNTIME_DIR", "HALDUR_DESIGN_SKILL_ROOT", "HALDUR_DESIGN_SKILL_RUNTIME_ROOT"]) {
       if (!path.isAbsolute(config[key]) || !(await lstat(config[key])).isDirectory() || await realpath(config[key]) !== path.resolve(config[key])) throw new Error("保存的数据目录不存在或被链接替换；请恢复原路径，不会自动重建。");
     }
     const login = await lstat(path.join(path.dirname(locator.configPath), "host-login.json"));

@@ -1,7 +1,9 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { KNOWLEDGE_DIR } from "@/config/storage";
-import { markdownKnowledgeDocumentTypes, markdownKnowledgeRelatedScopes, markdownKnowledgeSpecTopics, type MarkdownKnowledgeDiagnostic, type MarkdownKnowledgeDocument, type MarkdownKnowledgeListResult, type MarkdownKnowledgeMetadata } from "@/types/markdownKnowledge";
+import { markdownKnowledgeDocumentTypes, markdownKnowledgeRelatedScopes, type MarkdownKnowledgeDiagnostic, type MarkdownKnowledgeDocument, type MarkdownKnowledgeListResult, type MarkdownKnowledgeMetadata } from "@/types/markdownKnowledge";
+
+import { independentMicroStandards, microStore } from "./microStandardService";
 
 const documentIdPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
@@ -101,7 +103,7 @@ export function parseMarkdownKnowledgeMetadata(value: unknown, expectedId: strin
   const metadata = value as Record<string, unknown>;
   const validDocumentType = markdownKnowledgeDocumentTypes.includes(metadata.documentType as MarkdownKnowledgeMetadata["documentType"]);
   const validMicroSpec = metadata.documentType !== "micro-spec" || (
-    markdownKnowledgeSpecTopics.some((topic) => topic.value === metadata.specTopic)
+    isNonEmptyString(metadata.specTopic)
     && Array.isArray(metadata.relatedScopes)
     && metadata.relatedScopes.length > 0
     && metadata.relatedScopes.every((scope) => markdownKnowledgeRelatedScopes.some((option) => option.value === scope))
@@ -138,7 +140,8 @@ async function readMetadataFromDirectory(id: string, directory: string) {
 
 export const markdownKnowledgeService = {
   async list(): Promise<MarkdownKnowledgeListResult> {
-    if (!(await knowledgeRootExists())) return { documents: [], diagnostics: [] };
+    const independent = independentMicroStandards ? await microStore().list() : null;
+    if (!(await knowledgeRootExists())) return { documents: independent?.documents ?? [], diagnostics: [] };
     const entries = await fs.readdir(KNOWLEDGE_DIR, { withFileTypes: true });
     const documents: MarkdownKnowledgeMetadata[] = [];
     const diagnostics: MarkdownKnowledgeDiagnostic[] = [];
@@ -155,7 +158,7 @@ export const markdownKnowledgeService = {
           diagnostics.push({ id: entry.name, code: "missing-metadata", message: "缺少 metadata.json。" });
           continue;
         }
-        documents.push(metadata);
+        if (!independent || metadata.documentType !== "micro-spec") documents.push(metadata);
       } catch (error) {
         diagnostics.push({
           id: entry.name,
@@ -165,15 +168,26 @@ export const markdownKnowledgeService = {
       }
     }
 
-    return { documents, diagnostics };
+    return { documents: [...documents, ...(independent?.documents ?? [])], diagnostics };
   },
 
   async readMetadata(id: string): Promise<MarkdownKnowledgeMetadata | null> {
+    if (independentMicroStandards) {
+      const migrated = await microStore().get(id);
+      if (migrated) return migrated.metadata;
+    }
     const paths = await existingDocumentDirectory(id);
-    return paths ? readMetadataFromDirectory(id, paths.directory) : null;
+    const metadata = paths ? await readMetadataFromDirectory(id, paths.directory) : null;
+    return independentMicroStandards && metadata?.documentType === "micro-spec" ? null : metadata;
   },
 
   async readContent(id: string): Promise<string | null> {
+    if (independentMicroStandards) {
+      const migrated = await microStore().get(id);
+      if (migrated) return migrated.content;
+      const legacy = await existingDocumentDirectory(id);
+      if (legacy && (await readMetadataFromDirectory(id, legacy.directory))?.documentType === "micro-spec") return null;
+    }
     const paths = await existingDocumentDirectory(id);
     return paths ? readRegularFile(path.join(paths.directory, "content.md")) : null;
   },

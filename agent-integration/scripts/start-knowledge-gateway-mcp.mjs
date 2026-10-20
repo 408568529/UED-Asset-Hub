@@ -144,7 +144,7 @@ function buildServer() {
     inputSchema: {
       q: z.string().max(200).optional(),
       relatedScopes: z.array(z.enum(["web-component-library", "app-component-library", "global", "portal", "retail-app"])).max(5).optional(),
-      specTopics: z.array(z.enum(["layout", "navigation", "search-filter", "table", "form", "dialog", "feedback", "status", "copywriting", "upload-download", "permission", "i18n", "other"])).max(13).optional(),
+      specTopics: z.array(z.string().min(1).max(220)).max(100).optional(),
       tags: z.array(z.string().max(80)).max(10).optional(),
       limit: z.number().int().min(1).max(20).optional()
     },

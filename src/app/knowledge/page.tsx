@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { KnowledgeWorkspaceDetail, type KnowledgeWorkspaceDetailData } from "@/components/knowledge/KnowledgeWorkspaceDetail";
 import { searchReturnHref } from "@/components/knowledge/knowledgeLinks";
 import { KnowledgeLibraryWorkspace } from "@/components/knowledge/KnowledgeLibraryWorkspace";
@@ -78,11 +79,14 @@ async function getWorkspaceDetail(assetKey: KnowledgeLibraryQuery["asset"], fall
 
 export default async function KnowledgePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
+  const oldAsset = typeof params.asset === "string" ? params.asset : "";
+  if (oldAsset.startsWith("micro-spec:")) redirect(`/micro-standards?asset=${encodeURIComponent(oldAsset.slice(11))}`);
+  if (params.type === "micro-spec") redirect("/micro-standards");
   const query = parseQuery(params);
   const searchReturn = searchReturnHref(first(params.returnTo));
-  const result = await knowledgeAggregatorService.getLibrary(query);
+  const result = await knowledgeAggregatorService.getLibrary(query, false);
   const allItems = query.asset && !result.items.some((item) => item.key === query.asset)
-    ? await knowledgeAggregatorService.getLibrary()
+    ? await knowledgeAggregatorService.getLibrary({}, false)
     : result;
   const detail = await getWorkspaceDetail(query.asset, allItems);
   const articles = detail?.kind === "markdown" ? result.items.filter((item) => item.source === "markdownKnowledgeService" && item.route.kind === "internal") : [];

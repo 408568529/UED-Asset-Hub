@@ -59,14 +59,14 @@ function sortItems(items: KnowledgeAssetView[], sort: KnowledgeSort = "updated-d
 }
 
 export const knowledgeAggregatorService = {
-  async getLibrary(query: KnowledgeLibraryQuery = {}): Promise<KnowledgeLibraryResult> {
+  async getLibrary(query: KnowledgeLibraryQuery = {}, includeMicroStandards = true): Promise<KnowledgeLibraryResult> {
     const settled = await Promise.allSettled(knowledgeSources.map((source) => source.load()));
     const sourceStates: KnowledgeSourceState[] = settled.map((result, index) => ({
       source: knowledgeSources[index].source,
       label: knowledgeSources[index].label,
       status: result.status
     }));
-    const loadedItems = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+    const loadedItems = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []).filter(item => includeMicroStandards || item.assetType !== "micro-spec");
     const scopedItems = loadedItems.filter((item) => {
       if (query.section && query.section !== "all" && item.section !== query.section) return false;
       return !query.type || item.assetType === query.type;
