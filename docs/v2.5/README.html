@@ -41,19 +41,18 @@ Windows x64 与 macOS Apple Silicon 分别提供独立 ZIP。当前为候选交�
 
 「停止本安装」或原 `03-停止运行` 复用鉴权停止流程，仅控制有实例身份和所有权证明的本安装，不按进程名杀进程。关闭网页不会停止服务；「退出启动中心」只退出轻量控制进程，Hub 保持原状态。控制通道绑定随机 127.0.0.1 端口，使用当前账户私有的随机能力令牌及 Host/Origin/CSRF 检查；`.launch-center/control.json` 是临时控制状态，不包含模型 Key，不得分享该文件或页面首次授权链接。
 
-## 可选：局域网共享模式（Windows 既有 HTTPS 部署方式）
+## 可选：局域网共享模式（Windows）
 
-启动中心会显示 LAN 待配置并拒绝直接启用共享。便携新安装没有证书、HTTPS 代理和防火墙配置时，不能视为零配置 LAN。完成下述原有受保护部署前置后，使用原共享启动入口；本轮不新增网络配置后台、不自动签发证书或修改系统访问规则。
+在 `02-启动` 打开的启动中心选择「局域网共享」，完成当前安装的 HTTPS 配置。配置未通过时不能启动，不会降级为局域网 HTTP。
 
-V2.5 保留 Windows 正式版本的局域网多人访问能力。编号双击入口默认用于本机模式；共享由管理员明确配置后通过既有 Windows 部署/启动入口运行同一 Hub、Supervisor、DSH 与 GenUI，不把本机 HTTP 入口直接开放到局域网。
+1. 点击检测，确认本机实际内网 IPv4、绑定地址及空闲 HTTPS 端口；使用域名时，其 DNS 必须指向所选地址。仅支持可信的 Domain/Private 局域网。
+2. 优先复用本安装已经验证并保存的证书配置。首次配置时，将获准使用的 PEM 服务端证书、对应私钥和必要的 CA 公共证书放在本安装外部数据目录下，填写绝对路径。证书须在有效期内、包含访问 IP/域名的 SAN 和 serverAuth 用途；私钥权限只允许当前账户、SYSTEM、Administrators。不得复制其他实例的私钥。
+3. 客户端必须信任签发 CA。只分发 CA 公共证书，绝不分发 CA 私钥。测试证书不代表正式可用证书；到期或地址变更须重新校验。客户端不信任时应按组织策略配置信任，不能忽略浏览器安全警告。
+4. 启动中心显示本安装的防火墙计划。缺少规则时须用户明确确认，并以管理员权限重新打开启动中心；只为本安装 Node 程序、指定 IP/端口创建 Domain/Private + LocalSubnet 入站规则，不改已有规则，不开放 Public 网络。
+5. 校验通过后点击启动。复用现有 HTTPS 前置代理到回环 Supervisor 的机制，内部 Hub、DSH、Gateway 和 Agent Proxy 仍绑定 127.0.0.1。保留管理员鉴权、Secure / HttpOnly / SameSite Cookie、Host/Origin 校验及 GenUI 沙箱。
+6. 启动成功后显示真实 HTTPS 地址并支持复制。已验证的模式与非敏感配置保存在本安装数据目录的 `config/launch-mode.json`；后续双击入口重新校验证书、地址和规则后复用。切换模式前必须受控停止本安装，不覆盖数据或控制其他实例。
 
-1. 复用现有 HTTPS 前置代理（如 IIS ARR/WebSocket）。由管理员准备与局域网访问域名匹配、客户端信任的证书、DNS 和访问规则；本轮不自动签发证书。将随包 `app/service/windows/UEDAssetHubEdge.web.config.template` 按目标实例端口配置为转发到 127.0.0.1 的 Supervisor，并保留 Host 与 WebSocket。
-2. 在该共享实例的受保护外部配置中显式设置 `NODE_ENV=production`、`PUBLIC_ORIGIN=https://该实例的访问域名`、`ADMIN_SESSION_SECURE=true`、`HOST_BIND_HOST=127.0.0.1`。不得设置 `UED_LOCAL_DISTRIBUTION_MODE`、`UED_LOCAL_TEST_MODE` 或 `UED_LOCAL_DEMO_MODE`；不得将 `ADMIN_SESSION_SECURE` 改成 false。
-3. 复用原 Windows 服务/隔离发行启动流程及管理员、Session Secret、Gateway Token 的原有受保护配置。随包 `app/service/windows/internal-runtime-config.example.psd1` 只保存外部路径和端口；使用原 `app/scripts/start-internal-release.ps1 -ConfigPath &lt;外部配置&gt;` 或既有服务入口启动。使用随包便携 Node/Git 的进程 PATH；不修改系统 PATH。不要把任何真实密码、Key 或 Token 写入模板、README 或 ZIP。
-4. 数据、媒体、Agent、Haldur 路径可沿用既有分散目录；不得用本机首次向导覆盖服务器目录。同一目录不能同时运行两种模式，切换前用原实例的受控停止入口停止并确认端口释放。共享实例沿用其原有服务停止流程，本机 `03` 入口只控制本机向导创建的实例。
-5. 客户端通过配置的 HTTPS 域名访问 Hub 和 `/agent/settings`，仍需管理员登录。Agent Proxy、Knowledge MCP 和 DSH 继续保持内部回环与原有鉴权/沙箱规则；不得直接将内部端口映射到局域网。浏览器 Cookie 须为 HttpOnly、SameSite 且 Secure。共享模式的实际隔离回归结果另见交付报告。
-
-现有 Windows 正式服务、证书、站点、数据路径和访问方式不由本候选包自动改写。本机模式的成功不能代替局域网 HTTPS 多人访问验收；没有跨机器实际证据时标记 NOT_VERIFIED。
+现有 Windows 正式服务、证书、端口和数据不由该流程改写。跨电脑浏览器的知识库、Haldur、微规范、Agent 和 GenUI 须单独验收，不能以路由 200 或本机 HTTP 成功代替。当前隔离验证状态见 LAN 验收报告；未重新构建发行 ZIP。
 
 ## 依赖、来源和边界
 

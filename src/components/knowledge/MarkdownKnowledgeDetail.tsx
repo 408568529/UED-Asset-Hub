@@ -13,7 +13,7 @@ function safeMarkdownUrl(url: string) {
   return normalized.includes(":") || normalized.startsWith("//") ? "" : url;
 }
 
-export function MarkdownKnowledgeDetail({ content }: { content: string | null }) {
+export function MarkdownKnowledgeDetail({ content, resolveLink }: { content: string | null; resolveLink?: (href: string) => string }) {
   const [view, setView] = useState<"rendered" | "source">("rendered");
 
   if (content === null) return <p className="px-4 py-6 text-sm text-amber-800 md:px-6">正文文件缺失。</p>;
@@ -34,7 +34,7 @@ export function MarkdownKnowledgeDetail({ content }: { content: string | null })
               remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeSanitize]}
               skipHtml
-              urlTransform={safeMarkdownUrl}
+              urlTransform={(href, key) => safeMarkdownUrl(resolveLink && key === "href" ? resolveLink(href) : href)}
               components={{
                 h1: ({ children }) => <h1 className="mb-5 mt-8 text-3xl font-black tracking-[-0.03em] first:mt-0">{children}</h1>,
                 h2: ({ children }) => <h2 className="mb-4 mt-8 text-2xl font-black tracking-[-0.025em]">{children}</h2>,

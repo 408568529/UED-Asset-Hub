@@ -1,3 +1,4 @@
+import { readLaunchMode, writeLaunchMode, validateSavedLan, lanRequest, probeLanPort } from "./competition-lan.mjs";
 import { randomBytes } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { access, lstat, mkdir, open as openFile, realpath, unlink, writeFile } from "node:fs/promises";
@@ -12,7 +13,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const alive = (pid) => { if (!Number.isInteger(pid) || pid < 1) return false; try { process.kill(pid, 0); return true; } catch (error) { if (error.code === "ESRCH") return false; throw error; } };
 const jsonWrite = (file, value) => writeFile(file, JSON.stringify(value, null, 2) + "\n", { flag: "wx", mode: 0o600 });
 
-export function localDistributionEnvironment(config, packageRoot, dataRoot, login = {}) {
+export function localDistributionEnvironment(config, packageRoot, dataRoot, login = {}, lan) {
   const tools = toolPaths(packageRoot), environment = {};
   for (const key of ["SystemRoot", "SYSTEMROOT", "WINDIR", "ComSpec", "PATHEXT", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "LANG", "LC_ALL", "USER", "LOGNAME"]) if (process.env[key]) environment[key] = process.env[key];
   const systemPaths = process.platform === "win32" ? [path.join(process.env.SystemRoot || "C:\\Windows", "System32"), process.env.SystemRoot || "C:\\Windows"] : ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
@@ -23,6 +24,12 @@ export function localDistributionEnvironment(config, packageRoot, dataRoot, logi
     TMP: path.join(config.ASSET_HUB_RUNTIME_DIR, "tmp"), TEMP: path.join(config.ASSET_HUB_RUNTIME_DIR, "tmp"), TMPDIR: process.platform === "darwin" ? "/private/tmp" : path.join(config.ASSET_HUB_RUNTIME_DIR, "tmp")
   });
   if (process.platform === "darwin") environment.GIT_EXEC_PATH = path.join(packageRoot, "tools/git/libexec/git-core");
+  if (lan) {
+    delete environment.UED_LOCAL_DISTRIBUTION_MODE;
+    delete environment.UED_LOCAL_DISTRIBUTION_ROOT;
+    delete environment.UED_LOCAL_DISTRIBUTION_PACKAGE;
+    Object.assign(environment, { ADMIN_SESSION_SECURE: "true", PUBLIC_ORIGIN: lan.origin, UED_LAN_HTTPS_CONFIG: path.join(dataRoot, "config/launch-mode.json") });
+  }
   return environment;
 }
 
@@ -67,19 +74,20 @@ export async function attachCompetitionInstallation(packageRoot, dataRoot) {
   return { dataRoot };
 }
 
-async function request(origin, route, init = {}) {
+async function request(origin, route, init = {}, lan) {
+  if (lan) return lanRequest(lan, route, init);
   return fetch(origin + route, { ...init, headers: { Origin: origin, ...init.headers }, signal: AbortSignal.timeout(route === "/api/runtime/status" ? 35_000 : 5000), redirect: "error" });
 }
-async function authenticate(origin, login) {
-  const response = await request(origin, "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: login.ADMIN_USERNAME, password: login.ADMIN_PASSWORD }) });
+async function authenticate(origin, login, lan) {
+  const response = await request(origin, "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: login.ADMIN_USERNAME, password: login.ADMIN_PASSWORD }) }, lan);
   if (!response.ok) throw new Error("管理员登录失败，请检查本安装的受保护管理员配置。");
   const cookie = response.headers.get("set-cookie");
-  if (!cookie || !/httponly/i.test(cookie) || !/samesite=lax/i.test(cookie) || /;\s*secure(?:;|$)/i.test(cookie)) throw new Error("本机登录 Cookie 属性不符合独立本机模式。");
+  if (!cookie || !/httponly/i.test(cookie) || !/samesite=lax/i.test(cookie) || Boolean(/;\s*secure(?:;|$)/i.test(cookie)) !== Boolean(lan)) throw new Error("管理员登录 Cookie 属性不符合所选模式的 Secure / HttpOnly / SameSite 要求。");
   return cookie.split(";", 1)[0];
 }
-async function ownedHealth(origin, state) {
+async function ownedHealth(origin, state, lan) {
   if (!alive(state.pid)) return false;
-  const response = await request(origin, "/api/auth/session");
+  const response = await request(origin, "/api/auth/session", {}, lan);
   return response.ok && response.headers.get("x-ued-local-instance") === state.instance;
 }
 export function openBrowser(url) {
@@ -87,7 +95,7 @@ export function openBrowser(url) {
   child.on("error", () => console.log("浏览器未自动打开，请手动访问显示的本机地址。")); child.unref();
 }
 
-export async function runLocalDistribution(action, packageRoot, { open = true } = {}) {
+export async function runLocalDistribution(action, packageRoot, { open = true, mode } = {}) {
   if (action === "Check") return checkCompetitionEnvironment(packageRoot);
   const checked = await checkCompetitionEnvironment(packageRoot);
   packageRoot = checked.root;
@@ -96,7 +104,14 @@ export async function runLocalDistribution(action, packageRoot, { open = true } 
   await privateConfiguration(packageRoot, dataRoot);
   const loginPath = path.join(path.dirname(locator.configPath), "host-login.json"), info = await lstat(loginPath);
   if (!info.isFile() || info.isSymbolicLink() || (process.platform !== "win32" && (info.uid !== process.getuid() || (info.mode & 0o077)))) throw new Error("管理员配置的文件权限不合规。");
-  const login = await readJson(loginPath), environment = localDistributionEnvironment(config, packageRoot, dataRoot, login), origin = environment.PUBLIC_ORIGIN;
+  const saved = await readLaunchMode(packageRoot);
+  const stateFile = path.join(path.dirname(locator.configPath), "supervisor.json");
+  let recorded;try { recorded = await readJson(stateFile); } catch (e) { if (e.code !== "ENOENT") throw e; }
+  const selectedMode = action === "Stop" && recorded ? recorded.mode || "local" : mode || saved.mode;
+  if (!["local", "lan"].includes(selectedMode)) throw Error("不支持此运行模式。");
+  if (recorded && alive(recorded.pid) && (recorded.mode || "local") !== selectedMode) throw Error("请先受控停止当前实例，再切换运行模式。");
+  const lan = selectedMode === "lan" ? action === "Stop" ? saved.lan : await validateSavedLan(packageRoot, {...saved,mode:"lan"}) : undefined;
+  const login = await readJson(loginPath), environment = localDistributionEnvironment(config, packageRoot, dataRoot, login, lan), origin = environment.PUBLIC_ORIGIN;
   const { resolveHostSecurityConfig } = await import(pathToFileURL(path.join(packageRoot, "app/scripts/host-security-config.mjs")).href); resolveHostSecurityConfig(environment);
   const lockPath = path.join(path.dirname(locator.configPath), "launcher.lock"), statePath = path.join(path.dirname(locator.configPath), "supervisor.json");
   try {
@@ -114,9 +129,11 @@ export async function runLocalDistribution(action, packageRoot, { open = true } 
       await unlink(statePath); state = null;
     }
     if (action === "Start" && !state) {
+      if (lan) await probeLanPort(lan.bindHost, lan.port);
+      if (lan) await writeLaunchMode(packageRoot, {...saved,mode:"lan",lan});
       // The existing Supervisor checks all ports, ownership locks and managed orphans.
       await mkdir(environment.TEMP, { recursive: true, mode: 0o700 });
-      state = { schemaVersion: 1, packageRoot, instance: randomBytes(24).toString("hex") };
+      state = { schemaVersion: 1, packageRoot, mode: selectedMode, origin, instance: randomBytes(24).toString("hex") };
       const child = spawn(toolPaths(packageRoot).node, [path.join(packageRoot, "app/scripts/start-host.mjs")], { cwd: path.join(packageRoot, "app"), env: { ...environment, UED_LOCAL_DISTRIBUTION_INSTANCE: state.instance }, detached: true, stdio: "ignore", windowsHide: true });
       child.on("error", () => {});
       if (!child.pid) throw new Error("无法启动现有 Supervisor，请先运行环境检测。");
@@ -128,10 +145,10 @@ export async function runLocalDistribution(action, packageRoot, { open = true } 
     while (Date.now() < deadline) {
       if (!alive(state.pid)) throw new Error("Supervisor 已退出。请检查依赖/端口及外置 Agent Runtime 的结构化诊断；不会自动重试或重建数据。");
       try {
-        if (await ownedHealth(origin, state)) {
-          cookie ||= await authenticate(origin, login);
+        if (await ownedHealth(origin, state, lan)) {
+          cookie ||= await authenticate(origin, login, lan);
           if (action === "Stop") break;
-          const response = await request(origin, "/api/runtime/status", { headers: { Cookie: cookie } });
+          const response = await request(origin, "/api/runtime/status", { headers: { Cookie: cookie } }, lan);
           runtime = (await response.json()).runtime;
           if (runtime.status === "ready" || (runtime.status === "configuration_required" && runtime.reasonCode === "credential_missing")) break;
           if (["error", "configuration_required"].includes(runtime.status)) break;
@@ -140,18 +157,20 @@ export async function runLocalDistribution(action, packageRoot, { open = true } 
       await sleep(500);
     }
     if (!cookie || (action === "Start" && runtime?.status !== "ready" && runtime?.reasonCode !== "credential_missing")) throw new Error(`本安装未在限定时间达到就绪状态：${runtime?.reasonCode || "runtime_not_ready"}。保留诊断，不强杀或重复拉起。`);
-    if (!await ownedHealth(origin, state)) throw new Error("本机地址与本安装身份不符，操作已拒绝。");
+    if (!await ownedHealth(origin, state, lan)) throw new Error("本机地址与本安装身份不符，操作已拒绝。");
     if (action === "Start") {
       const url = origin + (runtime.reasonCode === "credential_missing" ? "/agent/settings" : "/");
+      await writeLaunchMode(packageRoot, {mode:selectedMode,...(lan?{lan,autoStart:true}:saved.lan?{lan:saved.lan}:{} )});
       if (open) openBrowser(url);
       return { result: "PASS", url, runtime: runtime.status, source: checked.source };
     }
-    const response = await request(origin, "/api/staging-shutdown", { method: "POST", headers: { Cookie: cookie, "Content-Type": "application/json" }, body: "{}" });
+    const response = await request(origin, "/api/staging-shutdown", { method: "POST", headers: { Cookie: cookie, "Content-Type": "application/json" }, body: "{}" }, lan);
     if (!response.ok) throw new Error("原有鉴权停止接口拒绝操作；未强杀任何进程。");
     const stopDeadline = Date.now() + 100_000;
     while (alive(state.pid) && Date.now() < stopDeadline) await sleep(250);
     if (alive(state.pid)) throw new Error("受控停止尚未完成，请保留诊断；未执行强制终止。");
     for (const key of ["HOST_PORT", "HOST_INTERNAL_PORT", "DSH_PORT", "AGENT_PROXY_PORT", "KNOWLEDGE_GATEWAY_MCP_PORT"]) if (await portIsListening(config[key])) throw new Error("停止后仍有端口占用，已保留运行状态供核对；不会终止其他进程。");
+    if (lan) await probeLanPort(lan.bindHost, lan.port);
     await unlink(statePath);
     return { result: "PASS", stopped: true };
   } finally { try { await lock.close(); } catch {} await unlink(lockPath); }

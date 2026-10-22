@@ -92,7 +92,7 @@ export async function checkCompetitionEnvironment(packageRoot, { onProgress = ()
   }
   for (const port of ports) if (await portIsListening(port) && !owned) throw new Error(`端口${port}已被其他实例占用。请选择不冲突的本安装端口，不会停止或清理其他进程。`);
   onProgress("ports", "PASS", `${ports.join(" / ")}${owned ? "；同一安装已运行" : "；无冲突"}`);
-  return { result: "PASS", root, platform: manifest.platform, source: manifest.source, fileCount: manifest.files.length, configured: Boolean(configPath), dataRoot: configPath ? path.dirname(path.dirname(configPath)) : null, owned, ports, message: "可以启动（首次启动将配置外部目录及管理员）", newMachineAcceptance: manifest.newMachineAcceptance };
+  return { result: "PASS", root, platform: manifest.platform, source: manifest.source, fileCount: manifest.files.length, configured: Boolean(configPath), dataRoot: configPath ? path.dirname(path.dirname(configPath)) : null, owned, mode:state?.mode||"local", origin:owned?state?.origin:undefined, ports, message: "可以启动（首次启动将配置外部目录及管理员）", newMachineAcceptance: manifest.newMachineAcceptance };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

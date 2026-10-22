@@ -1,4 +1,5 @@
 // Minimal local UI adapter. Hub lifecycle and credentials remain owned by the existing launcher/DSH.
+import { inspectCompetitionLan, configureCompetitionLan, readLaunchMode } from './competition-lan.mjs';
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { execFile, execFileSync, spawn } from 'node:child_process';
@@ -43,16 +44,16 @@ async function chooseFolder() {
     : await exec('/usr/bin/osascript',['-l','JavaScript','-e','const a=Application.currentApplication();a.includeStandardAdditions=true;a.chooseFolder({withPrompt:"选择外部数据目录或父目录"}).toString();'],{encoding:'utf8'});
   return result.stdout.trim().replace(/[\\/]$/,'');
 }
-export async function startCenter(packageRoot,{checker=checkCompetitionEnvironment,runner=runLocalDistribution,initializer=initializeLocalAdministrator,attacher=attachCompetitionInstallation,folderPicker=chooseFolder,autoCheck=true}={}) {
+export async function startCenter(packageRoot,{checker=checkCompetitionEnvironment,runner=runLocalDistribution,initializer=initializeLocalAdministrator,attacher=attachCompetitionInstallation,folderPicker=chooseFolder,lanInspector=inspectCompetitionLan,lanConfigurer=configureCompetitionLan,modeReader=readLaunchMode,lanSupported=true,autoCheck=true}={}) {
   const root = await realpath(packageRoot), recordFile = await privateControl(root);
   const token = randomBytes(32).toString('hex'), instance = randomBytes(24).toString('hex');
   const claim = await open(recordFile,'wx',0o600);
   const record = {schemaVersion:1,packageRoot:root,pid:process.pid,token,instance,phase:'opening'};
   try{if(process.platform==='win32')execFileSync('powershell.exe',['-NoProfile','-File',path.join(root,'tools/competition-center-private.ps1'),'-Path',path.dirname(recordFile),'-ProtectState'],{stdio:['ignore','pipe','pipe']});await claim.writeFile(JSON.stringify(record));}finally{await claim.close();}
   const labels = {integrity:'Hub / DSH / GenUI 完整性',system:'系统与 CPU 架构',node:'包内 Node',git:'便携 Git 与必要权限',data:'外置数据与访问权限',ports:'端口与已有实例'};
-  const state = {busy:false,checked:false,configured:false,owned:false,dataRoot:null,url:null,status:'等待检测',error:null,checks:Object.entries(labels).map(([id,label])=>({id,label,status:'PENDING',detail:'尚未检测'}))};
+  const state = {mode:'local',lanSupported,source:null,lan:{status:'NOT_CONFIGURED',addresses:[],message:'选择局域网共享后检测地址、证书和防火墙。'},busy:false,checked:false,configured:false,owned:false,dataRoot:null,url:null,status:'等待检测',error:null,checks:Object.entries(labels).map(([id,label])=>({id,label,status:'PENDING',detail:'尚未检测'}))};
   const progress = (id,status,detail) => {const row=state.checks.find(r=>r.id===id);if(row)Object.assign(row,{status,detail});};
-  const check = async () => {state.checked=false;state.checks.forEach(r=>Object.assign(r,{status:'PENDING',detail:'尚未检测'}));const result=await checker(root,{onProgress:progress});Object.assign(state,{checked:true,configured:result.configured,owned:result.owned,dataRoot:result.dataRoot,url:result.owned?`http://127.0.0.1:${result.ports[0]}/`:null,status:result.owned?'原实例已运行':result.configured?'可以启动':'检测通过，请配置数据目录与管理员'});return result;};
+  const check = async () => {state.checked=false;state.checks.forEach(r=>Object.assign(r,{status:'PENDING',detail:'尚未检测'}));const result=await checker(root,{onProgress:progress});const saved=await modeReader(root);state.mode=saved.mode||'local';if(saved.lan)state.lan={...state.lan,status:'CONFIGURED',mode:'lan',config:saved.lan};Object.assign(state,{source:result.source||null,checked:true,configured:result.configured,owned:result.owned,dataRoot:result.dataRoot,url:result.owned?(result.origin||`http://127.0.0.1:${result.ports[0]}/`):null,status:result.owned?'原实例已运行':result.configured?'可以启动':'检测通过，请配置数据目录与管理员'});return result;};
   const job = task => {state.busy=true;state.error=null;Promise.resolve().then(task).catch(e=>{state.error=safeError(e);state.status='操作未完成';for(const row of state.checks)if(row.status==='RUNNING')row.status='FAIL';}).finally(()=>{state.busy=false;});};
   const server=createServer(async(req,res)=>{
     const nonce=randomBytes(18).toString('base64');
@@ -67,7 +68,7 @@ export async function startCenter(packageRoot,{checker=checkCompetitionEnvironme
         res.writeHead(200,{'Content-Type':req.url==='/'?'text/html; charset=utf-8':req.url.endsWith('.js')?'text/javascript; charset=utf-8':req.url.endsWith('.css')?'text/css; charset=utf-8':'text/plain; charset=utf-8'});res.end(content);return;
       }
       if(!acceptsCenterRequest(req,origin,token,req.method!=='GET')){json(403,{error:'需要本机启动入口的独立授权；Origin/CSRF 校验失败。'});return;}
-      if(req.method==='GET' && req.url==='/api/state'){json(200,{...state,instance,platform:`${process.platform}-${process.arch}`,packageRoot:root,lan:{status:'NOT_CONFIGURED',message:'待配置：复用原 HTTPS 前置代理、证书、端口与防火墙及 Secure Cookie；本入口不开放本机 HTTP。'}});return;}
+      if(req.method==='GET' && req.url==='/api/state'){json(200,{...state,instance,platform:`${process.platform}-${process.arch}`,packageRoot:root});return;}
       if(req.method!=='POST' || req.url!=='/api/action'){json(404,{error:'没有此操作。'});return;}
       const input=await body(req);
       if(state.busy){json(409,{error:'本实例已有操作正在执行，请等待。'});return;}
@@ -82,7 +83,9 @@ export async function startCenter(packageRoot,{checker=checkCompetitionEnvironme
           await check();
         },
         attach:async()=>{if(!state.checked || state.configured || typeof input.dataRoot!=='string'||!path.isAbsolute(input.dataRoot))throw Error('请先检测并选择原安装数据根。');state.checked=false;await attacher(root,path.resolve(input.dataRoot));await check();},
-        start:async()=>{if(input.mode!=='local')throw Error('LAN 尚未配置并验证 HTTPS/证书/防火墙；请按 README 使用原受保护共享入口。');if(!state.checked || !state.configured)throw Error('请先完成预检与管理员/数据目录配置。');state.status='正在通过原 Supervisor 启动 Hub / DSH / Gateway / Proxy / GenUI';const result=await runner('Start',root,{open:false});state.url=result.url;state.owned=true;state.status=result.runtime==='configuration_required'?'服务已就绪，请在原 DSH 后台配置模型 Key':'服务已就绪';},
+        'inspect-lan':async()=>{if(!lanSupported)throw Error('此 Mac 演示保留 3047 本机模式；局域网 HTTPS 配置用于 Windows 完整包。');if(!state.checked||!state.configured)throw Error('请先配置本安装数据目录。');state.lan=await lanInspector(root);},
+        'configure-lan':async()=>{if(!lanSupported)throw Error('此 Mac 演示不修改 HTTPS、证书或防火墙配置。');if(!state.checked||!state.configured||state.owned)throw Error('请先配置数据目录，并受控停止本安装后再设置 HTTPS。');state.lan=await lanConfigurer(root,input);if(state.lan.status==='CONFIGURED')state.mode='lan';},
+        start:async()=>{if(input.mode==='lan'&&!lanSupported)throw Error('此 Mac 演示只允许原 3047 本机模式。');if(!['local','lan'].includes(input.mode))throw Error('请选择支持的运行模式。');if(input.mode==='lan'&&state.lan.status!=='CONFIGURED')throw Error('LAN 尚未配置并验证 HTTPS/证书/防火墙。');if(!state.checked || !state.configured)throw Error('请先完成预检与管理员/数据目录配置。');state.status='正在通过原 Supervisor 启动 Hub / DSH / Gateway / Proxy / GenUI';const result=await runner('Start',root,{open:false,mode:input.mode});state.url=result.url;state.mode=input.mode;state.owned=true;state.status=result.runtime==='configuration_required'?'服务已就绪，请在原 DSH 后台配置模型 Key':'服务已就绪';},
         stop:async()=>{if(!state.checked||!state.configured)throw Error('请先确认本安装配置。');state.status='正在鉴权并受控停止本安装';await runner('Stop',root,{open:false});state.owned=false;state.url=null;state.status='本安装已受控停止';}
       };
       if(!Object.hasOwn(actions,input.action)){json(400,{error:'不支持此操作，不提供任意命令执行。'});return;}
@@ -93,7 +96,7 @@ export async function startCenter(packageRoot,{checker=checkCompetitionEnvironme
   try {await new Promise((resolve,reject)=>server.once('error',reject).listen(0,'127.0.0.1',resolve));origin=`http://127.0.0.1:${server.address().port}`;Object.assign(record,{phase:'ready',origin});await writeFile(recordFile,JSON.stringify(record),{mode:0o600});}
   catch(e){await unlink(recordFile);throw e;}
   server.on('close',()=>{readJson(recordFile).then(r=>r.instance===instance?unlink(recordFile):null).catch(()=>{});});
-  if(autoCheck)job(check);
+  if(autoCheck)job(async()=>{await check();const saved=await modeReader(root);if(saved.mode==='lan'&&saved.autoStart===true&&state.configured){state.status='正在复用已验证的局域网 HTTPS 配置';const result=await runner('Start',root,{open:false,mode:'lan'});state.url=result.url;state.mode='lan';state.owned=true;state.status=result.runtime==='configuration_required'?'HTTPS 服务已就绪，请由管理员配置模型 Key':'HTTPS 服务已就绪';}});
   return {server,origin,token,instance,recordFile,state};
 }
 export async function openCenter(packageRoot,{open:show=true,serveScript=fileURLToPath(import.meta.url)}={}) {

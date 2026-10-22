@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import http from "node:http";
+import { createHostHttpsEdge } from "./host-https-edge.mjs";
 import { createServer } from "node:net";
 import { access, copyFile, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -119,7 +120,7 @@ export function createEdgeServer({ host, port: publicPort, internalPort, proxyPo
     if (response && "writeHead" in response) { response.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" }); response.end("Asset Hub internal service is unavailable."); }
   });
   const server = http.createServer((request, response) => {
-    if (process.env.UED_LOCAL_DISTRIBUTION_MODE === "true") response.setHeader("X-UED-Local-Instance", process.env.UED_LOCAL_DISTRIBUTION_INSTANCE || "");
+    if (process.env.UED_LOCAL_DISTRIBUTION_INSTANCE) response.setHeader("X-UED-Local-Instance", process.env.UED_LOCAL_DISTRIBUTION_INSTANCE || "");
     if (!acceptsLocalDistributionRequest(request)) { response.writeHead(403); response.end("Forbidden"); return; }
     const requestUrl = new URL(request.url || "/", "http://localhost");
     if (requestUrl.pathname === "/api/knowledge-gateway" || requestUrl.pathname.startsWith("/api/knowledge-gateway/")) { response.writeHead(404, { "Content-Type": "application/json" }); response.end(JSON.stringify({ error: { code: "not-found", message: "Not found." } })); return; }
@@ -421,6 +422,14 @@ export async function main() {
   specifications.assetHub.env = withRuntimeControlEnvironment(specifications.assetHub.env, { endpoint, token });
   await assertPortAvailable(publicPort, "公开 Asset Hub");
   await assertPortAvailable(internalPort, "内部 Asset Hub");
+  let httpsEdge;
+  if (value("UED_LAN_HTTPS_CONFIG")) {
+    if (value("HOST_BIND_HOST") !== "127.0.0.1" || value("ADMIN_SESSION_SECURE") !== "true" || value("UED_LOCAL_DISTRIBUTION_MODE")) fail("LAN HTTPS requires the original protected HTTPS mode with a loopback backend.");
+    const lan = JSON.parse(await readFile(value("UED_LAN_HTTPS_CONFIG"), "utf8"));
+    if (lan.mode !== "lan" || lan.lan?.origin !== value("PUBLIC_ORIGIN")) fail("LAN HTTPS configuration identity mismatch.");
+    httpsEdge = await createHostHttpsEdge(lan.lan, publicPort);
+    await httpsEdge.start();
+  }
   await controller.start("assetHub", specifications.assetHub, { operation: "initial_start" });
   await observeHealth("assetHubInternal", () => waitFor("Asset Hub", () => request(`http://127.0.0.1:${internalPort}/api/auth/session`)), { reasonCode: "asset_hub_health_failed", operation: "initial_start" });
   const configuredEdgeHost = value("HOST_BIND_HOST");
@@ -432,7 +441,7 @@ export async function main() {
   diagnostics.recordInProcessLifecycle("publicEdge", { status: "starting" });
   await edge.start();
   await observeHealth("publicEdge", () => waitFor("Public Asset Hub", () => request(`http://127.0.0.1:${publicPort}/api/auth/session`)), { reasonCode: "public_edge_health_failed", operation: "initial_start" });
-  console.log(`[Host Supervisor] Asset Hub Shell is ready at http://主机IP:${publicPort}.`);
+  console.log(`[Host Supervisor] Asset Hub Shell is ready at ${httpsEdge ? value("PUBLIC_ORIGIN") : `http://主机IP:${publicPort}`}.`);
   const state = await core.ensureReady({ trigger: "initial_start" });
   if (state.status !== "ready") console.error(`[Host Supervisor] Agent Runtime is ${state.status}${state.reasonCode ? `: ${state.reasonCode}` : ""}. Asset Hub Shell remains available.`);
   const shutdown = createSharedShutdown(async (signal) => {
@@ -444,6 +453,7 @@ export async function main() {
     try {
       console.log(`\n[Host Supervisor] Received ${signal}. Stopping managed services...`);
       diagnostics.recordInProcessLifecycle("publicEdge", { status: "stopping" });
+      await httpsEdge?.stop();
       await edge.stop();
       diagnostics.recordInProcessLifecycle("publicEdge", { status: "stopped" });
       await core.stopForShutdown();

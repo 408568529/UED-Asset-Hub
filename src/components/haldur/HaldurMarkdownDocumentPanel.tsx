@@ -1,5 +1,6 @@
 "use client";
 
+import { resolveHaldurMarkdownLink } from "@/lib/haldurMarkdownLinks";
 import { ArrowLeft, Eye, Pencil, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { MarkdownKnowledgeDetail } from "@/components/knowledge/MarkdownKnowledgeDetail";
@@ -59,6 +60,6 @@ export function HaldurMarkdownDocumentPanel({ document, onClose, onSaved, canMan
     </header>
     {document.readOnly ? <p className="border-b border-amber-700/25 bg-amber-50 px-4 py-3 text-sm text-amber-950 md:px-6">当前处于恢复只读状态，可以阅读但不能保存。</p> : null}
     {notice ? <p role="alert" className="border-b border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive md:px-6">{notice}</p> : null}
-    {mode === "read" ? <div className="haldur-document-content"><MarkdownKnowledgeDetail content={document.content} /></div> : <><div className="haldur-document-tabs border-b border-border px-4 md:px-6"><TabsList className="gap-5 border-b-0"><TabsTrigger active={editorView === "source"} onClick={() => setEditorView("source")}><Pencil size={14} />编辑</TabsTrigger><TabsTrigger active={editorView === "preview"} onClick={() => setEditorView("preview")}><Eye size={14} />预览</TabsTrigger></TabsList></div>{editorView === "source" ? <div className="haldur-document-content"><MarkdownEditor markdown={content} onChange={setContent} /></div> : <div className="haldur-document-content"><MarkdownRenderer content={content} /></div>}</>}
+    {mode === "read" ? <div className="haldur-document-content"><MarkdownKnowledgeDetail content={document.content} resolveLink={(href) => resolveHaldurMarkdownLink(document.path, href)} /></div> : <><div className="haldur-document-tabs border-b border-border px-4 md:px-6"><TabsList className="gap-5 border-b-0"><TabsTrigger active={editorView === "source"} onClick={() => setEditorView("source")}><Pencil size={14} />编辑</TabsTrigger><TabsTrigger active={editorView === "preview"} onClick={() => setEditorView("preview")}><Eye size={14} />预览</TabsTrigger></TabsList></div>{editorView === "source" ? <div className="haldur-document-content"><MarkdownEditor markdown={content} onChange={setContent} /></div> : <div className="haldur-document-content"><MarkdownRenderer content={content} resolveLink={(href) => resolveHaldurMarkdownLink(document.path, href)} /></div>}</>}
   </section>;
 }

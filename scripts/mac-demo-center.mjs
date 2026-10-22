@@ -42,7 +42,8 @@ export async function checkMacDemo(root,{onProgress=()=>{}}={}){
  onProgress('ports','PASS',owned?'当前版本 Supervisor 正在运行':ports.join(' / ')+' 空闲');
  return {root,configured:true,owned,dataRoot:spec.runtimeRoot,ports,source:manifest.source};
 }
-export async function runMacDemo(action,root){
+export async function runMacDemo(action,root,options={}){
+ if(options.mode&&options.mode!=='local')throw Error('此 Mac 演示只允许原 3047 本机模式。');
  const checked=await checkMacDemo(root),{spec,config}=await configuration(root),stateFile=path.join(root,'.launch-center/demo-supervisor.json');
  const lockFile=path.join(root,'.launch-center/demo-operation.lock'),handle=await open(lockFile,'wx',0o600);
  try{
@@ -75,5 +76,5 @@ export async function runMacDemo(action,root){
  }finally{await handle.close();await unlink(lockFile);}
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
- try{const [action,root]=process.argv.slice(2);process.env.PATH=path.dirname(toolPaths(root).node)+':'+path.dirname(toolPaths(root).git)+':/usr/bin:/bin:/usr/sbin:/sbin';process.env.GIT_CONFIG_NOSYSTEM='1';process.env.GIT_CONFIG_GLOBAL='/dev/null';process.env.GIT_OPTIONAL_LOCKS='0';if(action==='Check')console.log(JSON.stringify(await checkMacDemo(root)));else if(action==='Stop')console.log(JSON.stringify(await runMacDemo('Stop',root)));else if(action==='Open')await openCenter(root,{serveScript:fileURLToPath(import.meta.url)});else if(action==='Serve')await startCenter(root,{checker:checkMacDemo,runner:runMacDemo,initializer:()=>{throw Error('原演示数据禁止初始化。');},attacher:()=>{throw Error('原演示数据禁止迁移。');}});else throw Error('Use Open or Serve <version-root>.');}catch{console.error('Mac 3047 启动中心未完成操作；请检查原目录权限、版本身份和端口归属。未重置数据。');process.exitCode=1;}
+ try{const [action,root]=process.argv.slice(2);process.env.PATH=path.dirname(toolPaths(root).node)+':'+path.dirname(toolPaths(root).git)+':/usr/bin:/bin:/usr/sbin:/sbin';process.env.GIT_CONFIG_NOSYSTEM='1';process.env.GIT_CONFIG_GLOBAL='/dev/null';process.env.GIT_OPTIONAL_LOCKS='0';if(action==='Check')console.log(JSON.stringify(await checkMacDemo(root)));else if(action==='Stop')console.log(JSON.stringify(await runMacDemo('Stop',root)));else if(action==='Open')await openCenter(root,{serveScript:fileURLToPath(import.meta.url)});else if(action==='Serve')await startCenter(root,{checker:checkMacDemo,runner:runMacDemo,lanSupported:false,modeReader:async()=>({mode:'local'}),initializer:()=>{throw Error('原演示数据禁止初始化。');},attacher:()=>{throw Error('原演示数据禁止迁移。');}});else throw Error('Use Open or Serve <version-root>.');}catch{console.error('Mac 3047 启动中心未完成操作；请检查原目录权限、版本身份和端口归属。未重置数据。');process.exitCode=1;}
 }
