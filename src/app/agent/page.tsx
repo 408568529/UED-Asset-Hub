@@ -5,6 +5,7 @@ import { hasAdminSession } from "@/lib/adminAuth";
 export const dynamic = "force-dynamic";
 
 export default async function AgentPage() {
-  if (!await hasAdminSession()) redirect("/admin/login");
-  return <AgentShell />;
+  const canManage = await hasAdminSession();
+  if (!canManage && process.env.AGENT_PUBLIC_ACCESS !== "true") redirect("/admin/login");
+  return <AgentShell canManage={canManage} />;
 }

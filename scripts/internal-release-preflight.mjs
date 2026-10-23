@@ -37,6 +37,7 @@ export async function validateInternalRuntimeEnvironment(environment = process.e
   const ports = resolveHostPorts(environment);
   const roots = {};
   for (const name of directoryNames) roots[name] = await inspectDirectory(name, environment[name], { writable: name !== "DSH_SOURCE_DIR" });
+  if (environment.MICRO_STANDARD_ROOT) roots.MICRO_STANDARD_ROOT = await inspectDirectory("MICRO_STANDARD_ROOT", environment.MICRO_STANDARD_ROOT, { writable: true });
   const haldurRoot = environment.HALDUR_DESIGN_SKILL_ROOT?.trim();
   const haldurRuntimeRoot = environment.HALDUR_DESIGN_SKILL_RUNTIME_ROOT?.trim();
   if (Boolean(haldurRoot) !== Boolean(haldurRuntimeRoot)) fail("HALDUR_DESIGN_SKILL_ROOT and HALDUR_DESIGN_SKILL_RUNTIME_ROOT must be configured together.");

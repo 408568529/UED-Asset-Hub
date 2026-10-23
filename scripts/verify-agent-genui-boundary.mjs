@@ -1,3 +1,4 @@
+import { allowsPublicAgentRequest } from "../agent-integration/scripts/agent-public-access.mjs";
 import assert from "node:assert/strict";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { createServer as createNetServer } from "node:net";
@@ -16,6 +17,21 @@ async function freePort() {
   return port;
 }
 
+const guestEnvironment = { AGENT_PUBLIC_ACCESS: "true", PUBLIC_ORIGIN: "http://127.0.0.1:3047" };
+const sandboxRequest = { method: "POST", headers: { origin: "null", "sec-fetch-site": "cross-site" } };
+assert.equal(allowsPublicAgentRequest(sandboxRequest, new URL("http://127.0.0.1/genui/api/test/state/read"), guestEnvironment), true, "sandbox state calls must reach GenUI's own capability check");
+assert.equal(allowsPublicAgentRequest(sandboxRequest, new URL("http://127.0.0.1/api/credentials.set"), guestEnvironment), false);
+assert.equal(allowsPublicAgentRequest({ method: "POST", headers: { origin: "https://untrusted.example", "sec-fetch-site": "cross-site" } }, new URL("http://127.0.0.1/api/session.prompt"), guestEnvironment), false);
+assert.equal(allowsPublicAgentRequest({ method: "GET", headers: {} }, new URL("http://127.0.0.1/plugins/@deepseek-ai/dsh-client-runtime/client.js"), guestEnvironment), true);
+assert.equal(allowsPublicAgentRequest({ method: "GET", headers: {} }, new URL("http://127.0.0.1/"), {}), false);
+
+assert.equal(allowsPublicAgentRequest({ method: "GET", headers: { "sec-fetch-site": "cross-site" } }, new URL("http://127.0.0.1/"), guestEnvironment), true);
+assert.equal(allowsPublicAgentRequest({ method: "GET", headers: { "sec-fetch-site": "cross-site" } }, new URL("http://127.0.0.1/api/session.export"), guestEnvironment), false);
+assert.equal(allowsPublicAgentRequest({ method: "GET", headers: { "sec-fetch-site": "cross-site" } }, new URL("http://127.0.0.1/api/events.host"), guestEnvironment), false);
+
+assert.equal(allowsPublicAgentRequest({ method: "GET", headers: { origin: "null", "sec-fetch-site": "cross-site" } }, new URL("http://127.0.0.1/"), guestEnvironment), true);
+assert.equal(allowsPublicAgentRequest({ method: "GET", headers: { origin: "null" } }, new URL("http://127.0.0.1/genui/assets/a/v/app.js"), guestEnvironment), false, "sandbox assets still require a signed preview grant");
+
 const root = await mkdtemp(path.join(os.tmpdir(), "ued-genui-boundary-"));
 const edgeSource = await readFile("scripts/host-supervisor.mjs", "utf8");
 const runtimeOverlay = await readFile("agent-integration/dsh/asset-hub-agent.overlay.yml", "utf8");
@@ -29,6 +45,7 @@ const pluginTarball = await readFile(pluginLock.packageTarball);
 assert.match(edgeSource, /dsh-genui|startsWith\("\/genui\/"\)/);
 assert.match(edgeSource, /"apps\/cli\/src\/bin\.ts", "--profile", "web", "--patch"[\s\S]*?"--no-open", "--host"/);
 assert.doesNotMatch(runtimeOverlay, /- id: genui\s+disabled: true/);
+assert.match(runtimeOverlay, /default: asset-hub-genui-restricted/);
 assert.doesNotMatch(restrictedPreset, /name: dsh-plugin-genui/);
 assert.match(presetSource, /name: dsh-plugin-genui/);
 assert.match(presetSource, /artifactRoot: !!js process\.env\.DSH_GENUI_ARTIFACT_ROOT/);
@@ -147,7 +164,7 @@ await new Promise((resolve) => upstream.listen(upstreamPort, "127.0.0.1", resolv
 const proxyPort = await freePort();
 const proxy = spawn(process.execPath, ["agent-integration/scripts/start-agent-proxy.mjs"], {
   cwd: process.cwd(),
-  env: { ...process.env, DSH_BASE_URL: `http://127.0.0.1:${upstreamPort}`, AGENT_PROXY_HOST: "127.0.0.1", AGENT_PROXY_PORT: String(proxyPort), AGENT_RUNTIME_DIR: root, AGENT_WORKSPACE_ROOT: path.join(root, "workspaces"), ADMIN_USERNAME: username, ADMIN_SESSION_SECRET: adminSecret },
+  env: { ...process.env, DSH_BASE_URL: `http://127.0.0.1:${upstreamPort}`, AGENT_PROXY_HOST: "127.0.0.1", AGENT_PROXY_PORT: String(proxyPort), AGENT_RUNTIME_DIR: root, AGENT_WORKSPACE_ROOT: path.join(root, "workspaces"), ADMIN_USERNAME: username, ADMIN_SESSION_SECRET: adminSecret, PUBLIC_ORIGIN: `http://127.0.0.1:${proxyPort}` },
   stdio: "ignore"
 });
 const base = `http://127.0.0.1:${proxyPort}`;
@@ -172,9 +189,18 @@ async function call(pathname, payload, authenticated = true) {
 
 try {
   await waitForProxy();
-  assert.equal((await call("/api/session.create", { rpcId: "anon", payload: { agentPreset: "asset-hub-genui-restricted" } }, false)).status, 401);
+  const publicAccess = process.env.AGENT_PUBLIC_ACCESS === "true";
+  assert.equal((await call("/api/session.create", { rpcId: "anon", payload: { agentPreset: "asset-hub-genui-restricted" } }, false)).status, publicAccess ? 200 : 401);
+  for (const method of ["credentials.describe", "credentials.set", "settings.describe", "settings.update", "agentPreset.copy", "host.openPath", "unlisted.method"]) {
+    assert.equal((await call(`/api/${method}`, { rpcId: "guest-denied", payload: {} }, false)).status, 401, `${method} stays protected`);
+  }
+  if (publicAccess) {
+    const forbidden = await call("/api/session.create", { rpcId: "guest-unrestricted", payload: { agentPreset: "unrestricted" } }, false);
+    assert.equal(forbidden.body.result.ok, false);
+    assert.equal((await fetch(`${base}/api/session.list`, { method: "POST", headers: { Origin: "https://untrusted.example", "Content-Type": "application/json" }, body: JSON.stringify({ rpcId: "cross-site", payload: {} }) })).status, 401);
+  }
   const protectedPreview = await fetch(`${base}/genui/preview/s-fixture/v-fixture`);
-  assert.equal(protectedPreview.status, 401, "GenUI preview routes must retain Hub session authentication");
+  assert.equal(protectedPreview.status, publicAccess ? 200 : 401, "GenUI preview requires a session or explicitly enabled public use");
   const preview = await fetch(`${base}/genui/preview/s-fixture/v-fixture`, { headers: { Cookie: cookie } });
   assert.equal(preview.status, 200);
   assert.equal(preview.headers.get("content-security-policy"), "default-src 'none'; script-src 'self'; frame-src 'none'; sandbox allow-scripts allow-modals");
@@ -220,14 +246,17 @@ try {
   assert.equal(received.at(-1).payload.payload.agentPreset, "asset-hub-genui-restricted");
   const defaults = await call("/api/session.create", { rpcId: "default", payload: {} });
   assert.equal(defaults.body.result.ok, true);
+  assert.equal(received.at(-1).payload.payload.agentPreset, "asset-hub-genui-restricted");
+  const knowledgeOnly = await call("/api/session.create", { rpcId: "knowledge", payload: { agentPreset: "asset-hub-restricted" } });
+  assert.equal(knowledgeOnly.body.result.ok, true);
   assert.equal(received.at(-1).payload.payload.agentPreset, "asset-hub-restricted");
   const denied = await call("/api/session.create", { rpcId: "denied", payload: { agentPreset: "arbitrary-user-preset" } });
   assert.equal(denied.body.result.ok, false);
   assert.equal(denied.body.result.error.code, "agent-preset-restricted");
-  assert.equal(received.length, 2, "unapproved presets must not reach DSH");
+  assert.equal(received.length, publicAccess ? 4 : 3, "unapproved presets must not reach DSH");
   assert.equal((await call("/api/agentPreset.select", { rpcId: "select", payload: { agentPreset: "asset-hub-genui-restricted" } })).body.result.ok, true);
   assert.equal((await call("/api/agentPreset.select", { rpcId: "select-denied", payload: { agentPreset: "arbitrary-user-preset" } })).body.result.error.code, "agent-preset-restricted");
-  console.log("[UED Agent] GenUI preset opt-in, restricted default, authentication, and arbitrary-preset rejection passed.");
+  console.log("[UED Agent] Default GenUI preset, explicit knowledge-only selection, authentication, and arbitrary-preset rejection passed.");
 } finally {
   proxy.kill("SIGTERM");
   await new Promise((resolve) => proxy.once("exit", resolve));

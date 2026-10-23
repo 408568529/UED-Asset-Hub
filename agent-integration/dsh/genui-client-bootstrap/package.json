@@ -1,0 +1,7 @@
+{
+  "name": "@ued/asset-hub-genui-client-bootstrap",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./index.mjs", "./package.json": "./package.json" }
+}

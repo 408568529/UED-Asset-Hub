@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-19",
+  "scope": "local source contracts and bundled GenUI tarball; not a Windows delivery manifest",
+  "sourceBaseline": "de63f916bf5739ae71b4e3f35127f12c703f9e75",
+  "files": [
+    {
+      "path": "service/windows/node-22.23.2-x64.artifact.json",
+      "sha256": "5e1f732f9ef36af04418b2d24d80181129b722440ff744d4550b62d6f4aa83ea",
+      "bytes": 227
+    },
+    {
+      "path": "agent-integration/dsh/version.json",
+      "sha256": "1a383f6dddf6df7c937ca3b51fdd886707ae1b07ba4208375d95da894b5dd525",
+      "bytes": 512
+    },
+    {
+      "path": "agent-integration/dsh/genui-plugin.json",
+      "sha256": "cd696141bcc2dc6a189c6eb0a92b426c5bdc78215f1b19c5e353affc75f6fc35",
+      "bytes": 1899
+    },
+    {
+      "path": "agent-integration/dsh/packages/dsh-plugin-genui-0.15.1.tgz",
+      "sha256": "ac555017451724f6a4b990da8ac951603c8cfc8c61634b6015067f71c689689b",
+      "bytes": 221959
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "e11e445ca6c281f7d9761f6b8176a199a582e30611e366bf48efd1aea97ad1df",
+      "bytes": 502992
+    }
+  ]
+}

@@ -25,7 +25,7 @@ export const markdownKnowledgeRelatedScopes = [
 ] as const;
 
 export type MarkdownKnowledgeDocumentType = (typeof markdownKnowledgeDocumentTypes)[number];
-export type MarkdownKnowledgeSpecTopic = (typeof markdownKnowledgeSpecTopics)[number]["value"];
+export type MarkdownKnowledgeSpecTopic = string;
 export type MarkdownKnowledgeRelatedScope = (typeof markdownKnowledgeRelatedScopes)[number]["value"];
 
 interface MarkdownKnowledgeMetadataBase {
@@ -58,6 +58,7 @@ export type MarkdownKnowledgeMetadata = MarkdownKnowledgeMetadataBase & (
 );
 
 export interface MarkdownKnowledgeInput {
+  revision?: number;
   title: string;
   documentType: MarkdownKnowledgeDocumentType;
   specTopic?: MarkdownKnowledgeSpecTopic;

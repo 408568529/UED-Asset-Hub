@@ -55,7 +55,7 @@
   box-sizing: border-box;
 }
 
-[class*="rounded-"] {
+[class*="rounded-"]:not(:where([data-hub-visual="v1.1"], [data-hub-visual="v1.1"] *, body:has(.asset-visual-theme) [data-slot="dialog-content"], body:has(.asset-visual-theme) [data-slot="dialog-content"] *, body:has(.asset-visual-theme) [data-radix-popper-content-wrapper], body:has(.asset-visual-theme) [data-radix-popper-content-wrapper] *)) {
   border-radius: var(--radius) !important;
 }
 

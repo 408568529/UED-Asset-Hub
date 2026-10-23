@@ -46,6 +46,7 @@ export function Combobox({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Input
+          type="text"
           required={required}
           value={query}
           role="combobox"
@@ -63,7 +64,7 @@ export function Combobox({
           placeholder={placeholder}
         />
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] max-w-[min(30rem,calc(100vw-2rem))] p-0">
+      <PopoverContent onOpenAutoFocus={(event) => event.preventDefault()} align="start" className="w-[var(--radix-popover-trigger-width)] max-w-[min(30rem,calc(100vw-2rem))] p-0">
         <Command shouldFilter={false}>
           <CommandList>
             {filtered.map((option) => {

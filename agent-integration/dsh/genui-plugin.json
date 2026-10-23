@@ -8,7 +8,7 @@
   "license": "MIT",
   "dshVersion": "0.1.1-rc.2",
   "installation": "dsh plugin --profile web add <verified-local-tarball> --save-exact, then remove the package from global profile bundles so only the explicit restricted preset mounts it",
-  "delivery": "The private Windows release carries this verified npm tarball. The installer verifies its SHA-256, retains it under the isolated AGENT_RUNTIME_DIR plugin package cache, then uses the official DSH Plugin Manager to install it into the web profile. The plugin tarball is locally bundled; Plugin Manager dependency resolution and supply-chain checks may still access the configured npm registry. GenUI stays opt-in through asset-hub-genui-restricted and is not loaded in every DSH session.",
+  "delivery": "The private Windows release carries this verified npm tarball. The installer verifies its SHA-256, retains it under the isolated AGENT_RUNTIME_DIR plugin package cache, then uses the official DSH Plugin Manager to install it into the web profile. The plugin tarball is locally bundled; Plugin Manager dependency resolution and supply-chain checks may still access the configured npm registry. GenUI is mounted by the default asset-hub-genui-restricted preset; the knowledge-only asset-hub-restricted preset remains available without GenUI.",
   "clientCompatibility": {
     "id": "ued-visible-readiness-v2",
     "installer": "agent-integration/scripts/genui-client-load-liveness.mjs",

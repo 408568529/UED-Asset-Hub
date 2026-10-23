@@ -2,15 +2,11 @@
 
 import { FileUp, PenLine } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LabeledField } from "@/components/admin/LabeledField";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { AssetSelect } from "@/components/ui/asset-select";
+import { Button, Input, Select, Segmented } from "antd";
+import { Input as FileInput } from "@/components/ui/input";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
-import { MultiSelect } from "@/components/ui/multi-select";
-import { SegmentedTabs, SegmentedTabsTrigger } from "@/components/ui/segmented-tabs";
-import { Textarea } from "@/components/ui/textarea";
 import { normalizeLegacyEscapedMarkdown } from "@/lib/markdown";
 import { markdownKnowledgeRelatedScopes, markdownKnowledgeSpecTopics, type MarkdownKnowledgeDocument, type MarkdownKnowledgeDocumentType, type MarkdownKnowledgeRelatedScope, type MarkdownKnowledgeSpecTopic } from "@/types/markdownKnowledge";
 
@@ -44,6 +40,12 @@ export function MarkdownKnowledgeForm({ documentType, document, returnHref = "/k
   const [sourceFileName, setSourceFileName] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [topicOptions, setTopicOptions] = useState<Array<{value: string; label: string}>>([]);
+  const [revision, setRevision] = useState<number>();
+  useEffect(() => {
+    if (!isMicroSpec) return;
+    fetch("/api/micro-standards").then(async r => { const value = await r.json(); if (!r.ok) throw Error(value.message); setTopicOptions(value.topics.map((t: string) => ({ value: t, label: markdownKnowledgeSpecTopics.find(o => o.value === t)?.label ?? t }))); setRevision(value.revision); }).catch(e => setMessage(e.message));
+  }, [isMicroSpec]);
 
   async function selectMarkdownFile(file?: File) {
     if (!file) return;
@@ -88,11 +90,12 @@ export function MarkdownKnowledgeForm({ documentType, document, returnHref = "/k
 
     setSaving(true);
     try {
-      const response = await fetch(isEdit ? `/api/knowledge/${encodeURIComponent(metadata?.id ?? "")}` : "/api/knowledge", {
+      const response = await fetch(isMicroSpec ? (isEdit ? `/api/micro-standards/${encodeURIComponent(metadata?.id ?? "")}` : "/api/micro-standards") : (isEdit ? `/api/knowledge/${encodeURIComponent(metadata?.id ?? "")}` : "/api/knowledge"), {
         method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
+          revision,
           documentType,
           description,
           category,
@@ -109,7 +112,7 @@ export function MarkdownKnowledgeForm({ documentType, document, returnHref = "/k
         return;
       }
       const detailHref = new URL(returnHref, window.location.origin);
-      detailHref.searchParams.set("asset", `${result.metadata.documentType}:${result.metadata.id}`);
+      detailHref.searchParams.set("asset", isMicroSpec ? result.metadata.id : `${result.metadata.documentType}:${result.metadata.id}`);
       router.push(`${detailHref.pathname}${detailHref.search}`);
       router.refresh();
     } catch {
@@ -124,16 +127,16 @@ export function MarkdownKnowledgeForm({ documentType, document, returnHref = "/k
       {isMicroSpec && !isEdit ? (
         <div>
           <p className="text-[13px] font-bold">创建方式</p>
-          <SegmentedTabs value={mode} onValueChange={(value) => setMode(value as "online" | "upload")} ariaLabel="微规范创建方式" className="mt-2">
-            <SegmentedTabsTrigger value="online"><PenLine size={16} />在线创建</SegmentedTabsTrigger>
-            <SegmentedTabsTrigger value="upload"><FileUp size={16} />上传 Markdown</SegmentedTabsTrigger>
-          </SegmentedTabs>
+          <Segmented value={mode} onChange={(value) => setMode(value as "online" | "upload")} aria-label="微规范创建方式" className="knowledge-mode mt-2" options={[
+            { value: "online", label: <><PenLine size={16} />在线创建</> },
+            { value: "upload", label: <><FileUp size={16} />上传 Markdown</> }
+          ]} />
         </div>
       ) : null}
 
       {isMicroSpec && !isEdit && mode === "upload" ? (
         <LabeledField label="Markdown 文件" required hint="选择文件只会填充当前草稿；点击创建前不会写入 DATA_DIR。">
-          <Input type="file" accept=".md,text/markdown" onChange={(event) => void selectMarkdownFile(event.target.files?.[0])} />
+          <FileInput type="file" accept=".md,text/markdown" onChange={(event) => void selectMarkdownFile(event.target.files?.[0])} />
         </LabeledField>
       ) : null}
 
@@ -144,13 +147,19 @@ export function MarkdownKnowledgeForm({ documentType, document, returnHref = "/k
       {isMicroSpec ? (
         <div className="grid gap-[var(--field-column-gap)] md:grid-cols-2">
           <LabeledField label="规范主题" required>
-            <AssetSelect value={specTopic} onValueChange={(value) => setSpecTopic(value as MarkdownKnowledgeSpecTopic)} placeholder="请选择规范主题" required ariaLabel="规范主题" options={markdownKnowledgeSpecTopics.map((topic) => ({ value: topic.value, label: topic.label }))} />
+            <Select id="knowledge-spec-topic" value={specTopic || undefined} onChange={(value: MarkdownKnowledgeSpecTopic) => setSpecTopic(value)} placeholder="请选择规范主题" aria-label="规范主题" aria-required="true" className="w-full" status={message === "请选择规范主题。" ? "error" : undefined} options={topicOptions} />
+            {/* Preserve the native required constraint supplied by the previous Radix select. */}
+            <select required value={specTopic} onChange={(event) => setSpecTopic(event.target.value as MarkdownKnowledgeSpecTopic)} tabIndex={-1} aria-hidden="true" className="sr-only" onInvalid={(event) => { event.preventDefault(); setMessage("请选择规范主题。"); window.document.getElementById("knowledge-spec-topic")?.focus(); }}>
+              <option value="" />
+              {topicOptions.map((topic) => <option key={topic.value} value={topic.value}>{topic.label}</option>)}
+            </select>
           </LabeledField>
           <LabeledField label="关联类目" required>
-            <MultiSelect
+            <Select mode="multiple" showSearch={{ optionFilterProp: "label" }} className="w-full" aria-label="关联类目" aria-required="true"
               options={markdownKnowledgeRelatedScopes.map((scope) => ({ value: scope.value, label: scope.label }))}
               value={relatedScopes}
-              onValueChange={(value) => setRelatedScopes(value as MarkdownKnowledgeRelatedScope[])}
+              onChange={(value: MarkdownKnowledgeRelatedScope[]) => setRelatedScopes(value)}
+              status={message === "请至少选择一个关联类目。" ? "error" : undefined}
               placeholder="请选择关联类目"
             />
           </LabeledField>
@@ -158,7 +167,7 @@ export function MarkdownKnowledgeForm({ documentType, document, returnHref = "/k
       ) : null}
 
       <LabeledField label="简介">
-        <Textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder={isMicroSpec ? "简要说明规则解决的问题" : "简要介绍文档内容"} />
+        <Input.TextArea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder={isMicroSpec ? "简要说明规则解决的问题" : "简要介绍文档内容"} />
       </LabeledField>
 
       <div className="grid gap-[var(--field-column-gap)] md:grid-cols-2">
@@ -172,9 +181,9 @@ export function MarkdownKnowledgeForm({ documentType, document, returnHref = "/k
         <span className="text-[13px] leading-5 text-muted-foreground">支持标准 Markdown 与 GFM 表格；详情页默认显示渲染视图。</span>
       </div>
 
-      <div className="flex flex-wrap gap-3 border-t border-border pt-5">
-        <Button type="submit" disabled={saving}>{saving ? "保存中…" : isEdit ? "保存修改" : isMicroSpec ? "创建微规范" : "创建文档"}</Button>
-        <Button type="button" variant="outline" disabled={saving} onClick={() => router.push(returnHref)}>取消</Button>
+      <div className="knowledge-form-actions flex flex-wrap gap-3">
+        <Button type="primary" htmlType="submit" loading={saving} disabled={saving}>{saving ? "保存中…" : isEdit ? "保存修改" : isMicroSpec ? "创建微规范" : "创建文档"}</Button>
+        <Button htmlType="button" disabled={saving} onClick={() => router.push(returnHref)}>取消</Button>
       </div>
       {message ? <p role="alert" className="text-sm text-destructive">{message}</p> : null}
     </form>

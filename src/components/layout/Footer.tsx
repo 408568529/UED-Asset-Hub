@@ -7,7 +7,7 @@ import { knowledgeModuleHrefs, openModules } from "@/config/modules";
 export function Footer() {
   const pathname = usePathname();
   const isHome = pathname === "/";
-  if (pathname === "/knowledge" || pathname.startsWith("/knowledge/") || pathname === "/admin" || pathname.startsWith("/admin/") || pathname === "/test-environments") return null;
+  if (!isHome) return null;
   const mutedText = isHome ? "text-white/48" : "text-muted-foreground";
   const hoverText = isHome ? "hover:text-[#eef1e8]" : "hover:text-foreground";
 

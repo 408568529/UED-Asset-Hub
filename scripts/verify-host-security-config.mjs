@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, symlink, realpath, writeFile, chmod } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,6 +42,35 @@ try {
 } finally {
   await rm(localTestRoot, { recursive: true, force: true });
 }
+
+const demoRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "ued-persistent-demo-security-")));
+try {
+  await mkdir(path.join(demoRoot, "hub-data"));
+  const demo = { ...valid, NODE_ENV: "production", ADMIN_SESSION_SECURE: "false", PUBLIC_ORIGIN: "http://127.0.0.1:5647", HOST_BIND_HOST: "127.0.0.1", HOST_PORT: "5647", UED_LOCAL_DEMO_MODE: "true", UED_LOCAL_DEMO_ROOT: demoRoot, DATA_DIR: path.join(demoRoot, "hub-data") };
+  if (process.platform === "darwin") {
+    assert.equal(resolveHostSecurityConfig(demo).username, valid.ADMIN_USERNAME);
+    const loginPath = path.join(demoRoot, "login.json");
+    const configPath = path.join(demoRoot, "host.json");
+    const { ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_SESSION_SECRET, ADMIN_SESSION_SECURE, ...host } = demo;
+    await writeFile(loginPath, JSON.stringify({ ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_SESSION_SECRET, ADMIN_SESSION_SECURE }), { mode: 0o600 });
+    await writeFile(configPath, JSON.stringify(host));
+    const checkLauncher = () => spawnSync("python3", [path.join(projectDir, "scripts/start-mac-demo.py"), "--config", configPath, "--login", loginPath, "--check"], { encoding: "utf8" });
+    assert.equal(checkLauncher().status, 0, "protected config must validate without starting services");
+    await chmod(loginPath, 0o644);
+    const unsafeLogin = checkLauncher();
+    assert.notEqual(unsafeLogin.status, 0, "world-readable credentials must reject startup");
+    assert.equal(`${unsafeLogin.stdout}${unsafeLogin.stderr}`.includes(ADMIN_PASSWORD), false);
+
+    for (const overrides of [
+      { UED_LOCAL_DEMO_MODE: undefined }, { HOST_BIND_HOST: "0.0.0.0" },
+      { PUBLIC_ORIGIN: "http://192.168.1.4:5647" }, { HOST_PORT: "3047" },
+      { PUBLIC_ORIGIN: "http://127.0.0.1:5647/other" }, { DATA_DIR: demoRoot }
+    ]) assertRejected({ ...demo, ...overrides }, "host_security_config_invalid", "ADMIN_SESSION_SECURE");
+    assertRejected({ ...demo, ADMIN_PASSWORD: "password123" }, "host_security_config_invalid", "ADMIN_PASSWORD");
+    await symlink(path.join(demoRoot, "hub-data"), path.join(demoRoot, "alias"));
+    assertRejected({ ...demo, DATA_DIR: path.join(demoRoot, "alias") }, "host_security_config_invalid", "ADMIN_SESSION_SECURE");
+  } else assertRejected(demo, "host_security_config_invalid", "ADMIN_SESSION_SECURE");
+} finally { await rm(demoRoot, { recursive: true, force: true }); }
 
 const marker = "host-security-redaction-marker";
 const isolatedCwd = await mkdtemp(path.join(os.tmpdir(), "ued-host-security-"));

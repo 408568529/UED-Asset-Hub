@@ -3,8 +3,10 @@ import { ADMIN_SESSION_COOKIE, ADMIN_SESSION_MAX_AGE } from "@/config/admin";
 import { authenticateAdmin, createAdminSession } from "@/lib/adminAuth";
 import { operationLogService } from "@/services/operationLogService";
 import { isHostSecurityConfigError } from "../../../../../scripts/host-security-config.mjs";
+import { acceptsLocalDistributionRequest } from "../../../../../scripts/local-distribution-config.mjs";
 
 export async function POST(request: Request) {
+  if (!acceptsLocalDistributionRequest(request)) return NextResponse.json({ message: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => ({})) as { username?: string; password?: string };
   let authenticated = false;
   try {

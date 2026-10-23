@@ -12,7 +12,7 @@ export function TopicCard({ topic, index = 0 }: { topic: Topic; index?: number }
       <Link href={`/topics/${topic.id}`} className="grid gap-6 md:grid-cols-[120px_1fr]">
         <p className="font-mono text-sm text-muted-foreground">{String(index + 1).padStart(2, "0")}</p>
         <div>
-          <div className="relative aspect-[16/8] overflow-hidden rounded-[2rem]">
+          <div className="relative aspect-[16/8] overflow-hidden rounded-[var(--radius-container)]">
             <Image src={topic.coverUrl} alt={topic.title} fill className="object-cover transition duration-700 group-hover:scale-105" sizes="(max-width: 768px) 100vw, 50vw" />
           </div>
           <div className="space-y-4 py-6">

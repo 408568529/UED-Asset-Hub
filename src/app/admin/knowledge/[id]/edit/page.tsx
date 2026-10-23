@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { notFound } from "next/navigation";
 import { AdminGuard } from "@/components/admin/AdminGuard";
 import { KnowledgeAuthoringWorkspace } from "@/components/knowledge/KnowledgeAuthoringWorkspace";
@@ -10,9 +11,10 @@ export default async function EditMarkdownKnowledgePage({ params, searchParams }
   const returnHref = getKnowledgeReturnHref((await searchParams).returnTo);
   const document = await markdownKnowledgeService.getById(decodeURIComponent(id)).catch(() => null);
   if (!document) notFound();
+  if (document.metadata.documentType === "micro-spec") redirect(`/micro-standards?edit=${encodeURIComponent(document.metadata.id)}`);
   return (
     <AdminGuard>
-      <KnowledgeAuthoringWorkspace title={document.metadata.documentType === "micro-spec" ? "编辑微规范" : document.metadata.documentType === "project" ? "编辑项目沉淀" : "编辑知识文章"} description="源码视图保持只读；请在此编辑 Markdown 正文。" returnHref={returnHref}>
+      <KnowledgeAuthoringWorkspace title={document.metadata.documentType === "project" ? "编辑项目沉淀" : "编辑知识文章"} description="源码视图保持只读；请在此编辑 Markdown 正文。" returnHref={returnHref}>
         <MarkdownKnowledgeForm documentType={document.metadata.documentType} document={document} returnHref={returnHref} />
       </KnowledgeAuthoringWorkspace>
     </AdminGuard>

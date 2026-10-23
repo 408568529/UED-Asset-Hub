@@ -4,6 +4,7 @@ import { promptService } from "@/services/promptService";
 import { skillService } from "@/services/skillService";
 import type { KnowledgeAssetView } from "@/types/knowledge";
 import { markdownKnowledgeRelatedScopes, markdownKnowledgeSpecTopics, type MarkdownKnowledgeRelatedScope, type MarkdownKnowledgeSpecTopic } from "@/types/markdownKnowledge";
+import { independentMicroStandards, microStore } from "./microStandardService";
 import { KnowledgeGatewayError, type KnowledgeGatewayAsset, type KnowledgeGatewayAssetType, type KnowledgeGatewayDetailResult, type KnowledgeGatewayMatchSource, type KnowledgeGatewayMicroSpecSearchInput, type KnowledgeGatewaySearchInput, type KnowledgeGatewaySearchResult, type KnowledgeGatewaySourceDiagnostic } from "@/types/knowledgeGateway";
 
 const maximumLimit = 20;
@@ -26,7 +27,7 @@ function citationFor(item: KnowledgeAssetView): KnowledgeGatewayAsset["citation"
     assetType: item.assetType,
     id: item.id,
     title: item.title,
-    href: `/knowledge?asset=${encodeURIComponent(item.key)}`,
+    href: item.assetType === "micro-spec" ? `/micro-standards?asset=${encodeURIComponent(item.id)}` : `/knowledge?asset=${encodeURIComponent(item.key)}`,
     source: item.source,
     updatedAt: item.updatedAt
   };
@@ -170,7 +171,7 @@ export const knowledgeGatewayService = {
   async searchMicroSpecs(input: KnowledgeGatewayMicroSpecSearchInput = {}): Promise<KnowledgeGatewaySearchResult> {
     const limit = assertLimit(input.limit);
     const validScopes = new Set(markdownKnowledgeRelatedScopes.map((option) => option.value));
-    const validTopics = new Set(markdownKnowledgeSpecTopics.map((option) => option.value));
+    const validTopics = new Set(independentMicroStandards ? (await microStore().list()).topics : markdownKnowledgeSpecTopics.map((option) => option.value));
     if (input.relatedScopes?.some((scope) => !validScopes.has(scope)) || input.specTopics?.some((topic) => !validTopics.has(topic))) {
       throw new KnowledgeGatewayError("invalid-micro-spec-filter", 400, "relatedScopes 或 specTopics 不符合正式 Micro Spec Schema。");
     }

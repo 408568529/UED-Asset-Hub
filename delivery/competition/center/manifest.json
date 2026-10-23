@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "inputs": [
+    {
+      "path": "scripts/competition-center-ui.tsx",
+      "sha256": "c705f85896a41428bbd7c67f55b4f18efe2b7c1ca68f815b381e693c88200220"
+    },
+    {
+      "path": "scripts/competition-center-layout.css",
+      "sha256": "10f0bf1240035816d2ef7149d4644c21065aa6d4a6c2e1b93b1ec99c9ee0ba0c"
+    },
+    {
+      "path": "scripts/build-competition-center-ui.mjs",
+      "sha256": "eb685763c991f2f4549c1a90faa3ca3bb574bb6e34fb3ccb3ad16f4e29a59d3f"
+    },
+    {
+      "path": "src/components/knowledge/KnowledgeThemeProvider.tsx",
+      "sha256": "8522335ca200bc8cd05ea10b73c5ebac55ce4e84c1989ce4543a750e3630ec81"
+    },
+    {
+      "path": "src/components/knowledge/knowledge-theme.css",
+      "sha256": "9bece79fe1325c6da0ba85228d55c18dd729a9ef52d5a75322fe8421c9bc88f1"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "e11e445ca6c281f7d9761f6b8176a199a582e30611e366bf48efd1aea97ad1df"
+    }
+  ],
+  "files": [
+    {
+      "path": "center.js.LEGAL.txt",
+      "sha256": "27882352d55c7f30702eabae256edd27c24bc2e1c21ae3f2b22a3fde3c5bac32"
+    },
+    {
+      "path": "center.js",
+      "sha256": "a2eb02f685395d82936661271b17f871df17f8080b32656b8f94e64abc4c5827"
+    },
+    {
+      "path": "center.css",
+      "sha256": "4d994fbcf152d883e41007b37b68cfdca1f52efa21d081e9e7b499346841e16e"
+    }
+  ],
+  "themeSource": "KnowledgeThemeProvider + knowledge-theme.css; existing --uedv-* tokens",
+  "offline": true
+}

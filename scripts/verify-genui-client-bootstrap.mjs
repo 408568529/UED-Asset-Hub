@@ -1,0 +1,20 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { addGenuiClient } from "../agent-integration/dsh/genui-client-bootstrap/index.mjs";
+
+const packageRoot = process.argv[2];
+if (!packageRoot) throw new Error("Pass the isolated pinned GenUI package directory.");
+const manifest = JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8"));
+const bytes = readFileSync(path.join(packageRoot, "lib/client.js"));
+const graph = { rev: "before", entries: [{ id: "existing-client" }] };
+const result = addGenuiClient(graph, manifest, bytes);
+assert.equal(graph.entries.length, 1, "Do not mutate the official module registry");
+assert.equal(result.entries.length, 2);
+assert.equal(result.entries[1].id, "dsh-plugin-genui");
+assert.deepEqual(result.entries[1].inject, manifest.dsh.client.inject);
+assert.equal(addGenuiClient(result, manifest, bytes), result, "Do not double-register an activated preset's client");
+assert.throws(() => addGenuiClient(graph, manifest, Buffer.from("changed")));
+assert.throws(() => addGenuiClient(graph, { ...manifest, version: "other" }, bytes));
+assert.throws(() => addGenuiClient(graph, { ...manifest, name: "other" }, bytes));
+console.log("GenUI cold-start client identity, immutable graph and duplicate-registration checks passed.");

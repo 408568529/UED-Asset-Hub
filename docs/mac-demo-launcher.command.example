@@ -1,0 +1,20 @@
+#!/bin/bash
+set -euo pipefail
+runtime="$(cd "$(dirname "$0")" && pwd)"
+export PATH="$runtime/tools:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+if [[ "${1:-}" == "--check" ]]; then
+  exec python3 "$runtime/recovery-validation/workspace/scripts/start-mac-demo.py" --config "$runtime/config/host-recovered-3047.json" --login "$runtime/config/visual-login.json" --check
+fi
+if ! lsof -nP -iTCP:3047 -sTCP:LISTEN >/dev/null 2>&1; then
+  nohup bash "$runtime/config/start-recovered-3047.sh" >> "$runtime/recovered-3047.log" 2>&1 </dev/null &
+fi
+for attempt in {1..120}; do
+  if curl --fail --silent --max-time 2 http://127.0.0.1:3047/api/agent/workbench >/dev/null; then
+    echo "3047 演示环境已就绪（持久化数据与原 DSH 会话）。"
+    open http://127.0.0.1:3047/agent
+    exit 0
+  fi
+  sleep 1
+done
+echo "启动未完成，请查看：$runtime/recovered-3047.log。未初始化或删除任何业务数据。" >&2
+exit 1

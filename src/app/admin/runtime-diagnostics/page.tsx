@@ -1,7 +1,7 @@
 import { AdminGuard } from "@/components/admin/AdminGuard";
-import { AdminWorkspace } from "@/components/admin/AdminWorkspace";
+import { AdminPageFrame } from "@/components/admin/AdminPageFrame";
 import { RuntimeDiagnosticsPanel } from "@/components/admin/RuntimeDiagnosticsPanel";
 
 export default function RuntimeDiagnosticsPage() {
-  return <AdminGuard><main><AdminWorkspace><div className="admin-page-content"><RuntimeDiagnosticsPanel /></div></AdminWorkspace></main></AdminGuard>;
+  return <AdminGuard><AdminPageFrame title="运行诊断" description="只读安全快照；不会启动、恢复或控制 Runtime。"><RuntimeDiagnosticsPanel /></AdminPageFrame></AdminGuard>;
 }

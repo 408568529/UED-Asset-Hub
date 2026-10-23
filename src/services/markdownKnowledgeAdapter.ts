@@ -17,7 +17,7 @@ export function adaptMarkdownKnowledge(item: MarkdownKnowledgeMetadata): Knowled
     tags: item.tags,
     description: item.description,
     updatedAt: item.updatedAt,
-    route: { href: "/knowledge", kind: "internal" },
+    route: { href: isMicroSpec ? `/micro-standards?asset=${encodeURIComponent(item.id)}` : "/knowledge", kind: "internal" },
     owner: item.author,
     specTopic: isMicroSpec ? item.specTopic : undefined,
     specTopicLabel,

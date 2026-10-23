@@ -4,6 +4,7 @@ import { SearchBox } from "@/components/search/SearchBox";
 import { SearchFilters } from "@/components/search/SearchFilters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { knowledgeDetailHref } from "@/components/knowledge/knowledgeLinks";
 import { searchService } from "@/services/searchService";
 import type { SearchAssetType } from "@/types/search";
 
@@ -17,9 +18,18 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
     tags: params.tag ? [params.tag] : undefined
   });
 
+  const returnParams = new URLSearchParams();
+  for (const key of ["q", "type", "tag"] as const) {
+    if (params[key]) returnParams.set(key, params[key]);
+  }
+  const returnTo = returnParams.size ? `/search?${returnParams}` : "/search";
+  const resultHref = (result: (typeof results)[number]) => ["skill", "font", "prompt", "training"].includes(result.type)
+    ? knowledgeDetailHref(result.type as "skill" | "font" | "prompt" | "training", result.id, returnTo)
+    : result.url;
+
   return (
-    <main className="page-shell page-frame">
-      <header className="surface-panel border-t-[3px] border-t-primary p-6 md:p-9">
+    <main className="asset-search-page page-shell page-frame">
+      <header className="asset-search-header surface-panel border-t-[3px] border-t-primary p-6 md:p-9">
         <p className="section-kicker">Asset Search / Global index</p>
         <h1 className="mt-4 text-3xl font-black tracking-[-0.025em] md:text-4xl">搜索真实团队资产</h1>
         <p className="mt-4 max-w-2xl text-base leading-8 text-muted-foreground">搜索结果实时读取产品、规范、Skill、字体、Prompt、培训资料和测试环境元数据。</p>
@@ -32,9 +42,9 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         <span>{results.length} Results</span>
       </div>
 
-      <section className="library-list mt-4">
+      <section className="asset-search-results library-list mt-4">
         {results.map((result) => (
-          <Link key={`${result.type}-${result.id}`} href={result.url} className="library-row group grid gap-5 px-5 py-6 md:grid-cols-[160px_1fr_auto] md:items-center">
+          <Link key={`${result.type}-${result.id}`} href={resultHref(result)} className="library-row group grid gap-5 px-5 py-6 md:grid-cols-[160px_1fr_auto] md:items-center">
             <div>
               <Badge>{result.typeLabel}</Badge>
               <p className="mt-3 font-mono text-xs text-muted-foreground">{result.updatedAt.slice(0, 10)}</p>

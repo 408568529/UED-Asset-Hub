@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { AppChrome } from "@/components/layout/AppChrome";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="zh-CN">
-      <body><AppChrome>{children}</AppChrome></body>
+      <body><AntdRegistry><AppChrome>{children}</AppChrome></AntdRegistry></body>
     </html>
   );
 }

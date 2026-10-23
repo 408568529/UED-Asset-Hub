@@ -196,7 +196,7 @@ async function snapshotAfterFile(root: string, source: string | undefined, targe
   return { snapshot, identity };
 }
 
-async function runFileTransaction(input: { operationType: HaldurDirectoryOperationType; revision: string; operator: string; source?: string; target?: string; mutate: (context: HaldurTransactionContext) => Promise<void>; rollback: (context: HaldurTransactionContext) => Promise<void>; verify: (root: string) => Promise<HaldurDesignSkillSnapshot>; metadata: () => Promise<HaldurMetadataChange>; cleanup?: () => Promise<void> }) {
+async function runFileTransaction(input: { operationType: HaldurDirectoryOperationType; revision: string; operator: string; source?: string; target?: string; mutate: (context: HaldurTransactionContext) => Promise<void>; rollback: (context: HaldurTransactionContext) => Promise<void>; verify: (root: string) => Promise<HaldurDesignSkillSnapshot>; metadata: () => Promise<HaldurMetadataChange>; cleanup?: () => Promise<void>; hasPartialMutation?: () => boolean }) {
   const roots = await getHaldurWritableRoots();
   return withHaldurRootWriteLock(roots.root, async (): Promise<HaldurDirectoryOperationResult> => {
     await assertHaldurNoRecovery(roots.runtimeRoot);
@@ -229,7 +229,7 @@ async function runFileTransaction(input: { operationType: HaldurDirectoryOperati
       return { operationId, snapshot };
     } catch (error) {
       const original = error instanceof HaldurDirectoryOperationError ? error : new HaldurDirectoryOperationError("FILESYSTEM_FAILED", error instanceof Error ? error.message : "Haldur 文件操作失败。", 500);
-      if (!mutated) {
+      if (!mutated && !input.hasPartialMutation?.()) {
         context.journal.status = "rolled-back"; context.journal.errorCode = original.code; context.journal.completedAt = new Date().toISOString();
         await writeHaldurJournal(context).catch(() => undefined);
         await input.cleanup?.().catch(() => undefined);
@@ -300,6 +300,7 @@ export const haldurDesignSkillFileService = {
     let stagingDirectory = "";
     let payload: FileIdentity | undefined;
     let backup = "";
+    let backupMoved = false;
     return runFileTransaction({
       operationType: input.overwrite ? "overwrite-file" : "upload-file", revision: input.revision, operator: input.operator,
       mutate: async (context) => {
@@ -322,6 +323,7 @@ export const haldurDesignSkillFileService = {
           context.journal.backupPath = backup;
           await writeHaldurJournal(context);
           await fs.rename(candidate.target, backup);
+          backupMoved = true;
         }
         try {
           await fs.rename(path.join(stagingDirectory, "payload"), candidate.target);
@@ -336,6 +338,7 @@ export const haldurDesignSkillFileService = {
       },
       verify: async (root) => (await snapshotAfterFile(root, undefined, target, payload)).snapshot,
       metadata: () => updateHaldurFileMetadata(target, { size: payload!.size, hash: payload!.hash, mime: input.mime ?? "application/octet-stream", updatedBy: input.operator, updatedAt: new Date().toISOString() }),
+      hasPartialMutation: () => backupMoved,
       cleanup: async () => { if (stagingDirectory) await fs.rm(stagingDirectory, { recursive: true, force: true }); }
     });
   },

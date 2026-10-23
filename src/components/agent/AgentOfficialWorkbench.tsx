@@ -60,7 +60,7 @@ function configurationMessage(runtime: RuntimeState) {
   }
 }
 
-export function AgentOfficialWorkbench() {
+export function AgentOfficialWorkbench({ canManage = false }: { canManage?: boolean }) {
   const initialCache = useRef<CachedWorkbench | null>(cachedWorkbench && Date.now() - cachedWorkbench.checkedAt < 60_000 ? cachedWorkbench : null);
   const [state, setState] = useState<WorkbenchState>(() => initialCache.current ? { status: "ready", url: initialCache.current.url, generation: initialCache.current.generation } : { status: "loading" });
   const [frameKey, setFrameKey] = useState(0);
@@ -292,11 +292,11 @@ export function AgentOfficialWorkbench() {
   };
 
   if (state.status === "starting") {
-    return <main className="grid min-h-0 flex-1 place-items-center bg-[#101216] p-8 text-sm text-white/65">正在启动 Agent Runtime{state.runtime?.phase ? `：${state.runtime.phase}` : "…"}</main>;
+    return <main className="agent-runtime-status grid min-h-0 flex-1 place-items-center bg-[#101216] p-8 text-sm text-white/65">正在启动 Agent Runtime{state.runtime?.phase ? `：${state.runtime.phase}` : "…"}</main>;
   }
 
   if (state.status === "loading") {
-    return <main className="grid min-h-0 flex-1 place-items-center bg-[#101216] p-8 text-sm text-white/65">正在检查 Agent Runtime…</main>;
+    return <main className="agent-runtime-status grid min-h-0 flex-1 place-items-center bg-[#101216] p-8 text-sm text-white/65">正在检查 Agent Runtime…</main>;
   }
 
   if (state.status === "error") {
@@ -317,14 +317,14 @@ export function AgentOfficialWorkbench() {
               ? "当前 Runtime 状态不能由浏览器安全恢复。请由主机管理员检查运行配置与受管服务。"
               : "Agent Runtime 未能恢复。可以再次执行受管恢复。";
     return (
-      <main className="grid min-h-0 flex-1 place-items-center bg-[#101216] p-8 text-sm text-white/65">
-        <div className="max-w-md space-y-3 border border-white/15 bg-white/[0.03] p-6">
+      <main className="agent-runtime-status grid min-h-0 flex-1 place-items-center bg-[#101216] p-8 text-sm text-white/65">
+        <div className="agent-runtime-status-card max-w-md space-y-3 border border-white/15 bg-white/[0.03] p-6">
           <p className="text-base font-medium text-white">{title}</p>
           <p>{message}</p>
           <div className="flex flex-wrap gap-3">
-            {modelSettingsRequired ? <Link href="/agent/settings" className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">前往模型设置</Link> : null}
+            {canManage && modelSettingsRequired ? <Link href="/agent/settings" className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">前往模型设置</Link> : null}
             {state.kind === "agent-unavailable" ? <button type="button" onClick={() => refreshRuntimeStatus()} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">重新连接</button> : null}
-            {state.kind === "runtime-action" ? <button type="button" onClick={startRuntime} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">{actionLabel}</button> : null}
+            {canManage && state.kind === "runtime-action" ? <button type="button" onClick={startRuntime} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">{actionLabel}</button> : null}
             {state.kind === "status-failed" || configurationRequired || state.kind === "runtime-waiting" || state.kind === "runtime-admin" ? <button type="button" onClick={() => refreshRuntimeStatus()} className="border border-white/30 px-3 py-2 text-sm text-white transition hover:border-lime-300 hover:text-lime-200">重新检查</button> : null}
           </div>
         </div>
@@ -334,7 +334,7 @@ export function AgentOfficialWorkbench() {
 
   return (
     <main className="relative flex min-h-0 flex-1 flex-col bg-[#101216]">
-      {state.status === "reconnecting" ? <div className="absolute inset-0 z-10 grid place-items-center bg-[#101216] p-8 text-sm text-white/65">正在重新连接官方 DSH 工作台…</div> : null}
+      {state.status === "reconnecting" ? <div className="agent-runtime-status absolute inset-0 z-10 grid place-items-center bg-[#101216] p-8 text-sm text-white/65">正在重新连接官方 DSH 工作台…</div> : null}
       <iframe key={frameKey} title="悠鼎 Agent 工作台" src={state.url} onLoad={handleFrameLoad} className="block h-full min-h-0 w-full flex-1 border-0 bg-[#101216]" />
     </main>
   );

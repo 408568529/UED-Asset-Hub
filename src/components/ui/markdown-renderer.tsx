@@ -11,7 +11,7 @@ function safeMarkdownUrl(url: string) {
   return normalized.includes(":") || normalized.startsWith("//") ? "" : url;
 }
 
-export function MarkdownRenderer({ content, className = "" }: { content: string; className?: string }) {
+export function MarkdownRenderer({ content, className = "", resolveLink }: { content: string; className?: string; resolveLink?: (href: string) => string }) {
   const renderedMarkdown = normalizeLegacyEscapedMarkdown(content);
   if (!content) return <p className="text-muted-foreground">（空 Markdown 文档）</p>;
   return (
@@ -20,7 +20,7 @@ export function MarkdownRenderer({ content, className = "" }: { content: string;
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeSanitize]}
         skipHtml
-        urlTransform={safeMarkdownUrl}
+        urlTransform={(href, key) => safeMarkdownUrl(resolveLink && key === "href" ? resolveLink(href) : href)}
         components={{
           h1: ({ children }) => <h1 className="mb-5 mt-8 border-b border-border pb-3 text-3xl font-black tracking-[-0.03em] first:mt-0">{children}</h1>,
           h2: ({ children }) => <h2 className="mb-4 mt-8 border-b border-border pb-2 text-2xl font-black tracking-[-0.025em]">{children}</h2>,

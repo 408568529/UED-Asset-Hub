@@ -47,6 +47,8 @@ async function regularFiles(root) {
 }
 
 export async function deriveInternalRuntimeModuleClosure(sourceRoot, entrypoints) {
+  // Source analysis runs on the build host; manifest verification does not need TypeScript.
+  const { default: ts } = await import("typescript");
   const root = await realpath(sourceRoot);
   const pending = [...entrypoints];
   const visited = new Set();
@@ -64,8 +66,16 @@ export async function deriveInternalRuntimeModuleClosure(sourceRoot, entrypoints
     const details = await lstat(absolute);
     if (!details.isFile() || details.isSymbolicLink()) fail(`runtime module is not a regular file: ${safe}`);
     const source = await readFile(absolute, "utf8");
+    if (path.extname(absolute) === ".json") continue;
+    const sourceFile = ts.createSourceFile(absolute, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+    if (sourceFile.parseDiagnostics.length) fail(`runtime module cannot be parsed: ${safe}`);
     const specifiers = new Set();
-    for (const match of source.matchAll(/(?:\bfrom\s*|\bimport\s*\()\s*["']([^"']+)["']/g)) specifiers.add(match[1]);
+    const visit = (node) => {
+      if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) specifiers.add(node.moduleSpecifier.text);
+      if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments.length === 1 && ts.isStringLiteral(node.arguments[0])) specifiers.add(node.arguments[0].text);
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
     for (const specifier of specifiers) {
       if (!specifier.startsWith(".")) continue;
       const base = path.resolve(path.dirname(absolute), specifier);

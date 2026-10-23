@@ -1,3 +1,4 @@
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { AdminGuard } from "@/components/admin/AdminGuard";
 import { AdminWorkspace } from "@/components/admin/AdminWorkspace";
 import { OperationLogList } from "@/components/admin/OperationLogList";
@@ -9,7 +10,7 @@ export default async function AdminLogsPage() {
   return (
     <AdminGuard>
       <main><AdminWorkspace>
-        <header className="admin-page-header"><div><h1 className="text-lg font-black tracking-[-0.02em]">更新日志</h1><p className="mt-0.5 text-xs text-muted-foreground">记录资产与账号相关的关键操作。</p></div></header>
+        <WorkspacePageHeader className="admin-page-header" title="更新日志" description="记录资产与账号相关的关键操作。" />
         <div className="admin-page-content"><OperationLogList logs={logs} /></div>
       </AdminWorkspace></main>
     </AdminGuard>

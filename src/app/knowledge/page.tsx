@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { KnowledgeWorkspaceDetail, type KnowledgeWorkspaceDetailData } from "@/components/knowledge/KnowledgeWorkspaceDetail";
+import { searchReturnHref } from "@/components/knowledge/knowledgeLinks";
 import { KnowledgeLibraryWorkspace } from "@/components/knowledge/KnowledgeLibraryWorkspace";
 import { fontService } from "@/services/fontService";
 import { knowledgeAggregatorService } from "@/services/knowledgeAggregatorService";
@@ -31,7 +33,7 @@ function parseQuery(params: Record<string, string | string[] | undefined>): Know
   };
 }
 
-function buildListHref(query: KnowledgeLibraryQuery) {
+function buildListHref(query: KnowledgeLibraryQuery, asset?: KnowledgeLibraryQuery["asset"]) {
   const params = new URLSearchParams();
   if (query.section && query.section !== "all") params.set("section", query.section);
   if (query.type) params.set("type", query.type);
@@ -39,6 +41,7 @@ function buildListHref(query: KnowledgeLibraryQuery) {
   if (query.tag) params.set("tag", query.tag);
   if (query.q) params.set("q", query.q);
   if (query.sort && query.sort !== "updated-desc") params.set("sort", query.sort);
+  if (asset) params.set("asset", asset);
   const value = params.toString();
   return value ? `/knowledge?${value}` : "/knowledge";
 }
@@ -75,11 +78,22 @@ async function getWorkspaceDetail(assetKey: KnowledgeLibraryQuery["asset"], fall
 }
 
 export default async function KnowledgePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const query = parseQuery(await searchParams);
-  const result = await knowledgeAggregatorService.getLibrary(query);
+  const params = await searchParams;
+  const oldAsset = typeof params.asset === "string" ? params.asset : "";
+  if (oldAsset.startsWith("micro-spec:")) redirect(`/micro-standards?asset=${encodeURIComponent(oldAsset.slice(11))}`);
+  if (params.type === "micro-spec") redirect("/micro-standards");
+  const query = parseQuery(params);
+  const searchReturn = searchReturnHref(first(params.returnTo));
+  const result = await knowledgeAggregatorService.getLibrary(query, false);
   const allItems = query.asset && !result.items.some((item) => item.key === query.asset)
-    ? await knowledgeAggregatorService.getLibrary()
+    ? await knowledgeAggregatorService.getLibrary({}, false)
     : result;
   const detail = await getWorkspaceDetail(query.asset, allItems);
-  return detail ? <KnowledgeLibraryWorkspace result={result} query={query}><KnowledgeWorkspaceDetail detail={detail} backHref={buildListHref(query)} /></KnowledgeLibraryWorkspace> : <KnowledgeLibraryWorkspace result={result} query={query} />;
+  const articles = detail?.kind === "markdown" ? result.items.filter((item) => item.source === "markdownKnowledgeService" && item.route.kind === "internal") : [];
+  const articleIndex = articles.findIndex((item) => item.key === query.asset);
+  function adjacentArticle(offset: number) {
+    const item = articleIndex < 0 ? undefined : articles[articleIndex + offset];
+    return item ? { title: item.title, href: buildListHref(query, item.key) } : undefined;
+  }
+  return detail ? <KnowledgeLibraryWorkspace result={result} query={query}><KnowledgeWorkspaceDetail detail={detail} backHref={searchReturn ?? buildListHref(query)} previousArticle={adjacentArticle(-1)} nextArticle={adjacentArticle(1)} /></KnowledgeLibraryWorkspace> : <KnowledgeLibraryWorkspace result={result} query={query} />;
 }

@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { normalizeLegacyEscapedMarkdown } from "@/lib/markdown";
-import { TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Segmented } from "antd";
 
 function safeMarkdownUrl(url: string) {
   const normalized = url.trim().toLocaleLowerCase();
@@ -13,7 +13,7 @@ function safeMarkdownUrl(url: string) {
   return normalized.includes(":") || normalized.startsWith("//") ? "" : url;
 }
 
-export function MarkdownKnowledgeDetail({ content }: { content: string | null }) {
+export function MarkdownKnowledgeDetail({ content, resolveLink }: { content: string | null; resolveLink?: (href: string) => string }) {
   const [view, setView] = useState<"rendered" | "source">("rendered");
 
   if (content === null) return <p className="px-4 py-6 text-sm text-amber-800 md:px-6">正文文件缺失。</p>;
@@ -21,26 +21,23 @@ export function MarkdownKnowledgeDetail({ content }: { content: string | null })
 
   return (
     <section>
-      <header className="flex min-h-14 items-center justify-between gap-4 border-b border-border px-4 md:px-6">
-        <h2 className="text-sm font-black">Markdown 正文</h2>
-        <TabsList className="gap-5 border-b-0">
-          <TabsTrigger active={view === "rendered"} onClick={() => setView("rendered")}>渲染视图</TabsTrigger>
-          <TabsTrigger active={view === "source"} onClick={() => setView("source")}>源码视图</TabsTrigger>
-        </TabsList>
+      <header className="knowledge-reading-toolbar">
+        <h2 className="sr-only">Markdown 正文</h2>
+        <Segmented value={view} onChange={(value) => setView(value as "rendered" | "source")} aria-label="Markdown 查看方式" options={[{ value: "rendered", label: "预览" }, { value: "source", label: "Markdown" }]} />
       </header>
       {view === "source" ? (
-        <pre key="source" className="markdown-source-view workspace-section-transition m-4 overflow-x-auto whitespace-pre-wrap border border-border p-4 font-mono text-[13px] leading-6 md:m-6">{content || "（空 Markdown 文档）"}</pre>
+        <pre key="source" className="markdown-source-view workspace-section-transition overflow-x-auto whitespace-pre-wrap border border-border p-4 font-mono text-[13px] leading-6">{content || "（空 Markdown 文档）"}</pre>
       ) : (
-        <div key="rendered" className="workspace-section-transition markdown-reading max-w-none px-4 py-6 text-[15px] leading-7 text-foreground md:px-8 md:py-8">
+        <div key="rendered" className="workspace-section-transition markdown-reading text-[15px] leading-7 text-foreground">
           {content ? (
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeSanitize]}
               skipHtml
-              urlTransform={safeMarkdownUrl}
+              urlTransform={(href, key) => safeMarkdownUrl(resolveLink && key === "href" ? resolveLink(href) : href)}
               components={{
-                h1: ({ children }) => <h1 className="mb-5 mt-8 border-b border-border pb-3 text-3xl font-black tracking-[-0.03em] first:mt-0">{children}</h1>,
-                h2: ({ children }) => <h2 className="mb-4 mt-8 border-b border-border pb-2 text-2xl font-black tracking-[-0.025em]">{children}</h2>,
+                h1: ({ children }) => <h1 className="mb-5 mt-8 text-3xl font-black tracking-[-0.03em] first:mt-0">{children}</h1>,
+                h2: ({ children }) => <h2 className="mb-4 mt-8 text-2xl font-black tracking-[-0.025em]">{children}</h2>,
                 h3: ({ children }) => <h3 className="mb-3 mt-7 text-xl font-black">{children}</h3>,
                 h4: ({ children }) => <h4 className="mb-2 mt-6 text-lg font-black">{children}</h4>,
                 h5: ({ children }) => <h5 className="mb-2 mt-5 text-base font-black">{children}</h5>,

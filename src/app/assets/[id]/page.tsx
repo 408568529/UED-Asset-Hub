@@ -20,8 +20,8 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
   const related = await assetService.getRelatedAssets(asset);
 
   return (
-    <div className="mx-auto max-w-6xl px-5 py-12">
-      <div className="overflow-hidden rounded-[2rem] bg-white shadow-card">
+    <div className="legacy-page">
+      <div className="overflow-hidden rounded-[var(--radius-container)] bg-white shadow-card">
         <div className="relative aspect-[21/9] min-h-72">
           <Image src={asset.coverUrl} alt={asset.title} fill className="object-cover" priority />
         </div>
@@ -58,7 +58,7 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
         </div>
       </div>
 
-      <section className="mt-10 rounded-[2rem] border border-dashed border-border bg-white/70 p-6">
+      <section className="mt-10 rounded-[var(--radius-container)] border border-dashed border-border bg-white/70 p-6">
         <h2 className="text-2xl font-bold">评论区域</h2>
         <p className="mt-2 text-sm text-muted-foreground">后续接入登录、评论、权限和消息通知后，这里将展示团队讨论与补充案例。</p>
       </section>

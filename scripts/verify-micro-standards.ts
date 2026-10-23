@@ -1,0 +1,54 @@
+import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { MicroStandardStore, initializeMicroRoot, microSha, microSegment } from "../src/services/microStandardStore";
+import { inventoryMicroStandards, migrateMicroStandards } from "./migrate-micro-standards";
+import type { MarkdownKnowledgeMetadata } from "../src/types/markdownKnowledge";
+async function main() {
+  const root = await fs.mkdtemp("/private/tmp/ued-micro-acceptance-"), old = path.join(root, "old-data"), target = path.join(root, "micro-standards");
+  await fs.mkdir(path.join(old, "knowledge"), { recursive: true }); await fs.mkdir(path.join(old, "meta"));
+  const stamp = "2026-10-16T01:02:03Z";
+  for (let n = 0; n < 3; n++) {
+    const metadata = { schemaVersion: 1, id: `test_${n}`, documentType: "micro-spec", title: n < 2 ? "中文同名规范" : "超长".repeat(100), description: "合成规范", category: "测试", tags: ["合成"], author: "测试", createdAt: stamp, updatedAt: stamp, contentFormat: "markdown", status: "published", legacySource: null, legacyId: null, specTopic: n === 2 ? "form" : "layout", relatedScopes: ["portal"], customCitation: "asset-hub://knowledge/micro-spec/test_0" };
+    const dir = path.join(old, "knowledge", metadata.id); await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, "metadata.json"), JSON.stringify(metadata)); await fs.writeFile(path.join(dir, "content.md"), `# 规则 ${n}\n\n[旧引用](/knowledge?asset=micro-spec:test_0)\n金额￥10.00。\n`);
+  }
+  const checks: string[] = [];
+  const inventory = await inventoryMicroStandards(old); assert.equal(inventory.report.count, 3); assert.deepEqual(inventory.report.errors, []); checks.push("inventory-all-metadata");
+  const before = JSON.stringify(inventory.report);
+  await migrateMicroStandards(old, target, false); await assert.rejects(fs.access(target)); checks.push("dry-run-no-target-write");
+  await migrateMicroStandards(old, target, true); const store = new MicroStandardStore(target);
+  assert.equal((await store.list()).documents.length, 3); checks.push("copy-verify-count-hash-full-metadata");
+  const indexHash = microSha(await fs.readFile(path.join(target, ".micro-index.json")));
+  await migrateMicroStandards(old, target, true); assert.equal(microSha(await fs.readFile(path.join(target, ".micro-index.json"))), indexHash); checks.push("idempotent-rerun");
+  assert.equal(JSON.stringify((await inventoryMicroStandards(old)).report), before); checks.push("legacy-unchanged");
+  const first = (await store.get("test_0"))!;
+  await assert.rejects(store.put({ metadata: { ...first.metadata, id: "newdoc" }, content: "duplicate" }), /同名/); checks.push("duplicate-create-refused");
+  await assert.rejects(store.put({ metadata: { ...first.metadata, specTopic: "absent" } as MarkdownKnowledgeMetadata, content: "no" }), /已存在/); checks.push("existing-topic-only");
+  await assert.rejects(store.topic("delete", "layout"), /空主题/); checks.push("nonempty-topic-delete-refused");
+  for (const name of ["../x", "CON", "a/b", "a\\b", "a%2fb", "a.", "e\u0301", ".hidden"]) assert.throws(() => microSegment(name)); checks.push("traversal-reserved-nfc-paths");
+  await store.topic("create", "新主题"); await store.topic("rename", "新主题", "重命名主题"); await store.topic("delete", "重命名主题"); checks.push("empty-folder-lifecycle");
+  const revision = (await store.list()).revision;
+  await store.put({ ...first, content: "# updated" }, revision); await assert.rejects(store.put(first, revision), /已更新/); checks.push("stale-editor-rejected");
+  await assert.rejects(migrateMicroStandards(old, target, true), /目标资产已变化/); checks.push("migration-never-overwrites-updated-target");
+  const healthy = (await store.get("test_0"))!;
+  const failed = new MicroStandardStore(target, [], phase => { if (phase === "files-written") throw Error("injected-interruption"); });
+  await assert.rejects(failed.put({ ...healthy, content: "CORRUPT" }), /injected/); assert.deepEqual(await store.get("test_0"), healthy); checks.push("failure-injection-rolls-back-file-and-index");
+  const childScript = path.join(root, "interrupt.ts");
+  await fs.writeFile(childScript, `import {MicroStandardStore} from ${JSON.stringify(path.resolve("src/services/microStandardStore.ts"))}; (async()=>{const s=new MicroStandardStore(${JSON.stringify(target)},[],()=>process.exit(91));const d=await s.get('test_0');await s.put({...d,content:'CRASH'});})()`);
+  const crash = spawnSync(path.resolve("node_modules/.bin/tsx"), [childScript], { cwd: process.cwd(), encoding: "utf8" }); assert.equal(crash.status, 91, crash.stderr);
+  assert.deepEqual(await store.get("test_0"), healthy); checks.push("crash-journal-and-stale-lock-recovery");
+  const beforeRename = (await store.get("test_1"))!;
+  await store.topic("rename", "layout", "布局主题"); const renamed = (await store.get("test_1"))!;
+  assert.equal(renamed.metadata.id, beforeRename.metadata.id); assert.equal(renamed.content, beforeRename.content); assert.equal(renamed.metadata.specTopic, "布局主题"); checks.push("nonempty-topic-rename-id-content-preserved");
+  await store.put({ ...renamed, metadata: { ...renamed.metadata, specTopic: "form" } as MarkdownKnowledgeMetadata }); checks.push("document-move-stable-id");
+  const symlink = path.join(root, "link-root"); await fs.symlink(target, symlink); await assert.rejects(new MicroStandardStore(symlink).list(), /链接/); checks.push("symlink-root-refused");
+  await assert.rejects(new MicroStandardStore(path.join(root, "gone")).list()); checks.push("missing-root-does-not-initialize");
+  const invalid = path.join(old, "knowledge", "bad"); await fs.mkdir(invalid); await fs.writeFile(path.join(invalid, "metadata.json"), JSON.stringify({ documentType: "micro-spec", id: "bad" }));
+  const invalidReport = await inventoryMicroStandards(old); assert.equal(invalidReport.report.errors.length, 1); await assert.rejects(migrateMicroStandards(old, path.join(root, "blocked"), true), /blocked/); checks.push("invalid-metadata-blocks-whole-migration");
+  const overlap = path.join(old, "child"); await fs.rm(invalid, { recursive: true }); await assert.rejects(migrateMicroStandards(old, overlap, true), /overlaps/); checks.push("overlapping-root-refused");
+  const output = { status: "PASS", checks, count: checks.length, syntheticRoot: root, migrationCount: 3, evidence: inventory.report };
+  const report = process.argv[2]; if (report) await fs.writeFile(report, JSON.stringify(output, null, 2)); console.log(JSON.stringify({ status: "PASS", checks: checks.length, syntheticRoot: root }));
+}
+main().catch(e => { console.error(e); process.exitCode = 1; });

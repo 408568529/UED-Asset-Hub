@@ -10,6 +10,7 @@ export const primaryNavigation = [
   { name: "首页", href: "/" },
   agentModule,
   { name: "Haldur-Design-Skill", href: "/haldur-design-skill" },
+  { name: "微规范", href: "/micro-standards" },
   { name: "知识库", href: "/knowledge" },
   { name: "测试环境", href: "/test-environments" }
 ] as const;

@@ -2,6 +2,6 @@ import { NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/adminAuth";
 
 export async function GET(request: Request) {
-  if (!isAdminRequest(request)) return NextResponse.json({ message: "未登录或登录已失效。" }, { status: 401 });
+  if (!isAdminRequest(request) && process.env.AGENT_PUBLIC_ACCESS !== "true") return NextResponse.json({ message: "未登录或登录已失效。" }, { status: 401 });
   return NextResponse.json({ url: "/agent-runtime/" });
 }

@@ -96,7 +96,7 @@ export function RecentUpdatesSection({
     .slice(0, 6);
 
   return (
-    <section className={isDark ? "bg-[#080b0a] text-[#eef1e8]" : ""}>
+    <section className={isDark ? "home-recent-updates bg-[#080b0a] text-[#eef1e8]" : ""}>
       <div className="page-shell py-16 md:py-20">
       <Reveal>
         <div className={`mb-8 grid gap-6 border-t pt-6 md:grid-cols-[10rem_1fr] md:items-end ${isDark ? "border-white/15" : "border-border"}`}>
@@ -108,7 +108,7 @@ export function RecentUpdatesSection({
                 直接读取本地数据文件，展示最新更新的产品、Skill、字体、Prompt 与规范资产。
                 </p>
               </div>
-              <Link href="/search" className={`inline-flex items-center gap-2 text-sm font-bold transition ${isDark ? "hover:text-[#b7f52b]" : "hover:text-muted-foreground"}`}>查看全部 <ArrowRight size={15} /></Link>
+              <Link href="/search" className={`inline-flex items-center gap-2 text-sm font-bold transition ${isDark ? "hover:text-[#2ccc6c]" : "hover:text-muted-foreground"}`}>查看全部 <ArrowRight size={15} /></Link>
             </div>
         </div>
       </Reveal>
@@ -119,7 +119,7 @@ export function RecentUpdatesSection({
             <span className="text-lg font-black transition-transform duration-200 group-hover:translate-x-1 md:text-xl">{item.name}</span>
             <span className={`font-mono text-xs ${isDark ? "text-white/42" : "text-muted-foreground"}`}>{item.type}</span>
             <span className={`font-mono text-xs tabular-nums ${isDark ? "text-white/42" : "text-muted-foreground"}`}>{item.updatedAt.slice(0, 10)}</span>
-            <ArrowUpRight size={16} className={`hidden transition md:block ${isDark ? "text-white/42 group-hover:text-[#b7f52b]" : "text-muted-foreground group-hover:text-foreground"}`} />
+            <ArrowUpRight size={16} className={`hidden transition md:block ${isDark ? "text-white/42 group-hover:text-[#2ccc6c]" : "text-muted-foreground group-hover:text-foreground"}`} />
           </UpdateLink>
         ))}
         {!updates.length ? (

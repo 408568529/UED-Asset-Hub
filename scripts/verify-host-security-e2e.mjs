@@ -242,7 +242,7 @@ async function main() {
 
     mark("gateway", "gateway_health_failed");
     const mcp = await probeKnowledgeGatewayMcp({ endpoint: `http://127.0.0.1:${gatewayPort}/mcp` });
-    assert.deepEqual(mcp.tools, ["get_knowledge_asset", "search_knowledge", "search_micro_specs"]);
+    assert.deepEqual(mcp.tools, ["get_haldur_skill_document", "get_knowledge_asset", "search_haldur_skill", "search_knowledge", "search_micro_specs"]);
 
     mark("runtime-status", "runtime_metadata_unexpected");
     const [lifecycle, metadata] = await Promise.all([

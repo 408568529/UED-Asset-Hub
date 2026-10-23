@@ -92,11 +92,11 @@ export function BaseDataManager() {
   }
 
   return (
-    <div className="grid gap-10 lg:grid-cols-[13rem_minmax(0,1fr)]">
-      <aside className="border-l border-border">
-        {groups.map((group) => <div key={group.label} className="mb-6"><p className="mb-2 pl-4 font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">{group.label}</p>{group.types.map((item) => <button key={item.type} type="button" onClick={() => setType(item.type)} className={`block w-full border-l-2 px-4 py-2 text-left text-sm ${type === item.type ? "-ml-px border-foreground bg-muted font-bold" : "-ml-px border-transparent text-muted-foreground hover:text-foreground"}`}>{item.label}</button>)}</div>)}
+    <div className="base-data-workspace grid min-w-0 grid-cols-[minmax(0,1fr)] gap-10 lg:grid-cols-[13rem_minmax(0,1fr)]">
+      <aside className="workspace-subnav">
+        {groups.map((group) => <div key={group.label} className="mb-6"><p className="mb-2 px-2.5 text-xs text-muted-foreground">{group.label}</p>{group.types.map((item) => <button key={item.type} type="button" onClick={() => setType(item.type)} aria-pressed={type === item.type} className={`workspace-nav-link ${type === item.type ? "workspace-nav-link-active" : ""}`}>{item.label}</button>)}</div>)}
       </aside>
-      <section>
+      <section className="min-w-0">
         <div className="flex flex-col gap-4 border-b border-border pb-5 md:flex-row md:items-end md:justify-between">
           <div><p className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">Base Data</p><h2 className="mt-2 text-2xl font-black">{selectedLabel}</h2></div>
           <div className="flex w-full gap-2 md:w-auto"><Input value={newName} onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void create(); }} placeholder="输入名称后新建" className="md:w-64" /><Button type="button" onClick={() => void create()} disabled={!newName.trim()}><Plus size={16} />新建</Button></div>

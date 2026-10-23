@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { AdminGuard } from "@/components/admin/AdminGuard";
 import { KnowledgeAuthoringWorkspace } from "@/components/knowledge/KnowledgeAuthoringWorkspace";
 import { MarkdownKnowledgeForm } from "@/components/knowledge/MarkdownKnowledgeForm";
@@ -14,6 +15,7 @@ export default async function NewMarkdownKnowledgePage({ searchParams }: { searc
   const params = await searchParams;
   const value = params.type;
   const documentType = markdownKnowledgeDocumentTypes.includes(value as MarkdownKnowledgeDocumentType) ? value as MarkdownKnowledgeDocumentType : "knowledge";
+  if (documentType === "micro-spec") redirect("/micro-standards?edit=new");
   const returnHref = getKnowledgeReturnHref(params.returnTo);
   return (
     <AdminGuard>

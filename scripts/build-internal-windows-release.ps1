@@ -16,6 +16,17 @@ $output = [System.IO.Path]::GetFullPath($OutputDirectory)
 foreach ($target in @($build, $output)) { if (Test-Path -LiteralPath $target) { throw 'BuildRoot and OutputDirectory must be new, unique directories.' } }
 if ($build.Equals($output, [System.StringComparison]::OrdinalIgnoreCase) -or $build.StartsWith($output.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase) -or $output.StartsWith($build.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase)) { throw 'BuildRoot and OutputDirectory must be separate.' }
 
+# Serialize maintainer builds and record ownership before any build work is created.
+$resourceTool=Join-Path $PSScriptRoot 'competition-build-resources.mjs'
+$resourceNode=(Get-Command node.exe -ErrorAction Stop).Source
+& $resourceNode $resourceTool validate $build
+if($LASTEXITCODE -ne 0){
+  $buildArguments=@('-NoProfile','-NonInteractive','-File',$PSCommandPath)
+  foreach($entry in $PSBoundParameters.GetEnumerator()){$buildArguments+=('-'+$entry.Key);$buildArguments+=[string]$entry.Value}
+  & $resourceNode $resourceTool run (Split-Path -Parent $build) $build 'source,payload,toolchain,temp' (Get-Process -Id $PID).Path @buildArguments
+  if($LASTEXITCODE -ne 0){throw 'Isolated build failed; resource record and diagnostics retained.'}
+  return
+}
 $sourceIdentity = Get-Content -LiteralPath $SourceInputPath -Raw | ConvertFrom-Json
 $bundleHash = (Get-FileHash -LiteralPath $SourceBundlePath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($sourceIdentity.schemaVersion -ne 1 -or $sourceIdentity.channel -ne 'INTERNAL_RELEASE_INPUT' -or $sourceIdentity.commit -ne $SourceCommit -or $sourceIdentity.bundleSha256 -ne $bundleHash) { throw 'Source bundle identity does not match source-input.json.' }
@@ -24,13 +35,14 @@ if (-not $git) { throw 'Git is required in the Windows build environment.' }
 
 $null = [System.IO.Directory]::CreateDirectory($build)
 $null = [System.IO.Directory]::CreateDirectory($output)
+$env:TEMP=Join-Path $build 'temp';$env:TMP=$env:TEMP;$null=[IO.Directory]::CreateDirectory($env:TEMP)
 Import-Module (Join-Path $PSScriptRoot 'Internal-Release.Common.psm1') -Force
 Assert-NoReparseAncestor $build
 Assert-NoReparseAncestor $output
 $sourceRoot = Join-Path $build 'source'
 $payloadRoot = Join-Path $build 'payload'
 $toolchainRoot = Join-Path $build 'toolchain'
-$nodeModulesCache = Join-Path $build 'npm-cache'
+$nodeModulesCache = Join-Path $env:UED_BUILD_CACHE_ROOT 'npm-cache'
 $npmUserConfig = Join-Path $build 'npmrc'
 $npmGlobalConfig = Join-Path $build 'npm-globalrc'
 $npmBootstrapRoot = Join-Path $toolchainRoot 'npm-bootstrap'
@@ -154,9 +166,15 @@ $dshInfoPath = Join-Path $build 'dsh-info.json'
 
 Invoke-Checked $nodeExe @($npmCli, 'ci', '--ignore-scripts', '--no-audit', '--no-fund') $sourceRoot
 Invoke-Checked $nodeExe @($npmCli, 'run', 'build') $sourceRoot
+# Next regenerates this declaration; restore only this isolated build clone's tracked input.
+$originalNextEnv = ((& $git.Source -C $sourceRoot show 'HEAD:next-env.d.ts') -join "`n") + "`n"
+if ($LASTEXITCODE -ne 0) { throw 'Could not read the committed Next declaration.' }
+[IO.File]::WriteAllText((Join-Path $sourceRoot 'next-env.d.ts'), $originalNextEnv, [Text.UTF8Encoding]::new($false))
 foreach ($script in @('build-windows-job-helper.mjs','build-windows-pipe-security-adapter.mjs','build-windows-dpapi-credential-helper.mjs')) {
   Invoke-Checked $nodeExe @("scripts/$script", '--mode', 'developer-source-output') $sourceRoot
 }
+$closurePath = Join-Path $build 'runtime-closure.json'
+Invoke-Checked $nodeExe @('scripts/internal-release-contract.mjs', 'closure', '--root', $sourceRoot, '--output', $closurePath) $sourceRoot
 Invoke-Checked $nodeExe @($npmCli, 'prune', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund') $sourceRoot
 
 $null = [System.IO.Directory]::CreateDirectory($payloadRoot)
@@ -167,12 +185,11 @@ if (Test-Path -LiteralPath (Join-Path $sourceRoot 'public') -PathType Container)
 Remove-Item -LiteralPath (Join-Path $payloadRoot 'node_modules') -Recurse -Force -ErrorAction SilentlyContinue
 Copy-RegularTree (Join-Path $sourceRoot 'node_modules') (Join-Path $payloadRoot 'node_modules') -SkipBin
 
-$closurePath = Join-Path $build 'runtime-closure.json'
-Invoke-Checked $nodeExe @('scripts/internal-release-contract.mjs', 'closure', '--root', $sourceRoot, '--output', $closurePath) $sourceRoot
 $closure = Get-Content -LiteralPath $closurePath -Raw | ConvertFrom-Json
 foreach ($relative in $closure) { Copy-RegularFile (Join-Path $sourceRoot $relative) (Join-Path $payloadRoot ($relative.Replace('/', '\'))) }
 foreach ($relative in @(
-  'scripts/internal-release-contract.mjs', 'scripts/internal-release-preflight.mjs', 'scripts/start-internal-release.ps1', 'scripts/start-current-internal-release.ps1', 'scripts/install-internal-dsh-runtime.ps1', 'scripts/verify-dsh-runtime-source.mjs', 'scripts/Internal-Release.Common.psm1',
+  'scripts/internal-release-contract.mjs', 'scripts/internal-release-preflight.mjs', 'scripts/host-security-preflight.mjs', 'scripts/start-internal-release.ps1', 'scripts/start-current-internal-release.ps1', 'scripts/install-internal-dsh-runtime.ps1', 'scripts/verify-dsh-runtime-source.mjs', 'scripts/Internal-Release.Common.psm1',
+  'agent-integration/dsh/genui-client-bootstrap/package.json', 'agent-integration/dsh/genui-client-bootstrap/index.mjs',
   'agent-integration/scripts/dsh-source-validator.mjs', 'agent-integration/dsh/version.json', 'agent-integration/dsh/genui-plugin.json', 'agent-integration/scripts/genui-client-load-liveness.mjs', 'agent-integration/dsh/packages/dsh-plugin-genui-0.15.1.tgz', 'agent-integration/dsh/asset-hub-agent.overlay.yml', 'agent-integration/dsh/agent-presets/asset-hub-restricted/agent.cordis.yml',
   'agent-integration/dsh/agent-presets/asset-hub-restricted/preset.yml', 'agent-integration/dsh/agent-presets/asset-hub-genui-restricted/agent.cordis.yml', 'agent-integration/dsh/agent-presets/asset-hub-genui-restricted/preset.yml', 'service/windows/internal-runtime-config.example.psd1', 'INTERNAL-RELEASE-README.md'
 )) { Copy-RegularFile (Join-Path $sourceRoot $relative) (Join-Path $payloadRoot ($relative.Replace('/', '\'))) }

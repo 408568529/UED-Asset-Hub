@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { WorkspaceNavLink } from "@/components/layout/WorkspaceNavLink";
 import { usePathname, useRouter } from "next/navigation";
 import { Activity, Boxes, History, Settings, Upload, Wrench } from "lucide-react";
 import { Select } from "@/components/ui/select";
@@ -28,7 +28,7 @@ export function AdminTabs() {
   const current = getCurrentTab(pathname);
 
   return (
-    <nav aria-label="管理模块导航">
+    <nav aria-label="管理模块导航" className="admin-sidebar-nav">
       <div className="lg:hidden">
         <p className="mb-2 font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">当前模块</p>
         <Select value={current.href} onChange={(event) => router.push(event.target.value)}>
@@ -36,14 +36,14 @@ export function AdminTabs() {
         </Select>
       </div>
       <div className="hidden lg:block">
-        <p className="mb-4 px-3 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">管理工作区</p>
-        <div className="grid gap-5">
+        <p className="admin-nav-title">管理工作区</p>
+        <div className="admin-nav-groups">
           {groups.map((group) => <div key={group.label}>
-            <p className="mb-1.5 px-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{group.label}</p>
+            <p className="admin-nav-group-title">{group.label}</p>
             <div className="grid gap-0.5">{group.items.map((tab) => {
               const Icon = tab.icon;
               const active = tab.href === "/admin" ? pathname === "/admin" : current.href === tab.href;
-              return <Link key={tab.href} href={tab.href} className={`relative flex min-h-9 items-center gap-3 border border-transparent px-3 text-[13px] transition-colors before:absolute before:inset-y-2 before:left-0 before:w-0.5 ${active ? "border-border bg-[hsl(var(--surface))] font-bold text-foreground before:bg-primary" : "text-muted-foreground hover:bg-[hsl(var(--surface)/0.7)] hover:text-foreground"}`}><Icon size={15} strokeWidth={1.7} /><span>{tab.label}</span></Link>;
+              return <WorkspaceNavLink key={tab.href} href={tab.href} active={active}><Icon size={16} strokeWidth={1.7} aria-hidden="true" /><span>{tab.label}</span></WorkspaceNavLink>;
             })}</div>
           </div>)}
         </div>

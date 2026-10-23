@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { AssetFormWorkspace } from "@/components/admin/AssetFormWorkspace";
@@ -11,7 +12,7 @@ export function AdminPageFrame({ title, description, actions, children, contentL
         <div className="admin-authoring-content workspace-content-transition">
           <header className="admin-authoring-header">
             <Link href={returnHref} className="inline-flex min-h-9 items-center gap-2 text-sm font-bold text-muted-foreground transition hover:text-foreground"><ArrowLeft size={16} />{returnLabel}</Link>
-            <div className="mt-5"><h1 className="text-xl font-black tracking-[-0.025em]">{title}</h1>{description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}</div>
+            <WorkspacePageHeader className="mt-5" title={title} description={description} actions={actions} />
           </header>
           <AssetFormWorkspace>{children}</AssetFormWorkspace>
         </div>
@@ -22,10 +23,7 @@ export function AdminPageFrame({ title, description, actions, children, contentL
   return (
     <main>
       <AdminWorkspace>
-        <header className="admin-page-header">
-          <div><h1 className="text-lg font-black tracking-[-0.02em]">{title}</h1>{description ? <p className="mt-0.5 text-xs text-muted-foreground">{description}</p> : null}</div>
-          {actions}
-        </header>
+        <WorkspacePageHeader className="admin-page-header" title={title} description={description} actions={actions} />
         <div className="admin-page-content">{children}</div>
       </AdminWorkspace>
     </main>

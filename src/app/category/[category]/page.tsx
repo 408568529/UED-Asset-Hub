@@ -20,14 +20,14 @@ export default async function CategoryPage({ params }: { params: Promise<{ categ
   const tags = Array.from(new Set(assets.flatMap((asset) => asset.tags.map((tag) => tag.name))));
 
   return (
-    <div className="mx-auto max-w-7xl px-5 py-12">
-      <div className="rounded-[2rem] border border-white/70 bg-white/80 p-8 shadow-card">
+    <div className="legacy-page">
+      <div className="rounded-[var(--radius-container)] border border-white/70 bg-white/80 p-8 shadow-card">
         <Badge>{meta.tone}</Badge>
         <h1 className="mt-4 text-5xl font-black">{meta.name}</h1>
         <p className="mt-4 max-w-3xl text-base leading-8 text-muted-foreground">{meta.description}</p>
       </div>
 
-      <div className="my-8 flex flex-col gap-4 rounded-[1.5rem] bg-white/70 p-4 shadow-card md:flex-row md:items-center md:justify-between">
+      <div className="my-8 flex flex-col gap-4 rounded-[var(--radius-container)] bg-white/70 p-4 shadow-card md:flex-row md:items-center md:justify-between">
         <div className="flex flex-wrap gap-2">
           <Badge className="border-foreground bg-foreground text-white">全部</Badge>
           {tags.map((tag) => (

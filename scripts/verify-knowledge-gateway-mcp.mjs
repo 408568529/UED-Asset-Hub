@@ -13,7 +13,7 @@ function gatewayCitation(assetType, id, overrides = {}) {
     assetType,
     id,
     title: "Gateway fixture",
-    href: `/knowledge?asset=${encodeURIComponent(`${assetType}:${id}`)}`,
+    href: assetType === "micro-spec" ? `/micro-standards?asset=${encodeURIComponent(id)}` : `/knowledge?asset=${encodeURIComponent(`${assetType}:${id}`)}`,
     source: "markdownKnowledgeService",
     updatedAt: "2026-08-29T00:00:00.000Z",
     ...overrides
@@ -68,9 +68,10 @@ const gateway = await startServer((request, response) => {
   const invalidCitationKey = request.url?.includes("invalid-citation-key");
   const externalCitationHref = request.url?.includes("external-citation-href");
   const metadataOnly = request.url?.includes("/assets/sop/");
+  const microSpec = request.url?.includes("/micro-specs/search");
   const payload = request.url?.includes("/assets/")
     ? { asset: asset(metadataOnly ? "sop" : "knowledge", metadataOnly ? "sop-fixture" : "knowledge-fixture", metadataOnly ? "metadata_only" : "full", invalidCitationKey ? { key: "knowledge:invalid" } : externalCitationHref ? { href: "https://example.test/knowledge" } : undefined), hasContent: !metadataOnly, truncated: !metadataOnly, ...(metadataOnly ? {} : { content: "Returned excerpt only" }), diagnostics: [], partial: false }
-    : { status: "ok", items: [{ ...asset("knowledge", "knowledge-fixture", "full"), relevance: { score: 200, matchedFields: ["content"], matchSource: "content" } }], diagnostics: [], partial: false };
+    : { status: "ok", items: [{ ...asset(microSpec ? "micro-spec" : "knowledge", microSpec ? "micro-fixture" : "knowledge-fixture", "full"), relevance: { score: 200, matchedFields: ["content"], matchSource: "content" } }], diagnostics: [], partial: false };
   response.writeHead(200, { "Content-Type": "application/json" });
   response.end(JSON.stringify(payload));
 });
@@ -90,7 +91,7 @@ try {
   const mcpUrl = `http://127.0.0.1:${mcpPort}/mcp`;
   const list = await waitFor(mcpUrl);
   const tools = list.json.result.tools;
-  assert.deepEqual(tools.map((tool) => tool.name).sort(), ["get_knowledge_asset", "search_knowledge", "search_micro_specs"]);
+  assert.deepEqual(tools.map((tool) => tool.name).sort(), ["get_haldur_skill_document", "get_knowledge_asset", "search_haldur_skill", "search_knowledge", "search_micro_specs"]);
   for (const tool of tools) {
     assert.ok(tool.outputSchema, `${tool.name} must publish an outputSchema`);
     assert.match(tool.description, /discovery|contentStatus|citation/i);
@@ -109,6 +110,9 @@ try {
   assert.equal("content" in search.json.result.structuredContent.items[0], false);
   assert.match(search.json.result.structuredContent.items[0].citation.key, /^asset-hub:\/\/knowledge\/knowledge\/knowledge-fixture$/);
   assert.match(search.json.result.structuredContent.items[0].citation.href, /^\/knowledge\?asset=/);
+  const micro = await post(mcpUrl, { jsonrpc: "2.0", id: "micro", method: "tools/call", params: { name: "search_micro_specs", arguments: {} } }, list.sessionId);
+  assert.equal(micro.json.result.isError, undefined);
+  assert.equal(micro.json.result.structuredContent.items[0].citation.href, "/micro-standards?asset=micro-fixture");
   const truncated = await post(mcpUrl, { jsonrpc: "2.0", id: "truncated", method: "tools/call", params: { name: "get_knowledge_asset", arguments: { assetType: "knowledge", id: "knowledge-fixture" } } }, list.sessionId);
   assert.equal(truncated.json.result.structuredContent.asset.contentStatus, "full");
   assert.equal(truncated.json.result.structuredContent.hasContent, true);

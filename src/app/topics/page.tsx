@@ -5,7 +5,7 @@ export default async function TopicsPage() {
   const topics = await topicService.getTopics();
 
   return (
-    <div className="mx-auto max-w-7xl px-5 py-12">
+    <div className="legacy-page">
       <div className="mb-8">
         <p className="text-sm font-medium text-primary">Curated collections</p>
         <h1 className="mt-3 text-5xl font-black">专题</h1>

@@ -29,6 +29,6 @@ export function RuntimeDiagnosticsPanel() {
     catch { setMessage("复制失败，请手动复制。"); }
   };
   const actions = <div className="flex gap-2"><Button type="button" variant="outline" disabled={loading} onClick={() => void load()}><RefreshCw size={15} />刷新</Button>{payload ? <Button type="button" variant="outline" onClick={() => void copy()}><Copy size={15} />复制安全报告</Button> : null}</div>;
-  if (!payload) return <section className="border border-border px-5 py-5"><div className="flex items-center justify-between gap-3"><div><h2 className="text-base font-black">运行诊断</h2><p className="mt-2 text-sm text-muted-foreground">{loading ? "正在读取当前安全诊断快照…" : message}</p></div>{actions}</div></section>;
-  return <div className="grid gap-4"><section className="border border-border px-5 py-5"><div className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-lg font-black">运行诊断</h1><p className="mt-1 text-xs text-muted-foreground">只读安全快照；不会启动、恢复或控制 Runtime。</p></div>{actions}</div></section><RuntimeDiagnosticsView payload={payload} message={message} /></div>;
+  if (!payload) return <section className="workspace-state-panel"><p role="status">{loading ? "正在读取当前安全诊断快照…" : message}</p>{actions}</section>;
+  return <div className="grid gap-4"><div className="flex flex-wrap justify-end gap-2">{actions}</div><RuntimeDiagnosticsView payload={payload} message={message} /></div>;
 }

@@ -10,7 +10,7 @@ export function FontPreview({ font, variant = "default" }: { font: FontAsset; va
   const canPreview = ["otf", "ttf", "woff", "woff2"].includes(font.fileFormat);
 
   return (
-    <section className={variant === "workspace" ? "border-b border-border px-4 py-5 md:px-6" : "detail-surface p-6 md:p-8"}>
+    <section className={variant === "workspace" ? "font-preview-workspace border-b border-border px-4 py-5 md:px-6" : "detail-surface p-6 md:p-8"}>
       {canPreview ? (
         <style>{`@font-face { font-family: "${fontFamily}"; src: url("/api/fonts/${font.id}/download?preview=1") format("${font.fileFormat === "ttf" ? "truetype" : font.fileFormat === "otf" ? "opentype" : font.fileFormat}"); }`}</style>
       ) : null}

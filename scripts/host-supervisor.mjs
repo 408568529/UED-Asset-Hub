@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import http from "node:http";
+import { createHostHttpsEdge } from "./host-https-edge.mjs";
 import { createServer } from "node:net";
 import { access, copyFile, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -19,7 +20,9 @@ import { resolveHostSecurityConfig } from "./host-security-config.mjs";
 import { createRuntimeDiagnosticsState } from "./runtime-diagnostics-state.mjs";
 import { createBoundedNdjsonWriter } from "./bounded-ndjson-writer.mjs";
 import { probeDshSessionList, probeKnowledgeGatewayMcp } from "../agent-integration/scripts/runtime-readiness.mjs";
+import { installGenuiHaldurReadingPatch } from "../agent-integration/scripts/genui-haldur-reading.mjs";
 import { resolveHostPorts } from "./runtime-ports.mjs";
+import { acceptsLocalDistributionRequest } from "./local-distribution-config.mjs";
 
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require("@next/env");
@@ -100,11 +103,11 @@ async function assertPortAvailable(portNumber, label, { reasonCode = null } = {}
   await new Promise((resolve, reject) => {
     const probe = createServer();
     probe.once("error", () => reject(reasonCode ? lifecycleError(`${label} 端口 ${portNumber} 已被占用。`, reasonCode) : new Error(`${label} 端口 ${portNumber} 已被占用。`)));
-    probe.listen(portNumber, "0.0.0.0", () => probe.close(resolve));
+    probe.listen(portNumber, process.env.UED_LOCAL_DISTRIBUTION_MODE === "true" ? "127.0.0.1" : "0.0.0.0", () => probe.close(resolve));
   });
 }
 
-function createEdgeServer({ host, port: publicPort, internalPort, proxyPort }) {
+export function createEdgeServer({ host, port: publicPort, internalPort, proxyPort }) {
   const edge = httpProxy.createProxyServer({ changeOrigin: true, ws: true });
   const sockets = new Set();
   const belongsToAgentRuntime = (request, requestUrl) => {
@@ -117,6 +120,8 @@ function createEdgeServer({ host, port: publicPort, internalPort, proxyPort }) {
     if (response && "writeHead" in response) { response.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" }); response.end("Asset Hub internal service is unavailable."); }
   });
   const server = http.createServer((request, response) => {
+    if (process.env.UED_LOCAL_DISTRIBUTION_INSTANCE) response.setHeader("X-UED-Local-Instance", process.env.UED_LOCAL_DISTRIBUTION_INSTANCE || "");
+    if (!acceptsLocalDistributionRequest(request)) { response.writeHead(403); response.end("Forbidden"); return; }
     const requestUrl = new URL(request.url || "/", "http://localhost");
     if (requestUrl.pathname === "/api/knowledge-gateway" || requestUrl.pathname.startsWith("/api/knowledge-gateway/")) { response.writeHead(404, { "Content-Type": "application/json" }); response.end(JSON.stringify({ error: { code: "not-found", message: "Not found." } })); return; }
     if (requestUrl.pathname === "/agent-runtime") { response.writeHead(308, { Location: "/agent-runtime/" }); response.end(); return; }
@@ -125,6 +130,7 @@ function createEdgeServer({ host, port: publicPort, internalPort, proxyPort }) {
   });
   server.on("connection", (socket) => { sockets.add(socket); socket.once("close", () => sockets.delete(socket)); });
   server.on("upgrade", (request, socket, head) => {
+    if (!acceptsLocalDistributionRequest(request)) { socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"); return; }
     const requestUrl = new URL(request.url || "/", "http://localhost");
     if (belongsToAgentRuntime(request, requestUrl)) { if (requestUrl.pathname.startsWith("/agent-runtime/")) request.url = request.url?.replace(/^\/agent-runtime/, "") || "/"; edge.ws(request, socket, head, { target: `http://127.0.0.1:${proxyPort}` }); return; }
     edge.ws(request, socket, head, { target: `http://127.0.0.1:${internalPort}` });
@@ -159,7 +165,11 @@ async function windowsPipeSecurityAdapterSpecification() {
   return { path: helperPath, manifestPath, sha256: manifest.sha256 };
 }
 
-async function installAgentPresets(runtimePaths) {
+export async function installAgentPresets(runtimePaths) {
+  await installGenuiHaldurReadingPatch(path.join(runtimePaths.agentRoot, "dsh-home"));
+  const bootstrapSource = path.join(projectDir, "agent-integration", "dsh", "genui-client-bootstrap");
+  const bootstrapDestination = await ensureRuntimeSubdirectory({ dataRoot: runtimePaths.dataRoot, agentRoot: runtimePaths.agentRoot, relativePath: "dsh-home/profiles/web/node_modules/@ued/asset-hub-genui-client-bootstrap" });
+  for (const file of ["package.json", "index.mjs"]) await copyFile(path.join(bootstrapSource, file), path.join(bootstrapDestination, file));
   for (const preset of ["asset-hub-restricted", "asset-hub-genui-restricted"]) {
     const source = path.join(projectDir, "agent-integration", "dsh", "agent-presets", preset);
     const destination = await ensureRuntimeSubdirectory({ dataRoot: runtimePaths.dataRoot, agentRoot: runtimePaths.agentRoot, relativePath: `dsh-home/.agent-presets/${preset}` });
@@ -412,6 +422,14 @@ export async function main() {
   specifications.assetHub.env = withRuntimeControlEnvironment(specifications.assetHub.env, { endpoint, token });
   await assertPortAvailable(publicPort, "公开 Asset Hub");
   await assertPortAvailable(internalPort, "内部 Asset Hub");
+  let httpsEdge;
+  if (value("UED_LAN_HTTPS_CONFIG")) {
+    if (value("HOST_BIND_HOST") !== "127.0.0.1" || value("ADMIN_SESSION_SECURE") !== "true" || value("UED_LOCAL_DISTRIBUTION_MODE")) fail("LAN HTTPS requires the original protected HTTPS mode with a loopback backend.");
+    const lan = JSON.parse(await readFile(value("UED_LAN_HTTPS_CONFIG"), "utf8"));
+    if (lan.mode !== "lan" || lan.lan?.origin !== value("PUBLIC_ORIGIN")) fail("LAN HTTPS configuration identity mismatch.");
+    httpsEdge = await createHostHttpsEdge(lan.lan, publicPort);
+    await httpsEdge.start();
+  }
   await controller.start("assetHub", specifications.assetHub, { operation: "initial_start" });
   await observeHealth("assetHubInternal", () => waitFor("Asset Hub", () => request(`http://127.0.0.1:${internalPort}/api/auth/session`)), { reasonCode: "asset_hub_health_failed", operation: "initial_start" });
   const configuredEdgeHost = value("HOST_BIND_HOST");
@@ -423,7 +441,7 @@ export async function main() {
   diagnostics.recordInProcessLifecycle("publicEdge", { status: "starting" });
   await edge.start();
   await observeHealth("publicEdge", () => waitFor("Public Asset Hub", () => request(`http://127.0.0.1:${publicPort}/api/auth/session`)), { reasonCode: "public_edge_health_failed", operation: "initial_start" });
-  console.log(`[Host Supervisor] Asset Hub Shell is ready at http://主机IP:${publicPort}.`);
+  console.log(`[Host Supervisor] Asset Hub Shell is ready at ${httpsEdge ? value("PUBLIC_ORIGIN") : `http://主机IP:${publicPort}`}.`);
   const state = await core.ensureReady({ trigger: "initial_start" });
   if (state.status !== "ready") console.error(`[Host Supervisor] Agent Runtime is ${state.status}${state.reasonCode ? `: ${state.reasonCode}` : ""}. Asset Hub Shell remains available.`);
   const shutdown = createSharedShutdown(async (signal) => {
@@ -435,6 +453,7 @@ export async function main() {
     try {
       console.log(`\n[Host Supervisor] Received ${signal}. Stopping managed services...`);
       diagnostics.recordInProcessLifecycle("publicEdge", { status: "stopping" });
+      await httpsEdge?.stop();
       await edge.stop();
       diagnostics.recordInProcessLifecycle("publicEdge", { status: "stopped" });
       await core.stopForShutdown();
