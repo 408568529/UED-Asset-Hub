@@ -3,7 +3,7 @@
   "inputs": [
     {
       "path": "scripts/competition-center-ui.tsx",
-      "sha256": "34bcaa3cb118f72a2f649e6e60484caff2d7bd5e53cec79d456a164f3c206cc7"
+      "sha256": "c705f85896a41428bbd7c67f55b4f18efe2b7c1ca68f815b381e693c88200220"
     },
     {
       "path": "scripts/competition-center-layout.css",
@@ -33,7 +33,7 @@
     },
     {
       "path": "center.js",
-      "sha256": "8e01c9aaeff8f360f64d0ed23b589dbaef7a4b9ab30abbdd7e474406433e9b6c"
+      "sha256": "a2eb02f685395d82936661271b17f871df17f8080b32656b8f94e64abc4c5827"
     },
     {
       "path": "center.css",

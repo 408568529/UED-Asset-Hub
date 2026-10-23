@@ -13,15 +13,35 @@ const supplied=location.hash.slice(1);if(supplied){sessionStorage.setItem(tokenK
 const token=sessionStorage.getItem(tokenKey);
 async function api(route:string,input?:Record<string,unknown>){const response=await fetch(route,{method:input?'POST':'GET',headers:{Authorization:'Bearer '+token,...(input?{'Content-Type':'application/json'}:{})},body:input?JSON.stringify(input):undefined});const result=await response.json();if(!response.ok)throw Error(result.error||'本机控制请求失败');return result;}
 function Center(){
- const [state,setState]=useState<State>(),[error,setError]=useState(''),[mode,setMode]=useState('local'),[active,setActive]=useState(0),[closed,setClosed]=useState(false);
+ const [state,setState]=useState<State>(),[error,setError]=useState(''),[mode,setMode]=useState('local'),[active,setActive]=useState(0),[closed,setClosed]=useState(false),[starting,setStarting]=useState(false);
  const [lanForm]=Form.useForm<LanConfig & {firewallConfirmed:boolean;clientsTrustConfirmed:boolean}>();const initialMode=useRef(false),lanSelection=useRef('');
- const [form]=Form.useForm<Setup>();const confirmed=Form.useWatch('confirmed',form);const selected=useRef<string | undefined>(undefined);const opening=useRef<Window|null>(null);
+ const [form]=Form.useForm<Setup>();const confirmed=Form.useWatch('confirmed',form);const selected=useRef<string | undefined>(undefined);const startPending=useRef(false);
  const refresh=async()=>{try{setState(await api('/api/state'));}catch(e){setError(token?(e as Error).message:'请从「轻点击我启动」重新打开本机授权页面。');}};
  useEffect(()=>{if(closed)return;void refresh();const timer=setInterval(()=>void refresh(),1500);return()=>clearInterval(timer);},[closed]);
- useEffect(()=>{if(!state)return;if(!initialMode.current&&state.checked){setMode(state.mode||'local');initialMode.current=true;}const nextLan=JSON.stringify(state.lan.config);if(state.lan.config&&lanSelection.current!==nextLan){lanForm.setFieldsValue(state.lan.config);lanSelection.current=nextLan;}if(state.dataRoot)form.setFieldValue('dataRoot',state.dataRoot);if(state.selection&&selected.current!==state.selection){selected.current=state.selection;form.setFieldValue('dataRoot',state.selection);}if(opening.current&&state.url){const u=new URL(state.url);if(u.protocol==='http:'&&u.hostname==='127.0.0.1'||u.protocol==='https:'&&u.origin===state.lan.config?.origin){opening.current.location.replace(u.href);opening.current=null;}}if(opening.current&&!state.busy&&!state.url){opening.current.close();opening.current=null;}},[state,form,lanForm]);
- async function action(name:string,extra:Record<string,unknown>={}){try{setError('');await api('/api/action',{action:name,...extra});if(name==='exit'){setClosed(true);setState(s=>s?{...s,status:'启动中心已退出，Hub 原运行状态不变'}:s);sessionStorage.removeItem(tokenKey);return;}await refresh();}catch(e){setError((e as Error).message);opening.current?.close();opening.current=null;}}
+ useEffect(()=>{if(!state)return;if(!initialMode.current&&state.checked){setMode(state.mode||'local');initialMode.current=true;}const nextLan=JSON.stringify(state.lan.config);if(state.lan.config&&lanSelection.current!==nextLan){lanForm.setFieldsValue(state.lan.config);lanSelection.current=nextLan;}if(state.dataRoot)form.setFieldValue('dataRoot',state.dataRoot);if(state.selection&&selected.current!==state.selection){selected.current=state.selection;form.setFieldValue('dataRoot',state.selection);}},[state,form,lanForm]);
+ async function action(name:string,extra:Record<string,unknown>={}){try{setError('');await api('/api/action',{action:name,...extra});if(name==='exit'){setClosed(true);setState(s=>s?{...s,status:'启动中心已退出，Hub 原运行状态不变'}:s);sessionStorage.removeItem(tokenKey);return;}await refresh();}catch(e){setError((e as Error).message);}}
+ async function start(){
+  if(startPending.current||state?.busy||closed)return;
+  startPending.current=true;setStarting(true);setError('');
+  try{
+   await api('/api/action',{action:'start',mode});
+   const deadline=Date.now()+240000;
+   while(Date.now()<deadline){
+    const next:State=await api('/api/state');setState(next);
+    if(!next.busy){
+     if(next.error)throw Error(next.error);
+     if(!next.owned||!next.url)throw Error('启动未完成，请查看运行状态后重试。');
+     const url=new URL(next.url);
+     if(!(url.protocol==='http:'&&url.hostname==='127.0.0.1'||url.protocol==='https:'&&url.origin===next.lan.config?.origin))throw Error('启动返回的访问地址不符合当前运行模式。');
+     window.location.assign(url.href);return;
+    }
+    await new Promise(resolve=>setTimeout(resolve,1000));
+   }
+   throw Error('启动等待超时，请查看运行状态后重试。');
+  }catch(e){setError((e as Error).message);}finally{startPending.current=false;setStarting(false);}
+ }
  async function initialize(){try{const input=await form.validateFields();await action('initialize',input);form.resetFields(['password','confirmPassword']);}catch{/* Field errors remain next to their inputs. */}}
- const busy=Boolean(state?.busy)||closed;const ready=Boolean(state?.checked&&state.configured);
+ const busy=starting||Boolean(state?.busy)||closed;const ready=Boolean(state?.checked&&state.configured);
  const stages=[{title:'检测运行环境',description:'检查系统、包内工具和运行构件，确认端口与权限。',button:'查看检测',done:state?.checked},{title:'配置数据目录',description:'选择外置目录。已有安装识别沿用，新建须明确确认。',button:state?.configured?'查看原配置':'去配置',done:state?.configured},{title:'选择运行模式',description:state?.lanSupported===false?'Mac 演示沿用 3047 本机模式与原持久化数据。':'本机 HTTP 或配置证书、地址及防火墙后共享 HTTPS。',button:'选择模式',done:(mode==='local'||state?.lan.status==='CONFIGURED')&&ready},{title:'启动工作空间',description:'通过现有 Supervisor 启动完整服务，打开实际访问地址。',button:state?.owned?'查看运行状态':'去启动',done:state?.owned}];
  return <main className="asset-visual-theme center-shell"><header className="center-header"><Space size={10}><strong>UED ASSET HUB</strong><Tag>V2.5</Tag>{state?.source&&<Tag>程序 {state.source.slice(0,12)}</Tag>}</Space><Title level={3}>启动与环境预检中心</Title><Paragraph type="secondary">欢迎使用 UED Asset Hub。先完成运行准备，再进入你的资产工作空间。</Paragraph></header>
  {(error||state?.error)&&<Alert showIcon type="error" title={error||state?.error} />}
@@ -39,7 +59,7 @@ function Center(){
  {<Alert type={state?.lan.status==='FIREWALL_REQUIRED'?'warning':'info'} showIcon title={state?.lan.status==='FIREWALL_REQUIRED'?'需要确认添加当前实例专属防火墙规则':'防火墙计划：先检查，确认后才添加'} description="仅允许所选 IP/HTTPS 端口、包内 Node 程序、Domain/Private 网络及 LocalSubnet；不改已有规则，不向 Public 网络开放。需要 Windows 管理员权限。"/>}
  <Form.Item name="firewallConfirmed" valuePropName="checked"><Checkbox>我允许在确有需要时添加上述当前实例的局域网防火墙规则（不修改其他规则）。</Checkbox></Form.Item>
  <Button type="primary" disabled={busy||!ready||state?.owned} onClick={async()=>{try{await action('configure-lan',await lanForm.validateFields());}catch{}}}>检查并保存 HTTPS 配置</Button><Paragraph className="panel-note" type="secondary">只保存已验证的模式、地址、端口和文件路径。不保存私钥内容，不接收模型 Key，不降级为局域网 HTTP。切换模式前先停止当前实例。</Paragraph></Form></div>}
- </>:<><Title level={5}>运行状态与启动入口</Title><Descriptions column={1} items={[{key:'status',label:'当前状态',children:<Badge status={state?.busy?'processing':state?.owned?'success':'default'} text={state?.status||'等待检测'}/>},{key:'mode',label:'运行模式',children:mode==='local'?'本机 / 回环 HTTP':state?.lan.status==='CONFIGURED'?'局域网 / HTTPS':'局域网 / 待完成配置'},{key:'data',label:'持久化目录',children:state?.dataRoot||'尚未配置'},{key:'components',label:'受管服务',children:'Hub + DSH + Knowledge MCP / Gateway + Proxy + GenUI'}]}/><Space wrap className="runtime-actions"><Button type="primary" loading={state?.busy} disabled={busy||!ready||mode==='lan'&&state?.lan.status!=='CONFIGURED'} onClick={()=>{opening.current=window.open('about:blank','_blank');if(opening.current)opening.current.opener=null;void action('start',{mode});}}>启动 UED Asset Hub</Button><Button disabled={busy||!ready||!state?.owned} onClick={()=>action('stop')}>停止本安装</Button>{state?.url&&<Button href={state.url} target="_blank" rel="noreferrer">打开 UED Asset Hub ↗</Button>}</Space><>{state?.url&&<Paragraph copyable={{text:state.url}} className="panel-note">{state.url}</Paragraph>}</><Paragraph className="panel-note" type="secondary">关闭网页不会停止服务。重复双击识别同一实例，不重复安装依赖、重置管理员或模型配置。</Paragraph></>}</section>
+ </>:<><Title level={5}>运行状态与启动入口</Title><Descriptions column={1} items={[{key:'status',label:'当前状态',children:<Badge status={state?.busy?'processing':state?.owned?'success':'default'} text={state?.status||'等待检测'}/>},{key:'mode',label:'运行模式',children:mode==='local'?'本机 / 回环 HTTP':state?.lan.status==='CONFIGURED'?'局域网 / HTTPS':'局域网 / 待完成配置'},{key:'data',label:'持久化目录',children:state?.dataRoot||'尚未配置'},{key:'components',label:'受管服务',children:'Hub + DSH + Knowledge MCP / Gateway + Proxy + GenUI'}]}/><Space wrap className="runtime-actions"><Button type="primary" loading={starting} disabled={busy||!ready||mode==='lan'&&state?.lan.status!=='CONFIGURED'} onClick={()=>void start()}>{starting?'正在启动，成功后自动跳转':'启动 UED Asset Hub'}</Button><Button disabled={busy||!ready||!state?.owned} onClick={()=>action('stop')}>停止本安装</Button>{state?.url&&<Button disabled={busy} href={state.url} target="_blank" rel="noreferrer">打开 UED Asset Hub ↗</Button>}</Space><>{state?.url&&<Paragraph copyable={{text:state.url}} className="panel-note">{state.url}</Paragraph>}</><Paragraph className="panel-note" type="secondary">关闭网页不会停止服务。重复双击识别同一实例，不重复安装依赖、重置管理员或模型配置。</Paragraph></>}</section>
  <footer><Text type="secondary">{closed?'启动中心已退出。':state?.status||'正在连接本机控制端…'}</Text><Button type="text" disabled={busy} onClick={()=>action('exit')}>退出启动中心（不停止 Hub）</Button></footer></main>;
 }
 const nonce=document.querySelector<HTMLMetaElement>('meta[name="csp-nonce"]')?.content;
