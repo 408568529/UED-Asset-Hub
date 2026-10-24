@@ -75,7 +75,7 @@ export async function initializeCompetitionData({ packageRoot, dependencyRoot, d
     await writeFile(path.join(data, "micro-standards", ".micro-index.json"), JSON.stringify({ schemaVersion: 1, revision: 0, topics: [], documents: {} }) + "\n", { flag: "wx", mode: 0o600 });
     await copyPreparedProfile(seed, path.join(data, "agent-runtime", "dsh-home"), path.join(dependencies, "dsh-runtime"));
     const environment = Object.fromEntries(Object.entries(dataChildren).map(([key, name]) => [key, path.join(data, name)]));
-    Object.assign(environment, { DSH_SOURCE_DIR: path.join(dependencies, "dsh-source"), DSH_RUNTIME_SOURCE_DIR: path.join(dependencies, "dsh-runtime") }, portDefaults);
+    Object.assign(environment, { AGENT_PUBLIC_ACCESS: "true", DSH_SOURCE_DIR: path.join(dependencies, "dsh-source"), DSH_RUNTIME_SOURCE_DIR: path.join(dependencies, "dsh-runtime") }, portDefaults);
     const configPath = path.join(data, "config", "runtime.json");
     await writeFile(configPath, JSON.stringify(environment, null, 2) + "\n", { flag: "wx", mode: 0o600 });
     await writeFile(path.join(data, "config", "installation.json"), JSON.stringify({ schemaVersion: 1, packageRoot: code, dataRoot: data, configPath }, null, 2) + "\n", { flag: "wx", mode: 0o600 });

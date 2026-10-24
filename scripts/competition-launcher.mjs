@@ -17,7 +17,7 @@ export function localDistributionEnvironment(config, packageRoot, dataRoot, logi
   const tools = toolPaths(packageRoot), environment = {};
   for (const key of ["SystemRoot", "SYSTEMROOT", "WINDIR", "ComSpec", "PATHEXT", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "LANG", "LC_ALL", "USER", "LOGNAME"]) if (process.env[key]) environment[key] = process.env[key];
   const systemPaths = process.platform === "win32" ? [path.join(process.env.SystemRoot || "C:\\Windows", "System32"), process.env.SystemRoot || "C:\\Windows"] : ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
-  Object.assign(environment, config, login, {
+  Object.assign(environment, { AGENT_PUBLIC_ACCESS: "true" }, config, login, {
     PATH: [path.dirname(tools.node), path.dirname(tools.git), ...systemPaths].join(path.delimiter), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : os.devNull, GIT_OPTIONAL_LOCKS: "0",
     NODE_ENV: "production", UED_LOCAL_DISTRIBUTION_MODE: "true", UED_LOCAL_DISTRIBUTION_ROOT: dataRoot, UED_LOCAL_DISTRIBUTION_PACKAGE: packageRoot,
     HOST_BIND_HOST: "127.0.0.1", ADMIN_SESSION_SECURE: "false", PUBLIC_ORIGIN: `http://127.0.0.1:${config.HOST_PORT}`, UED_STAGING_SHUTDOWN_ENABLED: "true",
