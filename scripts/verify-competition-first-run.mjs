@@ -4,6 +4,9 @@ import { access, mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, symlink,
 import os from "node:os";
 import path from "node:path";
 import { initializeCompetitionData } from "./competition-first-run.mjs";
+import { localDistributionEnvironment } from "./competition-launcher.mjs";
+import { runtimeEnvironmentProfiles } from "../agent-integration/scripts/runtime-boundary.mjs";
+import { allowsPublicAgentRequest } from "../agent-integration/scripts/agent-public-access.mjs";
 
 const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "ued-v25-first-run-")));
 try {
@@ -20,6 +23,20 @@ try {
   const config = await readFile(result.configPath, "utf8");
   assert.equal(JSON.parse(config).DATA_DIR, path.join(dataRoot, "hub-data"));
   assert.equal(JSON.parse(config).MICRO_STANDARD_ROOT, path.join(dataRoot, "micro-standards"));
+  assert.equal(JSON.parse(config).AGENT_PUBLIC_ACCESS, "true");
+  const shipping = localDistributionEnvironment(JSON.parse(config), packageRoot, dataRoot);
+  assert.equal(shipping.AGENT_PUBLIC_ACCESS, "true");
+  assert.equal(runtimeEnvironmentProfiles.assetHub(shipping).AGENT_PUBLIC_ACCESS, "true");
+  assert.equal(runtimeEnvironmentProfiles.agentProxy(shipping).AGENT_PUBLIC_ACCESS, "true");
+  const request = { method: "POST", headers: { origin: shipping.PUBLIC_ORIGIN } };
+  assert.equal(allowsPublicAgentRequest(request, new URL("/api/session.prompt", shipping.PUBLIC_ORIGIN), shipping), true);
+  assert.equal(allowsPublicAgentRequest(request, new URL("/api/credentials.set", shipping.PUBLIC_ORIGIN), shipping), false);
+  const legacyConfig = { ...JSON.parse(config) }; delete legacyConfig.AGENT_PUBLIC_ACCESS;
+  assert.equal(localDistributionEnvironment(legacyConfig, packageRoot, dataRoot).AGENT_PUBLIC_ACCESS, "true");
+  const privateEnvironment = localDistributionEnvironment({ ...legacyConfig, AGENT_PUBLIC_ACCESS: "false" }, packageRoot, dataRoot);
+  assert.equal(privateEnvironment.AGENT_PUBLIC_ACCESS, "false");
+  assert.equal(allowsPublicAgentRequest(request, new URL("/api/session.prompt", shipping.PUBLIC_ORIGIN), privateEnvironment), false);
+  console.log("[V2.5] persisted guest Agent default, legacy fallback, explicit private override and RPC boundary: PASS");
   assert.deepEqual(JSON.parse(await readFile(path.join(dataRoot, "micro-standards", ".micro-index.json"), "utf8")), { schemaVersion: 1, revision: 0, topics: [], documents: {} });
   assert.ok(!/API_KEY|PASSWORD|SESSION_SECRET/.test(config));
   assert.equal(JSON.parse(await readFile(path.join(dataRoot, "agent-runtime", "dsh-home", "profiles", "web", "node_modules", "dsh-plugin-genui", "package.json"), "utf8")).version, "0.15.1");
@@ -34,7 +51,6 @@ try {
   await symlink(packageRoot, linked, process.platform === "win32" ? "junction" : "dir");
   await assert.rejects(initializeCompetitionData({ ...options, dataRoot: path.join(linked, "new-data") }), /link|separate/);
   if (process.platform === "darwin") {
-    const { localDistributionEnvironment } = await import("./competition-launcher.mjs");
     const { createRuntimeControlBridge, requestRuntimeControl, runtimeControlEndpoint } = await import("./runtime-control-bridge.mjs");
     const longRuntime = path.join(root, "长目录".repeat(24), "asset-runtime");
     await mkdir(path.join(longRuntime, "tmp"), { recursive: true });

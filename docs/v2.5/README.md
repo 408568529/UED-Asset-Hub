@@ -14,6 +14,12 @@ Windows x64 与 macOS Apple Silicon 分别提供独立 ZIP。当前为候选交�
 
 页面按「环境检查、数据目录、运行模式、运行状态」四步组织；每项显示实际检查结果，可重新检查。未检查通过不能初始化或启动。先选择外部目录，再为新实例输入一个尚不存在的子目录，设置至少 12 位的新管理员密码，并勾选明确确认后初始化。没有默认密码。若目录已有数据，使用「识别并沿用原安装」核对同一程序目录的安装标记、路径与权限，不初始化、不迁移、不覆盖。其他版本或原服务器数据无法安全识别时请使用原入口。
 
+### Agent 访客使用
+
+比赛发行版默认允许访客使用受限 Agent、共享会话与 GenUI，行为与 Mac 3047 演示一致。首次初始化会在外部数据目录的 `config/runtime.json` 持久化 `AGENT_PUBLIC_ACCESS: "true"`；旧的比赛安装未包含此字段时，发行启动器采用同样的默认值，不改写已有配置文件。已显式设置为 `"false"` 的安装继续要求 Agent 登录，不会被自动覆盖。
+
+普通源码启动的 `.env.example` 也包含 `AGENT_PUBLIC_ACCESS=true`。已有测试或服务器配置若显式设为 `false`，仍沿用该设置；本次源码更新不会改动正在运行的环境。模型 Key、模型设置和管理接口仍要求管理员登录；访客仅可使用现有接口白名单，GenUI 的能力校验及 Host/Origin 校验保持不变。
+
 数据目录内包含 hub-data、training-media、agent-runtime、asset-hub-runtime、Haldur-Design-Skill、haldur-runtime 和 config。程序与数据分离；不包含作者 DATA、DSH_HOME、会话或 GenUI 成果。程序目录仅保存非敏感安装位置、运行状态和构件链接信息。首次启动只恢复预备构件的链接和初始化全新数据，不 clone、不安装 npm/pnpm 包、不编译 DSH、不安装 GenUI。
 
 ## 三、启动
