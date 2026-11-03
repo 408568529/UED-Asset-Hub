@@ -1,25 +1,40 @@
 "use client";
 import { useRef, useState } from "react";
-import { Alert, Button, Modal, Progress, Select, Space, Tag, Upload } from "antd";
-import type { RcFile } from "antd/es/upload";
+import { Alert, Button, Modal, Progress, Select, Space, Tag } from "antd";
+import { droppedFiles, selectedFiles, selectedFolderContents, type UploadSelection } from "@/lib/haldur/uploadSelection";
 import { KnowledgeThemeProvider } from "@/components/knowledge/KnowledgeThemeProvider";
 import { haldurUploadHeaders } from "@/lib/haldur/uploadHeaders";
 import type { HaldurDesignSkillSnapshot } from "@/types/haldurDesignSkill";
 import "./haldur-file-tools.css";
 
 type State = "queued" | "uploading" | "success" | "failed" | "skipped" | "unknown";
-type Item = { uid: string; file: RcFile; state: State; choice: "ask" | "skip" | "overwrite"; message?: string };
+type Item = { uid: string; file: File; relativePath: string; state: State; choice: "ask" | "skip" | "overwrite"; message?: string };
 const labels: Record<State, string> = { queued: "待上传", uploading: "上传中", success: "成功", failed: "失败", skipped: "跳过", unknown: "结果待核对" };
 const key = (name: string) => name.normalize("NFC").toLocaleLowerCase("en-US");
 export function HaldurUploadQueue({ directory, snapshot, onSnapshot, onClose }: { directory: string; snapshot: HaldurDesignSkillSnapshot; onSnapshot: (snapshot: HaldurDesignSkillSnapshot) => void; onClose: () => void }) {
   const [items, setItems] = useState<Item[]>([]);
   const [busy, setBusy] = useState(false);
+  const [collecting, setCollecting] = useState(false);
   const [message, setMessage] = useState("");
   const running = useRef(false), stop = useRef(false);
   const [target] = useState(directory);
+  const fileInput = useRef<HTMLInputElement>(null), folderInput = useRef<HTMLInputElement>(null);
+  const nextId = useRef(0);
+  async function addFiles(selection: Promise<UploadSelection[]> | UploadSelection[]) {
+    if (running.current) return;
+    setCollecting(true);
+    try {
+      const files = await selection;
+      // A directory incorrectly supplied as a File can fail before fetch starts.
+      for (const item of files) await item.file.slice(0, 1).arrayBuffer();
+      setItems(rows => [...rows, ...files.map(item => ({ ...item, uid: String(++nextId.current), state: "queued" as const, choice: "ask" as const }))]);
+      setMessage(files.length ? "" : "所选文件夹中没有可上传文件；空目录不会上传。");
+    } catch { setMessage("无法读取所选文件或文件夹，请使用选择文件夹重选，不会提交无法读取的项目。"); }
+    finally { setCollecting(false); }
+  }
   const patch = (uid: string, value: Partial<Item>) => setItems(rows => rows.map(row => row.uid === uid ? { ...row, ...value } : row));
-  const existing = (file: File, value = snapshot) => value.manifest.find(entry => key(entry.relativePath) === key([target, file.name].filter(Boolean).join("/")));
-  const duplicate = (row: Item) => items.filter(item => key(item.file.name) === key(row.file.name)).length > 1;
+  const existing = (row: Item, value = snapshot) => value.manifest.find(entry => key(entry.relativePath) === key([target, row.relativePath].filter(Boolean).join("/")));
+  const duplicate = (row: Item) => items.filter(item => key(item.relativePath) === key(row.relativePath)).length > 1;
   async function refresh() {
     const response = await fetch("/api/haldur-design-skill", { cache: "no-store" });
     const next = await response.json() as HaldurDesignSkillSnapshot;
@@ -29,7 +44,7 @@ export function HaldurUploadQueue({ directory, snapshot, onSnapshot, onClose }: 
     return next;
   }
   async function run() {
-    if (running.current) return;
+    if (running.current || collecting) return;
     running.current = true; stop.current = false; setBusy(true); setMessage("");
     let latest = snapshot;
     try {
@@ -39,12 +54,27 @@ export function HaldurUploadQueue({ directory, snapshot, onSnapshot, onClose }: 
         if (stop.current) { setMessage("已停止后续上传，未开始的文件没有发送请求。"); break; }
         if (row.state !== "queued") continue;
         if (duplicate(row)) { setMessage("请先移除批次中的等价重名文件。"); break; }
-        const conflict = existing(row.file, latest);
+        const conflict = existing(row, latest);
         if (conflict && row.choice === "skip") { patch(row.uid, { state: "skipped", message: "已跳过同名项" }); continue; }
         if (conflict && (row.choice !== "overwrite" || conflict.type !== "file")) { setMessage("请明确选择跳过或覆盖；同名目录不能覆盖。"); break; }
         patch(row.uid, { state: "uploading", message: undefined });
         try {
-          const response = await fetch("/api/haldur-design-skill/files", { method: "POST", headers: { ...haldurUploadHeaders(target, row.file.name), "if-match": latest.revision!, "x-haldur-overwrite": String(Boolean(conflict && row.choice === "overwrite")), "content-type": row.file.type || "application/octet-stream" }, body: row.file });
+          const parts = row.relativePath.split("/");
+          const name = parts.pop()!;
+          let parent = target;
+          for (const part of parts) {
+            const nextPath = [parent, part].filter(Boolean).join("/");
+            const entry = latest.manifest.find(item => key(item.relativePath) === key(nextPath));
+            if (entry && entry.type !== "directory") throw new Error("目标路径包含同名文件，请核对目录。");
+            if (!entry) {
+              const created = await fetch("/api/haldur-design-skill/directories", { method: "POST", headers: { "content-type": "application/json", "if-match": latest.revision! }, body: JSON.stringify({ parentRelativePath: parent, directoryName: part }) });
+              const result = await created.json() as { snapshot?: HaldurDesignSkillSnapshot; message?: string };
+              if (!created.ok || !result.snapshot?.revision) throw new Error(result.message || "无法创建上传目录，请核对结果。");
+              latest = result.snapshot; onSnapshot(latest);
+            }
+            parent = nextPath;
+          }
+          const response = await fetch("/api/haldur-design-skill/files", { method: "POST", headers: { ...haldurUploadHeaders(parent, name), "if-match": latest.revision!, "x-haldur-overwrite": String(Boolean(conflict && row.choice === "overwrite")), "content-type": row.file.type || "application/octet-stream" }, body: row.file });
           const result = await response.json() as { snapshot?: HaldurDesignSkillSnapshot; code?: string; message?: string };
           if (!response.ok || !result.snapshot?.revision) {
             const global = ["REVISION_CONFLICT", "RECOVERY_REQUIRED", "ROLLBACK_FAILED", "PERMISSION_DENIED", "TARGET_NOT_FOUND", "ROOT_UNAVAILABLE", "DISK_SPACE_INSUFFICIENT", "NAME_CONFLICT"].includes(result.code ?? "");
@@ -66,20 +96,36 @@ export function HaldurUploadQueue({ directory, snapshot, onSnapshot, onClose }: 
   async function reconcile(row: Item) {
     setMessage("");
     try {
-      const latest = await refresh(), entry = existing(row.file, latest);
+      const latest = await refresh(), entry = existing(row, latest);
       if (row.file.size > 16 * 1024 * 1024) { patch(row.uid, { message: "文件超过本地核对预算，请下载目标后人工核对；不会自动重试。" }); return; }
-      const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", await row.file.arrayBuffer()))].map(value => value.toString(16).padStart(2, "0")).join("");
-      if (entry?.checksum === digest && entry.size === row.file.size) patch(row.uid, { state: "success", message: "核对通过：目标字节与所选文件一致" });
+      // LAN HTTP has no crypto.subtle. Compare the actual downloaded bytes;
+      // this reconciliation only reads and never retries an uncertain write.
+      let matches = false;
+      if (entry?.type === "file" && entry.size === row.file.size) {
+        const response = await fetch("/api/haldur-design-skill/files?path=" + encodeURIComponent(entry.relativePath), { cache: "no-store" });
+        if (!response.ok || Number(response.headers.get("content-length")) !== row.file.size) throw new Error("无法确认目标文件大小。");
+        const [actual, expected] = await Promise.all([response.arrayBuffer(), row.file.arrayBuffer()]);
+        const bytes = new Uint8Array(expected), downloaded = new Uint8Array(actual);
+        matches = downloaded.length === bytes.length && bytes.every((value, index) => value === downloaded[index]);
+      }
+      if (matches) patch(row.uid, { state: "success", message: "核对通过：目标字节与所选文件一致" });
       else patch(row.uid, { message: "尚不能确认写入结果。请刷新目录人工核对；不会自动重试。" });
     } catch { setMessage("核对未完成，请稍后重试核对。"); }
   }
   const finished = items.filter(item => ["success", "failed", "skipped", "unknown"].includes(item.state)).length;
   const queued = items.filter(item => item.state === "queued");
-  const blocked = queued.some(row => duplicate(row) || (existing(row.file) && row.choice === "ask"));
-  return <KnowledgeThemeProvider><Modal open transitionName="" maskTransitionName="" title="批量上传文件" rootClassName="haldur-file-modal" width={760} onCancel={() => { if (busy) { stop.current = true; setMessage("将在当前文件完成后停止，结果将保留。"); } else onClose(); }} footer={<Space wrap><Button onClick={() => { stop.current = true; }} disabled={!busy}>停止后续上传</Button><Button onClick={onClose} disabled={busy}>关闭</Button><Button type="primary" onClick={() => void run()} disabled={busy || !queued.length || blocked || snapshot.recoveryRequired}>{busy ? "上传中…" : `上传 ${queued.length} 个文件`}</Button></Space>}>
+  const blocked = queued.some(row => duplicate(row) || (existing(row) && row.choice === "ask"));
+  return <KnowledgeThemeProvider><Modal open transitionName="" maskTransitionName="" title="批量上传文件" rootClassName="haldur-file-modal" width={760} onCancel={() => { if (busy) { stop.current = true; setMessage("将在当前文件完成后停止，结果将保留。"); } else onClose(); }} footer={<Space wrap><Button onClick={() => { stop.current = true; }} disabled={!busy}>停止后续上传</Button><Button onClick={onClose} disabled={busy || collecting}>关闭</Button><Button type="primary" onClick={() => void run()} disabled={busy || collecting || !queued.length || blocked || snapshot.recoveryRequired}>{busy ? "上传中…" : `上传 ${queued.length} 个文件`}</Button></Space>}>
     <p className="haldur-upload-target">目标目录：Haldur-Design-Skill{target ? ` / ${target}` : ""}（本批次固定）</p>
-    <Upload.Dragger multiple disabled={busy} fileList={items.map(row => ({ uid: row.uid, name: row.file.name, originFileObj: row.file }))} showUploadList={false} beforeUpload={file => { setItems(rows => rows.some(row => row.uid === file.uid) ? rows : [...rows, { uid: file.uid, file, state: "queued", choice: "ask" }]); return false; }}><p>点击选择或拖入多个文件</p><p className="ant-upload-hint">保留原文件名；选择后统一提交，不会自动覆盖。</p></Upload.Dragger>
+    <div className="border border-dashed border-border p-5 text-center" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (!busy && !collecting) void addFiles(droppedFiles(event.dataTransfer)); }}>
+      <input ref={fileInput} type="file" multiple hidden disabled={busy || collecting} onChange={event => { if (event.target.files) void addFiles(Promise.resolve(Array.from(event.target.files)).then(selectedFiles)); event.target.value = ""; }} />
+      <input ref={folderInput} type="file" multiple hidden disabled={busy || collecting} {...{ webkitdirectory: "" }} onChange={event => { if (event.target.files) void addFiles(Promise.resolve(Array.from(event.target.files)).then(selectedFolderContents)); event.target.value = ""; }} />
+      <Space><Button disabled={busy || collecting} onClick={() => fileInput.current?.click()}>选择文件</Button><Button disabled={busy || collecting} onClick={() => folderInput.current?.click()}>选择文件夹内容</Button></Space>
+      <p>选择文件夹内容：将其中的文件和子文件夹直接放入目标目录，不额外套一层所选文件夹。</p>
+      <p>也可在本地文件夹内全选文件和文件夹，一起拖入此处；保留所拖入子文件夹的层级。空目录和 .DS_Store 不上传。</p>
+      <p>选择后统一提交；同名文件须明确跳过或覆盖。</p>
+    </div>
     {message ? <Alert style={{ marginTop: 16 }} type="warning" title={message} showIcon /> : null}
-    {items.length ? <><Progress strokeColor="var(--ant-color-primary)" percent={Math.round(finished / items.length * 100)} format={() => `${finished} / ${items.length} 项已处理`} /><div className="haldur-upload-results" aria-label="逐项上传结果">{items.map(row => <div className="haldur-upload-row" key={row.uid} data-upload-state={row.state}><div><div className="haldur-upload-row-name">{row.file.name} <Tag color={row.state === "success" ? "success" : row.state === "failed" ? "error" : "default"}>{labels[row.state]}</Tag></div><div className="haldur-upload-row-message">{row.file.size.toLocaleString()} B · {duplicate(row) ? "批内等价重名，请移除重复项" : row.message ?? (existing(row.file) ? "存在同名项，请选择处理方式" : "待提交")}</div></div><Space wrap>{row.state === "queued" && existing(row.file) ? <Select getPopupContainer={trigger => trigger.closest(".ant-modal") as HTMLElement} aria-label={`${row.file.name} 冲突处理`} disabled={busy} value={row.choice} style={{ width: 130 }} options={[{ value: "ask", label: "选择处理" }, { value: "skip", label: "跳过" }, ...(existing(row.file)?.type === "file" ? [{ value: "overwrite", label: "覆盖" }] : [])]} onChange={choice => patch(row.uid, { choice })} /> : null}{row.state === "failed" ? <Button size="small" disabled={busy} onClick={() => patch(row.uid, { state: "queued", choice: "ask", message: undefined })}>重新准备</Button> : null}{row.state === "unknown" ? <Button size="small" disabled={busy} onClick={() => void reconcile(row)}>核对结果</Button> : null}{row.state === "queued" ? <Button size="small" disabled={busy} onClick={() => setItems(rows => rows.filter(item => item.uid !== row.uid))}>移除</Button> : null}</Space></div>)}</div></> : null}
+    {items.length ? <><Progress strokeColor="var(--ant-color-primary)" percent={Math.round(finished / items.length * 100)} format={() => `${finished} / ${items.length} 项已处理`} /><div className="haldur-upload-results" aria-label="逐项上传结果">{items.map(row => <div className="haldur-upload-row" key={row.uid} data-upload-state={row.state}><div><div className="haldur-upload-row-name">{row.relativePath} <Tag color={row.state === "success" ? "success" : row.state === "failed" ? "error" : "default"}>{labels[row.state]}</Tag></div><div className="haldur-upload-row-message">{row.file.size.toLocaleString()} B · {duplicate(row) ? "批内等价重名，请移除重复项" : row.message ?? (existing(row) ? "存在同名项，请选择处理方式" : "待提交")}</div></div><Space wrap>{row.state === "queued" && existing(row) ? <Select getPopupContainer={trigger => trigger.closest(".ant-modal") as HTMLElement} aria-label={`${row.file.name} 冲突处理`} disabled={busy || collecting} value={row.choice} style={{ width: 130 }} options={[{ value: "ask", label: "选择处理" }, { value: "skip", label: "跳过" }, ...(existing(row)?.type === "file" ? [{ value: "overwrite", label: "覆盖" }] : [])]} onChange={choice => patch(row.uid, { choice })} /> : null}{row.state === "failed" ? <Button size="small" disabled={busy || collecting} onClick={() => patch(row.uid, { state: "queued", choice: "ask", message: undefined })}>重新准备</Button> : null}{row.state === "unknown" ? <Button size="small" disabled={busy || collecting} onClick={() => void reconcile(row)}>核对结果</Button> : null}{row.state === "queued" ? <Button size="small" disabled={busy || collecting} onClick={() => setItems(rows => rows.filter(item => item.uid !== row.uid))}>移除</Button> : null}</Space></div>)}</div></> : null}
   </Modal></KnowledgeThemeProvider>;
 }

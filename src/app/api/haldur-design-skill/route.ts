@@ -1,3 +1,4 @@
+import path from "node:path";
 import { NextResponse } from "next/server";
 import { getHaldurDesignSkillConfig } from "@/config/haldurDesignSkill";
 import { hasHaldurCapability } from "@/lib/haldurPermissions";
@@ -9,10 +10,12 @@ export async function GET(request: Request) {
   const snapshot = await haldurDesignSkillService.getSnapshot();
   if (snapshot.rootAvailable) {
     try {
-      snapshot.recoveryRequired = await hasHaldurRecoveryRequired(getHaldurDesignSkillConfig().runtimeRoot);
+      const { runtimeRoot } = getHaldurDesignSkillConfig();
+      snapshot.recoveryRequired = await hasHaldurRecoveryRequired(runtimeRoot);
+      if (hasHaldurCapability(request, "haldur.admin")) snapshot.trashDirectory = path.join(runtimeRoot, "trash");
     } catch {
       snapshot.recoveryRequired = false;
     }
   }
-  return NextResponse.json(snapshot, { status: snapshot.rootAvailable ? 200 : 503 });
+  return NextResponse.json(snapshot, { status: snapshot.rootAvailable ? 200 : 503, headers: { "Cache-Control": "private, no-store" } });
 }

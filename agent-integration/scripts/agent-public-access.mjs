@@ -1,6 +1,6 @@
 // Opt-in shared demo access. Configuration and unlisted native RPCs remain administrator-only.
 const guestRpc = new Set([
-  'session.list', 'session.search', 'session.create', 'session.history', 'session.models',
+  'session.list', 'session.search', 'session.create', 'session.history', 'session.models', 'session.selectModel',
   'session.rename', 'session.fork', 'session.prompt', 'session.attachment', 'session.updateQueue', 'session.cancel',
   'subagent.list', 'subagent.history', 'subagent.prompt', 'subagent.interrupt',
   'host.describe', 'host.listDirectory', 'host.createDirectory',

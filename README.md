@@ -1,6 +1,10 @@
-# UED Asset Hub V2.5.2
+# UED Asset Hub V2.5.4
 
 UED Asset Hub 是面向设计团队的资产与知识协作平台，提供知识库、Haldur-Design-Skill 文件工作台、悠鼎 Agent、GenUI 交互成果，以及产品、字体、Prompt、规范、培训和测试环境管理。
+
+## V2.5.4：原生模型配置与 Skill 批量上传
+
+Agent 使用 Harness 内置模型配置；Skill 支持文件夹内容上传、多个文件与文件夹混合拖入及管理员统一回收位置查询。已安装 Windows 生产版本的运行状态轮询避免重复全量读取。详见 [版本变更说明](docs/v2.5.4/CHANGELOG.md) 和 [验证记录](docs/v2.5.4/ACCEPTANCE.md)。
 
 ## V2.5.2：微规范独立模块
 

@@ -15,9 +15,10 @@ function lifecycleFailure(error, { recovering }) {
 }
 
 export class RuntimeLifecycleCore {
-  constructor({ controller, inspectStatic, inspectRuntime, prepareRuntime, startComponent, stopComponents, onStateChange = () => {}, onRecoveryEvent = () => {} }) {
+  constructor({ controller, inspectStatic, inspectStaticForStatus = inspectStatic, inspectRuntime, prepareRuntime, startComponent, stopComponents, onStateChange = () => {}, onRecoveryEvent = () => {} }) {
     this.controller = controller;
     this.inspectStatic = inspectStatic;
+    this.inspectStaticForStatus = inspectStaticForStatus;
     this.inspectRuntime = inspectRuntime;
     this.prepareRuntime = prepareRuntime;
     this.startComponent = startComponent;
@@ -40,7 +41,7 @@ export class RuntimeLifecycleCore {
   }
 
   async observeRuntime() {
-    const staticResult = await this.inspectStatic();
+    const staticResult = await this.inspectStaticForStatus();
     if (!staticResult.ok) return { state: { status: "configuration_required", reasonCode: staticResult.reasonCode, credentialStatus: "unknown", retryable: false }, runtime: null };
     const runtime = await this.inspectRuntime();
     if (!runtime.dsh) return { state: { status: "unavailable", reasonCode: "dsh_unavailable", credentialStatus: "unknown", retryable: false }, runtime };

@@ -4,6 +4,7 @@ import http from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { resolveProxySessionConfig } from "../../scripts/host-security-config.mjs";
+import { nativeSettingsClient, nativeSettingsClientPath } from "./native-settings-client.mjs";
 import { allowsPublicAgentRequest } from "./agent-public-access.mjs";
 import { hasValidPreviewGrant, previewGrantLifetimeMs, previewGrantQuery } from "./genui-preview-grant.mjs";
 const require = createRequire(import.meta.url);
@@ -402,6 +403,24 @@ proxy.on("proxyRes", (proxyResponse, request, response) => {
     });
     return;
   }
+  if (requestPath === nativeSettingsClientPath) {
+    const chunks = [];
+    proxyResponse.on("data", chunk => chunks.push(chunk));
+    proxyResponse.on("end", () => {
+      try {
+        if (proxyResponse.statusCode !== 200 || proxyResponse.headers["content-encoding"]) throw new Error("Native settings bundle unavailable.");
+        const body = Buffer.from(nativeSettingsClient(Buffer.concat(chunks).toString("utf8"), request.__uedNativeSettingsAdmin === true));
+        const headers = copyProxyHeaders(body.length);
+        delete headers.etag; delete headers["last-modified"];
+        response.writeHead(200, { ...headers, "Cache-Control": "private, no-store", Vary: "Cookie" });
+        response.end(body);
+      } catch {
+        response.writeHead(502, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+        response.end("Native settings client could not be prepared.");
+      }
+    });
+    return;
+  }
   if (!contentType.includes("text/html")) {
     response.writeHead(proxyResponse.statusCode || 502, copyProxyHeaders());
     proxyResponse.pipe(response);
@@ -455,7 +474,8 @@ const server = http.createServer(async (request, response) => {
   }
   if (await handlePresetBoundaryRequest(request, response, url)) return;
   if (await handleManagedWorkspaceRequest(request, response, url)) return;
-  const proxyHeaders = { origin: previewGrantValid && request.headers.origin === "null" ? "null" : target.origin, referer: `${target.origin}/` };
+  request.__uedNativeSettingsAdmin = sessionAuthorized && url.pathname === nativeSettingsClientPath;
+  const proxyHeaders = { ...(url.pathname === nativeSettingsClientPath ? { "accept-encoding": "identity", "if-none-match": "", "if-modified-since": "" } : {}), origin: previewGrantValid && request.headers.origin === "null" ? "null" : target.origin, referer: `${target.origin}/` };
   proxy.web(request, response, { target: target.origin, headers: proxyHeaders });
 });
 
