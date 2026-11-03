@@ -1,8 +1,9 @@
+import { nativeModelConfiguration } from "../agent-integration/scripts/native-model-configuration.mjs";
 import { randomBytes, randomUUID } from "node:crypto";
 import http from "node:http";
 import { createHostHttpsEdge } from "./host-https-edge.mjs";
 import { createServer } from "node:net";
-import { access, copyFile, readFile } from "node:fs/promises";
+import { access, copyFile, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { isInside, runtimeEnvironmentProfiles } from "../agent-integration/scripts/runtime-boundary.mjs";
@@ -66,19 +67,7 @@ function dshUrl(defaultPort = 3080) {
   return parsed;
 }
 
-function hasValidAgentModelConfiguration(settings, catalog) {
-  const namespaces = Array.isArray(settings?.namespaces) ? settings.namespaces : [];
-  const deepseek = namespaces.find((item) => item?.ns === "llm-deepseek")?.value;
-  const selection = namespaces.find((item) => item?.ns === "agent-default-model")?.value;
-  const baseUrl = typeof deepseek?.baseURL === "string" && deepseek.baseURL ? deepseek.baseURL : "https://api.deepseek.com";
-  const model = selection?.provider === "deepseek-official" && typeof selection.model === "string" ? selection.model : "deepseek-v4-flash";
-  try {
-    const parsed = new URL(baseUrl);
-    if (parsed.protocol !== "https:" || parsed.username || parsed.password || !parsed.hostname || !/^[A-Za-z0-9._:-]{1,160}$/.test(model)) return false;
-  } catch { return false; }
-  const group = Array.isArray(catalog?.groups) ? catalog.groups.find((item) => item?.id === "deepseek-official") : null;
-  return Boolean(group && Array.isArray(group.models) && group.models.some((item) => item?.id === model) && (!selection || selection.provider === "deepseek-official"));
-}
+
 
 async function waitFor(label, check, timeoutMs = 60_000) {
   const startedAt = Date.now();
@@ -314,6 +303,7 @@ export async function main() {
     }
   };
   const inspectStatic = async () => {
+    lastVerifiedSource = null;
     try {
       if (!agentRuntimeDir || !sourceDir || !runtimeSourceDir || !securityEnvironment.AGENT_GATEWAY_TOKEN) return { ok: false, reasonCode: "runtime_configuration_invalid" };
       const configuredUrl = dshUrl(dshPort);
@@ -325,6 +315,7 @@ export async function main() {
       const build = await inspectBuild(runtimeSource.runtimeSourceDir, identity);
       if (!build.ok) return build;
       lastCanonicalRuntimeSource = runtimeSource.runtimeSourceDir;
+      lastVerifiedSource = { canonicalSource, identity };
       runtimeUrl = configuredUrl;
       return { ok: true };
     } catch (error) {
@@ -334,6 +325,21 @@ export async function main() {
     }
   };
   let lastCanonicalRuntimeSource = null;
+  let lastVerifiedSource = null;
+  const installedWindowsRelease = process.platform === "win32" && securityEnvironment.NODE_ENV === "production" && Boolean(securityEnvironment.UED_RUNTIME_CONFIG)
+    && await access(path.join(projectDir, "release-manifest.json")).then(() => true).catch(() => false);
+  // Installed release/DSH code is protected and immutable. Every start still
+  // performs full source verification; status checks probe live health and
+  // paths/build identity without rereading the entire source tree.
+  const inspectStaticForStatus = !installedWindowsRelease ? inspectStatic : async () => {
+    if (!lastVerifiedSource) return inspectStatic();
+    try {
+      await inspectRuntimePaths({ dataDir, agentRuntimeDir });
+      if (await resolveAllowedDshSourcePath(projectDir, sourceDir) !== lastVerifiedSource.canonicalSource
+        || await realpath(runtimeSourceDir) !== lastCanonicalRuntimeSource) return { ok: false, reasonCode: "source_invalid" };
+      return inspectBuild(lastCanonicalRuntimeSource, lastVerifiedSource.identity);
+    } catch { return { ok: false, reasonCode: "runtime_configuration_invalid" }; }
+  };
   const configureAgentSpecifications = () => {
     if (!runtimePaths?.agentRoot || !lastCanonicalRuntimeSource) throw new Error("Agent Runtime 尚未完成受控预检。");
     const values = { DSH_HOME: path.join(runtimePaths.agentRoot, "dsh-home"), AGENT_WORKSPACE_ROOT: path.join(runtimePaths.agentRoot, "workspaces") };
@@ -348,13 +354,18 @@ export async function main() {
     try {
       await observeHealth("dsh", () => rpc("session.list", {}), { reasonCode: "dsh_unavailable" });
       dsh = true;
-      const [credentialResult, settingsResult, catalogResult] = await Promise.allSettled([
-        rpc("credentials.describe", { refs: ["DEEPSEEK_API_KEY"] }),
-        rpc("settings.describe", {}),
-        rpc("llm.models", {})
+      const [settings, catalog, directory] = await Promise.all([
+        rpc("settings.describe", {}), rpc("llm.models", {}), rpc("llm.providers", {})
       ]);
-      if (credentialResult.status === "fulfilled") credentialStatus = credentialResult.value?.credentials?.DEEPSEEK_API_KEY?.configured === true ? "configured" : "missing";
-      agentConfigurationStatus = settingsResult.status === "fulfilled" && catalogResult.status === "fulfilled" && hasValidAgentModelConfiguration(settingsResult.value, catalogResult.value) ? "valid" : "invalid";
+      const configuration = nativeModelConfiguration(settings, catalog, directory);
+      agentConfigurationStatus = configuration.valid ? "valid" : "invalid";
+      if (configuration.valid) {
+        if (!configuration.credentialRef) credentialStatus = "configured";
+        else {
+          const result = await rpc("credentials.describe", { refs: [configuration.credentialRef] });
+          credentialStatus = result?.credentials?.[configuration.credentialRef]?.configured === true ? "configured" : "missing";
+        }
+      }
     } catch {}
     const [gateway, proxy] = await Promise.all([
       observeHealth("gateway", () => probeKnowledgeGatewayMcp({ endpoint: `http://127.0.0.1:${gatewayPort}/mcp` }), { reasonCode: "gateway_health_failed" }).then(() => true).catch(() => false),
@@ -364,7 +375,7 @@ export async function main() {
   };
   const componentPort = { gateway: gatewayPort, dsh: dshPort, proxy: proxyPort };
   core = new RuntimeLifecycleCore({
-    controller, inspectStatic, inspectRuntime,
+    controller, inspectStatic, inspectStaticForStatus, inspectRuntime,
     prepareRuntime: async () => {
       try {
         runtimePaths = await ensureRuntimePaths({ dataDir, agentRuntimeDir });

@@ -44,6 +44,7 @@ export interface HaldurDesignSkillSnapshot {
   nodes: HaldurDesignSkillNode[];
   diagnostics: HaldurDesignSkillDiagnostic[];
   recoveryRequired?: boolean;
+  trashDirectory?: string;
 }
 
 export type HaldurDirectoryOperationType = "create-directory" | "rename-directory" | "move-directory" | "delete-directory" | "upload-file" | "overwrite-file" | "rename-file" | "move-file" | "delete-file";

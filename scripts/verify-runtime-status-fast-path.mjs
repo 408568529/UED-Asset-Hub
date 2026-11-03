@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { RuntimeLifecycleCore } from './runtime-lifecycle-core.mjs';
+let full = 0, status = 0, healthy = 0, pathsValid = true;
+const common = { controller: { get: () => ({ generation: 1 }) }, inspectStatic: async () => { full++; return { ok: true }; }, inspectRuntime: async () => { healthy++; return { dsh: true, proxy: true, gateway: true, mcp: true, credentialStatus: 'configured', agentConfigurationStatus: 'valid' }; }, prepareRuntime: async () => {}, startComponent: async () => {}, stopComponents: async () => {} };
+const core = new RuntimeLifecycleCore({ ...common, inspectStaticForStatus: async () => { status++; return { ok: pathsValid, reasonCode: pathsValid ? null : 'source_invalid' }; } });
+assert.equal((await core.ensureReady()).status, 'ready');assert.equal(full, 1);
+for (let n = 0; n < 20; n++) assert.equal((await core.inspect({ readOnly: true })).status, 'ready');
+assert.equal(full, 1);assert.equal(status, 20);assert.equal(healthy, 21);
+pathsValid = false;assert.equal((await core.inspect({ readOnly: true })).reasonCode, 'source_invalid');
+await core.stopAgentRuntime();pathsValid = true;await core.ensureReady();assert.equal(full, 2, 'A fresh runtime start must repeat full verification');
+const legacy = new RuntimeLifecycleCore(common);await legacy.inspect({ readOnly: true });assert.equal(full, 3, 'Non-release callers retain full status verification');
+console.log('PASS: full validation on each start, live health on each status, path failures and unchanged default behavior');
