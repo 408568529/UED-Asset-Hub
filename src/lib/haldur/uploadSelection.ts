@@ -40,5 +40,11 @@ export function droppedFiles(transfer: DataTransfer): Promise<UploadSelection[]>
   // Capture entries synchronously while the browser's drop store is accessible.
   const entries = Array.from(transfer.items).filter(item => item.kind === "file").map(item => item.webkitGetAsEntry());
   if (entries.some(entry => entry === null)) return Promise.reject(new Error("浏览器无法读取拖入的目录，请使用选择文件夹。"));
-  return Promise.all(entries.map(entry => readEntry(entry!))).then(groups => groups.flat());
+  const singleFolder = entries.length === 1 && entries[0]!.isDirectory;
+  return Promise.all(entries.map(entry => readEntry(entry!))).then(groups => {
+    const files = groups.flat();
+    // A single folder is a contents import, matching the folder picker.
+    // Mixed files/folders keep their selected child directory structure.
+    return singleFolder ? files.map(item => ({ ...item, relativePath: uploadRelativePath(item.relativePath.slice(item.relativePath.indexOf("/") + 1)) })) : files;
+  });
 }

@@ -127,7 +127,7 @@ export function HaldurUploadQueue({ directory, snapshot, onSnapshot, onClose }: 
       <input ref={folderInput} type="file" multiple hidden disabled={busy || collecting} {...{ webkitdirectory: "" }} onChange={event => { if (event.target.files) void addFiles(Promise.resolve(Array.from(event.target.files)).then(selectedFolderContents)); event.target.value = ""; }} />
       <Space><Button disabled={busy || collecting} onClick={() => fileInput.current?.click()}>选择文件</Button><Button disabled={busy || collecting} onClick={() => folderInput.current?.click()}>选择文件夹内容</Button></Space>
       <p>选择文件夹内容：将其中的文件和子文件夹直接放入目标目录，不额外套一层所选文件夹。</p>
-      <p>也可在本地文件夹内全选文件和文件夹，一起拖入此处；保留所拖入子文件夹的层级。空目录和 .DS_Store 不上传。</p>
+      <p>直接拖入一个文件夹：上传其中内容，不保留最外层文件夹；混合拖入多个文件和文件夹时保留各子文件夹层级。空目录和 .DS_Store 不上传。</p>
       <p>选择后统一提交；同名文件须明确跳过或覆盖。</p>
     </div>
     {message ? <Alert style={{ marginTop: 16 }} type="warning" title={message} showIcon /> : null}
