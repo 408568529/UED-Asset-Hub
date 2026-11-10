@@ -7,13 +7,14 @@ export class HaldurPreviewError extends Error {
   constructor(public code: string, message: string, public status = 400) { super(message); }
 }
 const imageTypes: Record<string, string> = { ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif" };
-const textTypes: Record<string, string> = { ".html": "text/html", ".htm": "text/html", ".css": "text/css", ".js": "text/javascript" };
+const textTypes: Record<string, string> = { ".html": "text/html", ".htm": "text/html", ".css": "text/css", ".js": "text/javascript", ".scss": "text/x-scss" };
 export async function readHaldurPreview(entryValue: string, fileValue = entryValue) {
   let entry: string, file: string;
   try { entry = normalizeHaldurRelativePath(entryValue); file = normalizeHaldurRelativePath(fileValue); }
   catch { throw new HaldurPreviewError("INVALID_PATH", "预览路径无效。"); }
   const entryExt = path.extname(entry).toLowerCase();
-  if (![".html", ".htm", ...Object.keys(imageTypes)].includes(entryExt)) throw new HaldurPreviewError("PREVIEW_UNSUPPORTED", "此格式暂不支持预览，请下载原文件。", 415);
+  if (![".html", ".htm", ".scss", ...Object.keys(imageTypes)].includes(entryExt)) throw new HaldurPreviewError("PREVIEW_UNSUPPORTED", "此格式暂不支持预览，请下载原文件。", 415);
+  if (entryExt === ".scss" && file !== entry) throw new HaldurPreviewError("RESOURCE_OUTSIDE_SCOPE", "源码预览只读取当前文件。", 403);
   const directory = path.posix.dirname(entry);
   if (file !== entry && directory !== "." && !file.startsWith(`${directory}/`)) throw new HaldurPreviewError("RESOURCE_OUTSIDE_SCOPE", "资源超出入口所在目录。", 403);
   if (file.split("/").some(part => part.startsWith("."))) throw new HaldurPreviewError("RESOURCE_UNSAFE", "不能预览隐藏文件。", 403);

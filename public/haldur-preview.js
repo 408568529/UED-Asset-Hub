@@ -73,6 +73,28 @@
   }
   try {
     const data = await read(entry);
+    if (data.mime === "text/x-scss") {
+      const source = data.content, area = document.createElement("section"), tools = document.createElement("div"), copy = document.createElement("button"), feedback = document.createElement("span"), pre = document.createElement("pre");
+      area.className = "scss-source"; tools.className = "scss-tools"; pre.className = "scss-code";
+      copy.type = "button"; copy.textContent = "复制源码"; feedback.setAttribute("role", "status");
+      tools.append(copy, feedback); area.append(tools, pre); host.append(area);
+      // A small SCSS lexer. Every source token is inserted as text, never markup.
+      const token = /\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\$[\w-]+|@[\w-]+|#[\da-fA-F]{3,8}\b|\b\d+(?:\.\d+)?(?:%|[a-zA-Z]+)?|[.#%][a-zA-Z_][\w-]*|[a-zA-Z_-][\w-]*|[{}:;(),]/g;
+      const fragment = document.createDocumentFragment(); let line, number = 0;
+      function nextLine() { line = document.createElement("div"); line.className = "scss-line"; const gutter = document.createElement("span"); gutter.className = "scss-number"; gutter.setAttribute("aria-hidden", "true"); gutter.textContent = String(++number); line.append(gutter); fragment.append(line); }
+      function append(text, kind) { const parts = text.split(/\r\n|\r|\n/); parts.forEach((part, index) => { if (index) nextLine(); if (part) { const span = document.createElement("span"); if (kind) span.className = "scss-" + kind; span.textContent = part; line.append(span); } }); }
+      nextLine(); let end = 0;
+      for (const match of source.matchAll(token)) { append(source.slice(end, match.index)); const value = match[0]; const kind = value.startsWith("//") || value.startsWith("/*") ? "comment" : /^["']/.test(value) ? "string" : value[0] === "$" ? "variable" : value[0] === "@" ? "directive" : /^\d|^#[\da-fA-F]{3,8}$/.test(value) ? "number-token" : /^[.#%]/.test(value) ? "selector" : /^[a-zA-Z_-]/.test(value) ? "property" : "punctuation"; append(value, kind); end = match.index + value.length; }
+      append(source.slice(end)); pre.append(fragment);
+      copy.addEventListener("click", async () => {
+        try {
+          if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(source);
+          else { const input = document.createElement("textarea"); input.value = source; input.readOnly = true; input.style.cssText = "position:fixed;left:-9999px"; document.body.append(input); try { input.select(); if (!document.execCommand("copy")) throw new Error("copy denied"); } finally { input.remove(); copy.focus(); } }
+          feedback.textContent = "已复制完整源码";
+        } catch { feedback.textContent = "复制失败，请选择代码复制或下载原文件。"; }
+      });
+      status.textContent = ""; return;
+    }
     if (data.mime.startsWith("image/")) {
       const image = document.createElement("img"); image.alt = data.name;
       image.src = objectURL(Uint8Array.from(atob(data.base64), c => c.charCodeAt(0)), data.mime);

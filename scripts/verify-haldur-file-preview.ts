@@ -21,6 +21,11 @@ async function main() {
     await fs.symlink(path.join(root, "中文目录", "assets"), path.join(root, "中文目录", "alias"));
     await fs.symlink(path.join(root, "中文目录", "入口 (#1).html"), path.join(root, "中文目录", "alias.html"));
     const { readHaldurPreview: read } = await import("@/services/haldurFilePreviewService");
+    const scss = '$color: #fff;\n// 中文注释\n.a { color: $color; content: "</script><img src=x onerror=alert(1)>"; }';
+    await fs.writeFile(path.join(root, "中文目录", "theme.scss"), scss);
+    const preview = await read("中文目录/theme.scss");
+    assert.equal(preview.content, scss); assert.equal(preview.mime, "text/x-scss");
+    await assert.rejects(read("中文目录/theme.scss", "中文目录/assets/style.css"));
     const entry = "中文目录/入口 (#1).html";
     assert.equal((await read(entry)).content, "<h1>真实 UTF-8</h1>");
     for (const file of ["style.css", "app.js", "logo.svg"]) assert.ok((await read(entry, `中文目录/assets/${file}`)).size > 0);
