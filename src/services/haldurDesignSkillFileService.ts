@@ -54,7 +54,7 @@ function caseKey(name: string) {
   return name.normalize("NFC").toLocaleLowerCase("en-US");
 }
 
-function maxUploadBytes() {
+export function maxUploadBytes() {
   const value = process.env.HALDUR_DESIGN_SKILL_MAX_UPLOAD_BYTES?.trim();
   if (!value) return 100 * 1024 * 1024;
   const parsed = Number(value);
@@ -136,7 +136,7 @@ async function assertAvailableName(parent: string, name: string, allowedExisting
   return { name: normalized, target: path.join(parent, normalized) };
 }
 
-async function hashFile(filePathValue: string): Promise<FileIdentity> {
+export async function hashFile(filePathValue: string): Promise<FileIdentity> {
   const hash = createHash("sha256");
   let size = 0;
   for await (const chunk of createReadStream(filePathValue)) {
@@ -147,7 +147,7 @@ async function hashFile(filePathValue: string): Promise<FileIdentity> {
   return { size, hash: hash.digest("hex") };
 }
 
-async function stage(source: AsyncIterable<Uint8Array>, directory: string): Promise<FileIdentity> {
+export async function stage(source: AsyncIterable<Uint8Array>, directory: string): Promise<FileIdentity> {
   const payload = path.join(directory, "payload");
   const output = await fs.open(payload, "wx");
   const hash = createHash("sha256");
@@ -174,7 +174,7 @@ async function stage(source: AsyncIterable<Uint8Array>, directory: string): Prom
   }
 }
 
-async function assertDiskSpace(runtimeRoot: string, bytesNeeded: number) {
+export async function assertDiskSpace(runtimeRoot: string, bytesNeeded: number) {
   const minimum = Number(process.env.HALDUR_DESIGN_SKILL_MIN_FREE_BYTES ?? "0");
   try {
     const stats = await fs.statfs(runtimeRoot);
@@ -196,7 +196,7 @@ async function snapshotAfterFile(root: string, source: string | undefined, targe
   return { snapshot, identity };
 }
 
-async function runFileTransaction(input: { operationType: HaldurDirectoryOperationType; revision: string; operator: string; source?: string; target?: string; mutate: (context: HaldurTransactionContext) => Promise<void>; rollback: (context: HaldurTransactionContext) => Promise<void>; verify: (root: string) => Promise<HaldurDesignSkillSnapshot>; metadata: () => Promise<HaldurMetadataChange>; cleanup?: () => Promise<void>; hasPartialMutation?: () => boolean }) {
+export async function runFileTransaction(input: { operationType: HaldurDirectoryOperationType; revision: string; operator: string; source?: string; target?: string; mutate: (context: HaldurTransactionContext) => Promise<void>; rollback: (context: HaldurTransactionContext) => Promise<void>; verify: (root: string) => Promise<HaldurDesignSkillSnapshot>; metadata: () => Promise<HaldurMetadataChange>; cleanup?: () => Promise<void>; hasPartialMutation?: () => boolean }) {
   const roots = await getHaldurWritableRoots();
   return withHaldurRootWriteLock(roots.root, async (): Promise<HaldurDirectoryOperationResult> => {
     await assertHaldurNoRecovery(roots.runtimeRoot);

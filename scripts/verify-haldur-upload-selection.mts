@@ -29,4 +29,11 @@ const mixed = await droppedFiles({ items: [entry('SKILL.md'), nestedDirectory('�
 assert.deepEqual(mixed.map(item => item.relativePath), ['SKILL.md', '规范/child.md', '参考/child.md']);
 const single = await droppedFiles({ items: [{ kind: 'file', webkitGetAsEntry: () => nestedDirectory('Haldur-Design-System') }] } as unknown as DataTransfer);
 assert.deepEqual(single.map(item => item.relativePath), ['child.md']);
+const folderEntries: string[] = [];
+const empty = { name: '空目录', isFile: false, isDirectory: true, createReader: () => ({ readEntries: (ok: (entries: unknown[]) => void) => ok([]) }) };
+let visited = false;
+const complete = { name: '完整Skill', isFile: false, isDirectory: true, createReader: () => ({ readEntries: (ok: (entries: unknown[]) => void) => { ok(visited ? [] : [empty, nestedDirectory('规范')]); visited = true; } }) };
+const completeFiles = await droppedFiles({ items: [{ kind: 'file', webkitGetAsEntry: () => complete }] } as unknown as DataTransfer, folderEntries);
+assert.deepEqual(folderEntries.sort(), ['空目录', '规范'].sort());
+assert.deepEqual(completeFiles.map(item => item.relativePath), ['规范/child.md']);
 console.log('PASS: folder contents without wrapper, mixed files/folders, nested selection, same-name files, path rejection, multi-batch directory traversal, inaccessible drop');

@@ -20,29 +20,34 @@ export function selectedFolderContents(files: FileList | File[]): UploadSelectio
 }
 
 // Read every directory batch: Chromium may return only 100 entries per call.
-async function readEntry(entry: FileSystemEntry, parent = ""): Promise<UploadSelection[]> {
+async function readEntry(entry: FileSystemEntry, parent = "", directories?: string[]): Promise<UploadSelection[]> {
   const relativePath = uploadRelativePath(parent + entry.name);
   if (entry.isFile) {
     const file = await new Promise<File>((resolve, reject) => (entry as FileSystemFileEntry).file(resolve, reject));
     return file.name === ".DS_Store" ? [] : [{ file, relativePath }];
   }
   if (!entry.isDirectory) throw new Error("无法读取拖入的项目，请使用选择文件夹。");
+  directories?.push(relativePath);
   const reader = (entry as FileSystemDirectoryEntry).createReader();
   const files: UploadSelection[] = [];
   for (;;) {
     const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => reader.readEntries(resolve, reject));
     if (!batch.length) return files;
-    for (const child of batch) files.push(...await readEntry(child, relativePath + "/"));
+    for (const child of batch) files.push(...await readEntry(child, relativePath + "/", directories));
   }
 }
 
-export function droppedFiles(transfer: DataTransfer): Promise<UploadSelection[]> {
+export function droppedFiles(transfer: DataTransfer, directories?: string[]): Promise<UploadSelection[]> {
   // Capture entries synchronously while the browser's drop store is accessible.
   const entries = Array.from(transfer.items).filter(item => item.kind === "file").map(item => item.webkitGetAsEntry());
   if (entries.some(entry => entry === null)) return Promise.reject(new Error("浏览器无法读取拖入的目录，请使用选择文件夹。"));
   const singleFolder = entries.length === 1 && entries[0]!.isDirectory;
-  return Promise.all(entries.map(entry => readEntry(entry!))).then(groups => {
+  return Promise.all(entries.map(entry => readEntry(entry!, "", directories))).then(groups => {
     const files = groups.flat();
+    if (singleFolder && directories) {
+      const nested = directories.map(p => p.includes("/") ? p.slice(p.indexOf("/") + 1) : "").filter(Boolean);
+      directories.splice(0, directories.length, ...nested);
+    }
     // A single folder is a contents import, matching the folder picker.
     // Mixed files/folders keep their selected child directory structure.
     return singleFolder ? files.map(item => ({ ...item, relativePath: uploadRelativePath(item.relativePath.slice(item.relativePath.indexOf("/") + 1)) })) : files;

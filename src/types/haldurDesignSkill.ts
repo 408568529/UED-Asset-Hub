@@ -47,7 +47,7 @@ export interface HaldurDesignSkillSnapshot {
   trashDirectory?: string;
 }
 
-export type HaldurDirectoryOperationType = "create-directory" | "rename-directory" | "move-directory" | "delete-directory" | "upload-file" | "overwrite-file" | "rename-file" | "move-file" | "delete-file";
+export type HaldurDirectoryOperationType = "create-directory" | "rename-directory" | "move-directory" | "delete-directory" | "upload-file" | "overwrite-file" | "rename-file" | "move-file" | "delete-file" | "replace-skill";
 export type HaldurDirectoryJournalStatus = "prepared" | "mutating" | "verifying" | "metadata" | "committed" | "rollback" | "rolled-back" | "recovery-required";
 
 export interface HaldurDirectoryJournal {
@@ -56,6 +56,7 @@ export interface HaldurDirectoryJournal {
   sourceRelativePath?: string;
   targetRelativePath?: string;
   trashPath?: string;
+  replacementEntries?: { oldNames: string[]; newNames: string[] };
   revisionBefore: string;
   revisionAfter?: string;
   operator: string;

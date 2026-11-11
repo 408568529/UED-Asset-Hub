@@ -203,6 +203,16 @@ export async function updateHaldurFileMetadata(relativePath: string, fields: Rec
   }
 }
 
+export async function retainHaldurMetadata(paths: string[], backup: string): Promise<HaldurMetadataChange> {
+  const previous = await readJsonFileForMutation<HaldurDesignSkillMetadataStore>(metadataFile, { schemaVersion: 1, entries: {} });
+  if (previous.schemaVersion !== 1 || !previous.entries || typeof previous.entries !== "object") throw new HaldurDirectoryOperationError("METADATA_FAILED", "Haldur Metadata Schema 无效。", 500);
+  await fs.writeFile(backup, JSON.stringify(previous), { flag: "wx" });
+  const keep = new Set(paths);
+  const next = { schemaVersion: 1 as const, entries: Object.fromEntries(Object.entries(previous.entries).filter(([key]) => keep.has(key))) };
+  await writeJsonFile(metadataFile, next);
+  return { previous, next };
+}
+
 export async function restoreHaldurMetadata(change: HaldurMetadataChange) {
   if (!change) return;
   await writeJsonFile(metadataFile, change.previous);
