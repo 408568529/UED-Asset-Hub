@@ -8,7 +8,7 @@ import { KnowledgeGatewayError } from "@/types/knowledgeGateway";
 const maxBytes = 256 * 1024;
 const pageSize = 8000;
 const source = "haldur-design-skill";
-const readableFormats: Record<string, string> = { ".md": "markdown", ".scss": "scss", ".css": "css" };
+const readableFormats: Record<string, string> = { ".md": "markdown", ".scss": "scss", ".css": "css", ".html": "html", ".htm": "html" };
 const fail = (code: string, status = 400): never => { throw new KnowledgeGatewayError(code, status, `Haldur 文档请求未完成：${code}。`); };
 function safePath(value: string, allowRoot = false) {
   try {
@@ -67,7 +67,7 @@ async function readDocument(root: string, relative: string, budget = maxBytes) {
       const bytes = buffer.subarray(0, size);
       let content: string;
       try { content = new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { return fail("invalid-utf8", 422); }
-      if (content.includes("\0")) return fail("invalid-text", 422);
+      if (/[\u0000-\u0008\u000e-\u001f]/u.test(content) || content.startsWith("%PDF-")) return fail("invalid-text", 422);
       return { content, sha256: createHash("sha256").update(bytes).digest("hex"), size, modifiedAt: end.mtime.toISOString() };
     } finally { await handle.close(); }
   } catch (error) {
@@ -81,8 +81,7 @@ function citation(relative: string, sha256: string) {
 export const haldurKnowledgeService = {
   async get(input: { path: string; offset?: number; sha256?: string }) {
     const relative = safePath(input.path);
-    const format = readableFormats[path.extname(relative).toLowerCase()];
-    if (!format) return fail("metadata-only-use-hub", 415);
+    const format = readableFormats[path.extname(relative).toLowerCase()] ?? "text";
     const offset = input.offset ?? 0;
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > maxBytes) return fail("invalid-offset");
     if (offset > 0 && !/^[a-f0-9]{64}$/.test(input.sha256 ?? "")) return fail("snapshot-hash-required");
@@ -123,22 +122,21 @@ export const haldurKnowledgeService = {
           const current = await inspect(root, relative);
           if (current.stat.isDirectory()) { await walk(relative); if (stopped) break; continue; }
           const extension = path.extname(relative).toLowerCase();
-          if (![...Object.keys(readableFormats), ".html", ".htm", ".svg", ".zip", ".png", ".jpg", ".webp"].includes(extension)) continue;
           let body = "", sha256: string | undefined;
-          if (readableFormats[extension]) {
+          {
             const budget = Math.min(maxBytes, 2 * 1024 * 1024 - bytes);
             try {
               const document = await readDocument(root, relative, budget);
               bytes += document.size;
               body = document.content.toLocaleLowerCase(); sha256 = document.sha256;
             } catch {
-              bytes += budget;
+              bytes += Math.min(current.stat.size, budget);
               diagnostics.push({ code: "body-unreadable-or-over-budget" });
             }
           }
           const lowerPath = relative.toLocaleLowerCase();
           const score = tokens.reduce((sum, token) => sum + (lowerPath.includes(token) ? 10 : 0) + (body.includes(token) ? 1 : 0), 0);
-          if (!tokens.length || score) items.push({ source, relativePath: relative, fileName: entry.name.normalize("NFC"), fileType: extension.slice(1), readable: !!readableFormats[extension] && !!sha256, modifiedAt: current.stat.mtime.toISOString(), sha256, score });
+          if (!tokens.length || score) items.push({ source, relativePath: relative, fileName: entry.name.normalize("NFC"), fileType: extension.slice(1), readable: !!sha256, modifiedAt: current.stat.mtime.toISOString(), sha256, score });
         } catch { diagnostics.push({ code: "entry-unreadable-or-unsafe" }); }
       }
     }

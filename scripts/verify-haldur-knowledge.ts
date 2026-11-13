@@ -46,8 +46,8 @@ async function main() {
   assert.equal((await service.get({ path: "e\u0301.md" })).content, "Unicode NFC");
   assert.ok((await service.search({ q: "SKILL.md" })).items.some(item => item.relativePath === "SKILL.md"));
   const meta = await service.search({ q: "example.html" });
-  assert.equal(meta.items[0].readable, false); assert.equal(meta.partial, true);
-  for (const invalid of ["../outside.md", "%2e%2e/outside.md", "%252e%252e/outside.md", "/tmp/a.md", "C:\\a.md", "nul.md", "a\0.md", "a".repeat(241), ".hidden.md", "link.md", "alias/原则.md", "example.html", "bad.md", "huge.md"]) {
+  assert.equal(meta.items[0].readable, true); assert.equal(meta.partial, true);
+  for (const invalid of ["../outside.md", "%2e%2e/outside.md", "%252e%252e/outside.md", "/tmp/a.md", "C:\\a.md", "nul.md", "a\0.md", "a".repeat(241), ".hidden.md", "link.md", "alias/原则.md", "bad.md", "huge.md"]) {
     await assert.rejects(service.get({ path: invalid }));
   }
   for (const extension of ["scss", "css"]) {
@@ -83,6 +83,16 @@ async function main() {
     await fs.symlink(path.join(temp, "outside.md"), path.join(root, `link.${extension}`));
     await assert.rejects(service.get({ path: `link.${extension}` }));
   }
+  for (const name of ["preview.html", "config.json", "source.ts", "data.yaml", "icon.svg", "README", "unknown.custom"]) {
+    const body = "TEXT-ONLY-FIXTURE <div>正文😀</div>";
+    await fs.writeFile(path.join(root, name), body);
+    assert.equal((await service.get({ path: name })).content, body);
+    assert.ok((await service.search({ q: name })).items.some(item => item.relativePath === name && item.readable));
+  }
+  await fs.writeFile(path.join(root, "binary.custom"), Buffer.from([1, 2, 3]));
+  await fs.writeFile(path.join(root, "document.pdf"), "%PDF-1.7 text");
+  await assert.rejects(service.get({ path: "binary.custom" }));
+  await assert.rejects(service.get({ path: "document.pdf" }));
   const first = await service.get({ path: "long.md" });
   assert.equal(first.contentStatus, "segment"); assert.equal(first.nextOffset, 8000);
   await assert.rejects(service.get({ path: "long.md", offset: 8000 }));
