@@ -21,7 +21,7 @@ async function main() {
   await fs.writeFile(path.join(root, "examples/评审.md"), "# 评审\n只按实际条文判定。");
   await fs.writeFile(path.join(root, "example.html"), "<script>throw 1</script>");
   await fs.writeFile(path.join(root, "bad.md"), Buffer.from([0xff]));
-  await fs.writeFile(path.join(root, "huge.md"), "x".repeat(262145));
+  await fs.writeFile(path.join(root, "huge.md"), "x".repeat(4 * 1024 * 1024 + 1));
   await fs.writeFile(path.join(root, "long.md"), "甲😀".repeat(9000));
   await fs.writeFile(path.join(root, ".hidden.md"), "private");
   await fs.writeFile(path.join(temp, "outside.md"), "outside");
@@ -76,7 +76,7 @@ async function main() {
     assert.equal(api.status, 200); assert.equal((await api.json()).format, extension);
     await fs.writeFile(path.join(root, relative), "changed");
     await assert.rejects(service.get({ path: relative, offset: 8000, sha256: firstStyle.sha256 }));
-    for (const [name, bytes] of [[`bad.${extension}`, Buffer.from([0xff])], [`binary.${extension}`, Buffer.from("a\0b")], [`large.${extension}`, Buffer.alloc(262145, 65)]] as const) {
+    for (const [name, bytes] of [[`bad.${extension}`, Buffer.from([0xff])], [`binary.${extension}`, Buffer.from("a\0b")], [`large.${extension}`, Buffer.alloc(4 * 1024 * 1024 + 1, 65)]] as const) {
       await fs.writeFile(path.join(root, name), bytes); await assert.rejects(service.get({ path: name }));
     }
     await assert.rejects(service.get({ path: `../outside.${extension}` }));
@@ -93,6 +93,16 @@ async function main() {
   await fs.writeFile(path.join(root, "document.pdf"), "%PDF-1.7 text");
   await assert.rejects(service.get({ path: "binary.custom" }));
   await assert.rejects(service.get({ path: "document.pdf" }));
+  const largeTemplate = "<main>" + "x".repeat(4 * 1024 * 1024 - 13) + "</main>";
+  assert.equal(Buffer.byteLength(largeTemplate), 4 * 1024 * 1024);
+  await fs.writeFile(path.join(root, "boundary.html"), largeTemplate);
+  const boundary = await service.get({ path: "boundary.html" });
+  assert.equal(boundary.format, "html");
+  assert.equal(boundary.totalCharacters, largeTemplate.length);
+  assert.equal((await service.get({ path: "boundary.html", offset: 300000, sha256: boundary.sha256 })).content, largeTemplate.slice(300000, 308000));
+  await fs.writeFile(path.join(root, "boundary.html"), largeTemplate + "x");
+  await assert.rejects(service.get({ path: "boundary.html" }));
+  assert.ok((await service.search({ q: "SKILL.md" })).items.some(item => item.relativePath === "SKILL.md"));
   const first = await service.get({ path: "long.md" });
   assert.equal(first.contentStatus, "segment"); assert.equal(first.nextOffset, 8000);
   await assert.rejects(service.get({ path: "long.md", offset: 8000 }));

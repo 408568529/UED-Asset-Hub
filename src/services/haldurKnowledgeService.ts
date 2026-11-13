@@ -5,7 +5,7 @@ import { getHaldurDesignSkillConfig } from "@/config/haldurDesignSkill";
 import { normalizeHaldurRelativePath } from "@/services/haldurDesignSkillService";
 import { KnowledgeGatewayError } from "@/types/knowledgeGateway";
 
-const maxBytes = 256 * 1024;
+const maxBytes = 4 * 1024 * 1024;
 const pageSize = 8000;
 const source = "haldur-design-skill";
 const readableFormats: Record<string, string> = { ".md": "markdown", ".scss": "scss", ".css": "css", ".html": "html", ".htm": "html" };
@@ -130,7 +130,7 @@ export const haldurKnowledgeService = {
               bytes += document.size;
               body = document.content.toLocaleLowerCase(); sha256 = document.sha256;
             } catch {
-              bytes += Math.min(current.stat.size, budget);
+              bytes += current.stat.size <= budget ? current.stat.size : 0;
               diagnostics.push({ code: "body-unreadable-or-over-budget" });
             }
           }

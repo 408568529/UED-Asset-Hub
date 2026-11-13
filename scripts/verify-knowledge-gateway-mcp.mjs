@@ -91,6 +91,7 @@ try {
   const mcpUrl = `http://127.0.0.1:${mcpPort}/mcp`;
   const list = await waitFor(mcpUrl);
   const tools = list.json.result.tools;
+  assert.equal(tools.find(tool => tool.name === "get_haldur_skill_document").inputSchema.properties.offset.maximum, 4 * 1024 * 1024);
   assert.deepEqual(tools.map((tool) => tool.name).sort(), ["get_haldur_skill_document", "get_knowledge_asset", "search_haldur_skill", "search_knowledge", "search_micro_specs"]);
   for (const tool of tools) {
     assert.ok(tool.outputSchema, `${tool.name} must publish an outputSchema`);
