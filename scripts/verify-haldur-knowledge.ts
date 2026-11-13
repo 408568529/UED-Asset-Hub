@@ -50,6 +50,39 @@ async function main() {
   for (const invalid of ["../outside.md", "%2e%2e/outside.md", "%252e%252e/outside.md", "/tmp/a.md", "C:\\a.md", "nul.md", "a\0.md", "a".repeat(241), ".hidden.md", "link.md", "alias/原则.md", "example.html", "bad.md", "huge.md"]) {
     await assert.rejects(service.get({ path: invalid }));
   }
+  for (const extension of ["scss", "css"]) {
+    const relative = `references/样式.${extension.toUpperCase()}`;
+    const body = `/* STYLE-BODY-${extension} 中文😀 */\n:root { --brand: #123456; }\n` + "/* 甲😀 */\n".repeat(1500);
+    await fs.writeFile(path.join(root, relative), body);
+    const discovered = await service.search({ q: `STYLE-BODY-${extension}`, prefix: "references" });
+    assert.equal(discovered.items.length, 1);
+    assert.equal(discovered.items[0].relativePath, relative);
+    assert.equal(discovered.items[0].readable, true);
+    assert.ok((await service.search({ q: `样式.${extension}`, prefix: "references" })).items.some(item => item.relativePath === relative));
+    const firstStyle = await service.get({ path: relative });
+    assert.equal(firstStyle.format, extension);
+    assert.equal(firstStyle.sha256, discovered.items[0].sha256);
+    assert.equal(firstStyle.citation.sha256, createHash("sha256").update(body).digest("hex"));
+    assert.equal(firstStyle.nextOffset, 8000);
+    await assert.rejects(service.get({ path: relative, offset: 8000 }));
+    let assembledStyle = firstStyle.content;
+    let offset: number | null = firstStyle.nextOffset;
+    while (offset !== null) {
+      const page = await service.get({ path: relative, offset, sha256: firstStyle.sha256 });
+      assembledStyle += page.content; offset = page.nextOffset;
+    }
+    assert.equal(assembledStyle, body);
+    const api = await route(new Request("http://localhost/api?path=" + encodeURIComponent(relative), { headers: { Authorization: "Bearer synthetic-gateway-test-only" } }));
+    assert.equal(api.status, 200); assert.equal((await api.json()).format, extension);
+    await fs.writeFile(path.join(root, relative), "changed");
+    await assert.rejects(service.get({ path: relative, offset: 8000, sha256: firstStyle.sha256 }));
+    for (const [name, bytes] of [[`bad.${extension}`, Buffer.from([0xff])], [`binary.${extension}`, Buffer.from("a\0b")], [`large.${extension}`, Buffer.alloc(262145, 65)]] as const) {
+      await fs.writeFile(path.join(root, name), bytes); await assert.rejects(service.get({ path: name }));
+    }
+    await assert.rejects(service.get({ path: `../outside.${extension}` }));
+    await fs.symlink(path.join(temp, "outside.md"), path.join(root, `link.${extension}`));
+    await assert.rejects(service.get({ path: `link.${extension}` }));
+  }
   const first = await service.get({ path: "long.md" });
   assert.equal(first.contentStatus, "segment"); assert.equal(first.nextOffset, 8000);
   await assert.rejects(service.get({ path: "long.md", offset: 8000 }));
