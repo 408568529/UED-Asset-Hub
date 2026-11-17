@@ -11,12 +11,13 @@ const replacements = [
   ['function registerDiscoveryBudget(ctx) {', 'function registerDiscoveryBudget(ctx) {\n\tregisterHaldurReadingPolicy(ctx);'],
   ['Use at most two discovery calls per connected source, four reads from one source, and six connected reads in one user turn.', 'For the existing Haldur tools only, use at most 6 discovery calls and 64 document pages per user turn. Read SKILL.md first; finish its ordered prerequisites and each document through nextOffset with unchanged sha256. Other sources retain two discovery calls per source, four reads per source and six reads per turn.'],
   ['then answer or create the useful interactive surface now.', 'then report the missing evidence. Do not create or update a source-dependent design using invented fallback styles.'],
+  [String.raw`\b(?:action|formAction|target)\s*=`, String.raw`\s(?:action|formAction|target)\s*=`],
 ];
 export function patchGenuiHaldurReading(source) {
   if (source.startsWith(marker)) {
     const restored = replacements.reduce((text, [before, after]) => text.replace(after, before), source.slice(marker.length));
     if (digest(restored) !== officialServerSha256) throw new Error('Installed reading patch identity mismatch.');
-    return source;
+    source = restored;
   }
   if (digest(source) !== officialServerSha256) throw new Error('Only pinned GenUI 0.15.1 server bytes may be patched.');
   for (const [before, after] of replacements) {

@@ -1,0 +1,1 @@
+{"result":"PASS_GENUI_MARKER_REAL_BROWSER","build":"passed","browser":"chromium","runtime":"passed","requirements":[{"name":"正常主操作标记渲染","status":"passed"},{"name":"主操作按钮可执行","status":"passed"}]}

@@ -1,0 +1,9 @@
+{
+    "versionFiles":  31,
+    "checkedAt":  "2026-11-17T15:46:38.0978076+08:00",
+    "taskState":  "Running",
+    "directory":  "releases/internal-0.1.1-prod17-genui-attributes-20261117-0e157decc0f8",
+    "release":  "internal-0.1.1-prod17-genui-attributes-20261117",
+    "versionsUnchanged":  true,
+    "serverSha256":  "732c0f48f50ae1f71fd7ee815c5c0b3dd5c3377973358cc9b8d604eec6b20d44"
+}
