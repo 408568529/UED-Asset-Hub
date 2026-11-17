@@ -54,6 +54,10 @@ try{
  const response=await access();assert.equal(response.status,200);const links=await response.json();
  const preview=await fetch(origin+links.preview_url);assert.equal(preview.status,200);assert.equal(await preview.text(),html);assert.match(preview.headers.get('content-security-policy'),/sandbox allow-scripts/);assert.doesNotMatch(preview.headers.get('content-security-policy'),/allow-same-origin/);
  const cssUrl=new URL('../5、基础样式/theme/index.css',origin+links.preview_url);assert.equal(await(await fetch(cssUrl)).text(),css.toString());
+ const child=Buffer.from('<!doctype html><html><body>Nested preview</body></html>');
+ const nested=await store.create(owner,'nested-demo','内嵌页面',{...bundle,templateId:'skill-html',files:[...bundle.files,{path:'child.html',content:child.toString('base64'),sha256:digest(child),bytes:child.length,source:'fixture'}]});
+ const childUrl=origin+'/html-artifacts/files/'+nested.artifact_id+'/'+nested.version_id+'/'+store.grant(nested.artifact_id,nested.version_id)+'/child.html';
+ const childResponse=await fetch(childUrl);assert.equal(childResponse.status,200);assert.doesNotMatch(childResponse.headers.get('content-security-policy'),/frame-ancestors/);assert.match(childResponse.headers.get('content-security-policy'),/sandbox allow-scripts/);assert.match(preview.headers.get('content-security-policy'),/frame-ancestors/);
  const wrapper=await fetch(origin+links.app_url);assert.equal(wrapper.status,200);assert.match(await wrapper.text(),/sandbox="allow-scripts/);
  assert.equal((await fetch(origin+links.preview_url.replace(new URL(links.preview_url,origin).pathname.split('/')[5],'invalid'))).status,403);
  assert.notEqual((await fetch(origin+links.preview_url.replace(encodeURIComponent('列表页-preview.html'),'..%2F..%2F.preview-key'))).status,200);

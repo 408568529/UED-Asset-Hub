@@ -59,7 +59,10 @@ export function createHtmlHttp({ store, resolveSession, publicOrigin, archiveMod
       if (!contentType) return json(res, 415, { error:'不支持该预览类型。' });
       const bytes = await store.bytes(version, relative);
       const scope = `${origin}/html-artifacts/files/${id}/${versionId}/${grant}/`;
-      const policy = `sandbox allow-scripts allow-downloads allow-modals allow-forms; default-src 'none'; script-src 'unsafe-inline' ${scope}; style-src 'unsafe-inline' ${scope}; img-src data: blob: ${scope}; font-src data: ${scope}; connect-src ${scope}; frame-src ${scope}; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors ${origin}`;
+      // A nested copied HTML frame has an opaque sandbox origin; keep ancestor
+      // restriction on the entry, while every child still requires the same version grant.
+      const ancestors = relative === version.manifest.entry || relative === "index.html" ? `; frame-ancestors ${origin}` : "";
+      const policy = `sandbox allow-scripts allow-downloads allow-modals allow-forms; default-src 'none'; script-src 'unsafe-inline' ${scope}; style-src 'unsafe-inline' ${scope}; img-src data: blob: ${scope}; font-src data: ${scope}; connect-src ${scope}; frame-src ${scope}; object-src 'none'; base-uri 'none'; form-action 'none'${ancestors}`;
       res.writeHead(200, { ...common, 'content-type':contentType, 'content-length':bytes.length, 'content-security-policy':policy, 'access-control-allow-origin':'*', 'cross-origin-resource-policy':'cross-origin' }); res.end(req.method === 'HEAD' ? undefined : bytes);
     } catch { if (!res.headersSent) json(res, 400, { error:'无法访问该成果或版本，请从所属会话重新打开。' }); else res.destroy(); }
   };
