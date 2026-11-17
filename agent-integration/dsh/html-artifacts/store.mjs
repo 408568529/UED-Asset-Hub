@@ -7,7 +7,7 @@ export const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const locks = new Map();
 const ID = /^[a-z0-9][a-z0-9-]{2,79}$/;
 const VERSION = /^v-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
-const textExtensions = new Set(['.html', '.css', '.js', '.json', '.txt']);
+const textExtensions = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.json', '.txt']);
 const maxFile = 4 * 1024 * 1024, maxTotal = 16 * 1024 * 1024;
 const escapeHtml = text => String(text).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function relativePath(value) {
@@ -48,7 +48,7 @@ function validateHtml(text) {
   if (!/<html\b/i.test(text) || !/<body\b/i.test(text) || !/<\/html\s*>/i.test(text)) throw Error('HTML 结构不完整，已保留上个版本。');
   for (const match of text.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
     if (/\bsrc\s*=/i.test(match[1]) || /\btype\s*=\s*["'](?:application\/json|application\/ld\+json)["']/i.test(match[1])) continue;
-    if (/\btype\s*=\s*["']module["']/i.test(match[1])) throw Error('首版模板使用普通浏览器脚本，不支持新增模块入口。');
+    if (/\btype\s*=\s*["']module["']/i.test(match[1])) continue; // Module syntax is checked by the sandboxed browser, never executed here.
     // Parse only. Never execute template code in the Harness/server process.
     new Script(match[2], { filename: 'html-artifact-inline.js' });
   }
@@ -105,7 +105,7 @@ export class HtmlArtifacts {
         if (body.length > maxFile || total > maxTotal || manifestFiles.length >= 48) throw Error('成果超过文件或总量预算。');
         const at = path.join(dir, 'files', ...relative.split('/')); await fs.mkdir(path.dirname(at), { recursive: true }); await fs.writeFile(at, body, { flag: 'wx', mode: 0o600 });
         manifestFiles.push({ path: relative, bytes: body.length, sha256: digest(body) });
-        if (relative.endsWith('.html')) validateHtml(new TextDecoder('utf-8', { fatal: true }).decode(body));
+        if (/\.html?$/i.test(relative)) validateHtml(new TextDecoder('utf-8', { fatal: true }).decode(body));
       }
       if (!files.has(entry)) throw Error('成果缺少入口。');
       const manifest = { id, version, title: record.title, entry, files: manifestFiles, provenance, parent: baseVersion ?? null, createdAt: new Date().toISOString() };
@@ -115,14 +115,14 @@ export class HtmlArtifacts {
       return this.receipt(manifest);
     } catch (error) { await fs.rm(dir, { recursive: true, force: true }); throw error; }
   }
-  receipt(manifest) { return { artifact_id: manifest.id, version_id: manifest.version, title: manifest.title, entry: manifest.entry, files: manifest.files, parent_version: manifest.parent, status: 'ready', template_id: 'list-page' }; }
+  receipt(manifest) { return { artifact_id: manifest.id, version_id: manifest.version, title: manifest.title, entry: manifest.entry, files: manifest.files, parent_version: manifest.parent, status: 'ready', template_id: manifest.provenance?.templateId ?? 'list-page', template_path: manifest.provenance?.templatePath ?? manifest.entry }; }
   async create(owner, requested, displayTitle, bundle) {
     const id = scopedId(owner, requested);
     return locked(this.directory(id), async () => {
       await safeDirectory(this.root);
       const dir = this.directory(id); await fs.mkdir(dir).catch(error => { if (error.code === 'EEXIST') throw Error('同名成果已存在，请读取并修改已有成果。'); throw error; });
       try {
-        if (bundle.templateId !== 'list-page' || !Array.isArray(bundle.files) || bundle.files.length > 46) throw Error('模板包无效。');
+        if (!['list-page','skill-html'].includes(bundle.templateId) || !Array.isArray(bundle.files) || bundle.files.length > 47) throw Error('模板包无效。');
         const files = new Map(); const caseNames = new Set();
         for (const spec of bundle.files) {
           relativePath(spec.path); const key = spec.path.toLocaleLowerCase('en-US');
@@ -130,11 +130,11 @@ export class HtmlArtifacts {
           const bytes = Buffer.from(spec.content, 'base64'); if (bytes.length !== spec.bytes || digest(bytes) !== spec.sha256) throw Error('模板文件校验失败。');
           caseNames.add(key); files.set(spec.path, bytes);
         }
-        relativePath(bundle.entry); if (files.has('index.html')) throw Error('模板包占用了成果入口。');
+        relativePath(bundle.entry);
         const record = { id, owner, title: title(displayTitle) };
         const location = './' + bundle.entry.split('/').map(encodeURIComponent).join('/');
-        files.set('index.html', Buffer.from(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${escapeHtml(location)}"><title>${escapeHtml(record.title)}</title></head><body><a href="${escapeHtml(location)}">打开成果</a></body></html>`));
-        const provenance = { templateId: bundle.templateId, sourceRevision: bundle.sourceRevision, sourceEntrySha256: bundle.sourceEntrySha256, sources: bundle.files.map(({ path, sha256, source }) => ({ path, sha256, source })), warnings: bundle.warnings ?? [] };
+        if (!files.has('index.html')) files.set('index.html', Buffer.from(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${escapeHtml(location)}"><title>${escapeHtml(record.title)}</title></head><body><a href="${escapeHtml(location)}">打开成果</a></body></html>`));
+        const provenance = { templateId: bundle.templateId, templatePath: bundle.templatePath ?? bundle.entry, sourceRevision: bundle.sourceRevision, sourceEntrySha256: bundle.sourceEntrySha256, sources: bundle.files.map(({ path, sha256, source }) => ({ path, sha256, source })), warnings: bundle.warnings ?? [] };
         return await this.publish(record, files, bundle.entry, provenance);
       } catch (error) { await fs.rm(dir, { recursive: true, force: true }); throw error; }
     });

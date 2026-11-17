@@ -210,10 +210,12 @@ async function createSession() {
 }
 
 const service = http.createServer(async (request, response) => {
-  if (request.url === "/html-template/list-page" && request.method === "GET") {
+  const htmlUrl = new URL(request.url || "/", "http://127.0.0.1");
+  const htmlRoute = { "/html-template/list-page":"/api/knowledge-gateway/html-template/list-page", "/html-template/catalog":"/api/knowledge-gateway/html-template/catalog", "/html-template/bundle":"/api/knowledge-gateway/html-template" }[htmlUrl.pathname];
+  if (htmlRoute && request.method === "GET") {
     if (request.headers.origin || !["127.0.0.1:" + port, "localhost:" + port].includes(request.headers.host)) { response.writeHead(403); response.end(); return; }
-    try { const bundle = await gatewayRequest("/api/knowledge-gateway/html-template/list-page"); response.writeHead(200, {"Content-Type":"application/json", "Cache-Control":"no-store"}); response.end(JSON.stringify(bundle)); }
-    catch { response.writeHead(503, {"Content-Type":"application/json"}); response.end(JSON.stringify({error:"Complete list template bundle is unavailable."})); }
+    try { const bundle = await gatewayRequest(htmlRoute + htmlUrl.search); response.writeHead(200, {"Content-Type":"application/json", "Cache-Control":"no-store"}); response.end(JSON.stringify(bundle)); }
+    catch { response.writeHead(503, {"Content-Type":"application/json"}); response.end(JSON.stringify({error:"Selected Skill HTML template or resources are unavailable; refresh html_templates and check dependencies."})); }
     return;
   }
   if (request.url?.split("?")[0] !== "/mcp" || request.method !== "POST") {

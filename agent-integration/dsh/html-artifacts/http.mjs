@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 const encode = path => path.split('/').map(encodeURIComponent).join('/');
 const escape = text => String(text).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const common = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
-const mime = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.json':'application/json', '.txt':'text/plain; charset=utf-8', '.svg':'image/svg+xml', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp', '.gif':'image/gif', '.woff':'font/woff', '.woff2':'font/woff2', '.ttf':'font/ttf', '.otf':'font/otf' };
+const mime = { '.html':'text/html; charset=utf-8', '.htm':'text/html; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.ico':'image/x-icon', '.avif':'image/avif', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.json':'application/json', '.txt':'text/plain; charset=utf-8', '.svg':'image/svg+xml', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp', '.gif':'image/gif', '.woff':'font/woff', '.woff2':'font/woff2', '.ttf':'font/ttf', '.otf':'font/otf' };
 function json(res, status, data) { res.writeHead(status, { ...common, 'content-type':'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); }
 async function input(req) {
   if (req.headers['content-type']?.split(';')[0] !== 'application/json') throw Error('需要 JSON 请求。');
@@ -17,7 +17,7 @@ function sameOrigin(req) {
 }
 export function urls(manifest, grant) {
   const tail = `${encodeURIComponent(manifest.id)}/${encodeURIComponent(manifest.version)}/${grant}`;
-  return { preview_url: `/html-artifacts/files/${tail}/${encode(manifest.entry)}#composition`, app_url: `/html-artifacts/app/${tail}`, download_url: `/html-artifacts/download/${tail}` };
+  return { preview_url: `/html-artifacts/files/${tail}/${encode(manifest.entry)}${/list-page|列表页/.test(manifest.entry)?'#composition':''}`, app_url: `/html-artifacts/app/${tail}`, download_url: `/html-artifacts/download/${tail}` };
 }
 function wrapper(manifest, access) {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escape(manifest.title)}</title><style>html,body{height:100%;margin:0;background:#f5f5f5;font:14px system-ui}body{display:flex;flex-direction:column}header{display:flex;align-items:center;gap:16px;padding:10px 16px;background:white;border-bottom:1px solid #ddd}strong{flex:1}a,button{color:#1677ff;border:0;background:none;font:inherit;cursor:pointer}iframe{border:0;width:100%;flex:1;min-height:0}</style></head><body><header><strong>${escape(manifest.title)}</strong><button id="full">全屏查看</button><a href="${escape(access.download_url)}" download>下载完整成果</a></header><iframe title="HTML 成果预览" src="${escape(access.preview_url)}" sandbox="allow-scripts allow-downloads allow-modals allow-forms" allow="fullscreen *" referrerpolicy="no-referrer"></iframe><script>document.getElementById('full').onclick=()=>document.documentElement.requestFullscreen?.();</script></body></html>`;

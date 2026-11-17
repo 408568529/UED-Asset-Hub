@@ -5,19 +5,50 @@ import { getHaldurDesignSkillConfig } from "@/config/haldurDesignSkill";
 import { normalizeHaldurRelativePath, haldurDesignSkillService } from "@/services/haldurDesignSkillService";
 import { KnowledgeGatewayError } from "@/types/knowledgeGateway";
 
-const entry = "2、典型页面/列表页-preview.html";
+const listPage = "2、典型页面/列表页-preview.html";
 const maxFile = 4 * 1024 * 1024;
 const maxBundle = 16 * 1024 * 1024;
-const extensions = new Set([".html", ".css", ".js", ".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif", ".woff", ".woff2", ".ttf", ".otf"]);
+const extensions = new Set([".html", ".htm", ".css", ".js", ".mjs", ".json", ".txt", ".ico", ".avif", ".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif", ".woff", ".woff2", ".ttf", ".otf"]);
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const fail = (message: string, status = 409): never => { throw new KnowledgeGatewayError("html-template-unavailable", status, message); };
 type File = { path: string; content: string; sha256: string; bytes: number; source: string };
 
-// The caller selects one named template, never a filesystem path. All reads stay
-// within the configured Skill; no generated files or caches are written there.
-export async function getListPageTemplateBundle() {
+export async function listHtmlTemplates({ q = "", offset = 0, limit = 50 } = {}) {
+  if (q.length > 200 || !Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 50) return fail("模板检索参数无效。", 400);
+  const snapshot = await haldurDesignSkillService.getSnapshot();
+  if (!snapshot.rootAvailable || snapshot.recoveryRequired) return fail("Skill 资料暂不可用。", 503);
+  const items = snapshot.manifest.filter(file => file.type === "file" && /\.html?$/i.test(file.relativePath) && (!q || file.relativePath.toLocaleLowerCase().includes(q.toLocaleLowerCase()))).sort((a, b) => a.relativePath.localeCompare(b.relativePath, "zh-CN"));
+  return { sourceRevision: snapshot.revision, total: items.length, items: items.slice(offset, offset + limit).map(file => ({ path: file.relativePath, bytes: file.size, modifiedAt: file.modifiedAt, readable: file.size <= maxFile })), nextOffset: offset + limit < items.length ? offset + limit : null };
+}
+
+// Extract real HTML tags without interpreting markup embedded in script strings.
+// Script bodies are raw text; inline styles contribute their CSS dependencies.
+function htmlReferences(text: string) {
+  const refs: string[] = [], css: string[] = [];
+  const tags = /<!--[\s\S]*?-->|<(script|style)\b((?:[^"'<>]|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/\1\s*>|<([a-z][\w:-]*)\b((?:[^"'<>]|"[^"]*"|'[^']*')*)>/gi;
+  for (const tag of text.matchAll(tags)) {
+    const name = (tag[1] || tag[4] || "").toLowerCase(), attrs = tag[2] ?? tag[5] ?? "";
+    if (name === "style") css.push(tag[3]);
+    if (name === "script") refs.push(...jsReferences(tag[3]));
+    for (const attr of attrs.matchAll(/([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g)) {
+      const key = attr[1].toLowerCase(), value = attr[2] ?? attr[3] ?? attr[4];
+      if (key === "style") css.push(value);
+      if ((key === "src" && ["script", "img", "source", "iframe", "audio", "video"].includes(name)) || (key === "href" && name === "link") || (key === "poster" && name === "video")) refs.push(value.replace(/&amp;/g, "&"));
+      if (key === "srcset" && ["img", "source"].includes(name) && !value.startsWith("data:")) refs.push(...value.split(",").map(part => part.trim().split(/\s+/)[0]));
+    }
+  }
+  return [...refs, ...css.flatMap(cssReferences)];
+}
+function jsReferences(text: string) { return [...text.matchAll(/(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\bfetch\s*\(\s*|\bnew\s+URL\s*\(\s*)["'](\.{1,2}\/[^"']+)["']/g)].map(match => match[1]); }
+function cssReferences(text: string) { return [...text.matchAll(/(?:url\(\s*["']?|@import\s+["'])([^\s"')]+)["']?\s*\)?/gi)].map(match => match[1]); }
+
+// User-selected paths remain relative to the current physical Skill, which is read-only.
+export async function getHtmlTemplateBundle(templatePath: string, resourcePaths: string[] = []) {
+  const entry = normalizeHaldurRelativePath(templatePath);
+  if (!/\.html?$/i.test(entry) || resourcePaths.length > 20) return fail("请选择 Skill 中的 HTML 模板。", 400);
   const before = await haldurDesignSkillService.getSnapshot();
   if (!before.rootAvailable || before.recoveryRequired) return fail("Skill 资料暂不可用。", 503);
+  if (!before.manifest.some(file => file.type === "file" && file.relativePath === entry)) return fail("所选 HTML 模板已不存在，请重新检索 Skill。", 404);
   const configured = getHaldurDesignSkillConfig().root;
   const rootStat = await fs.lstat(configured);
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) return fail("模板根目录不可用。", 503);
@@ -51,7 +82,7 @@ export async function getListPageTemplateBundle() {
   }
   function add(relative: string, bytes: Buffer, source: string) {
     total += bytes.length;
-    if (total > maxBundle || files.size >= 48) return fail("模板资源超过首版复制预算。", 413);
+    if (total > maxBundle || files.size >= 47) return fail("模板资源超过首版复制预算。", 413);
     files.set(relative, { path: relative, content: bytes.toString("base64"), sha256: hash(bytes), bytes: bytes.length, source });
   }
   async function collect(relative: string) {
@@ -60,13 +91,11 @@ export async function getListPageTemplateBundle() {
     if (relative === entry) entrySha256 = hash(bytes);
     add(relative, bytes, `asset-hub://haldur-design-skill/${relative.split("/").map(encodeURIComponent).join("/")}`);
     const ext = path.posix.extname(relative).toLowerCase();
-    if (ext !== ".html" && ext !== ".css") return;
+    if (![".html", ".htm", ".css", ".js", ".mjs"].includes(ext)) return;
     const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    const refs = ext === ".html"
-      ? [...text.matchAll(/<(?:link|script|img|source)\b[^>]*?\b(?:href|src)\s*=\s*["']([^"']+)["'][^>]*>/gi)].map(match => match[1])
-      : [...text.matchAll(/(?:url\(\s*["']?|@import\s+["'])([^\s"')]+)["']?\s*\)?/gi)].map(match => match[1]);
+    const refs = /\.html?$/.test(ext) ? htmlReferences(text) : ext === ".css" ? cssReferences(text) : jsReferences(text);
     for (const raw of [...new Set(refs)]) {
-      if (/^(?:data:|blob:|#)/i.test(raw)) continue;
+      if (!raw || /^(?:data:|blob:|#)/i.test(raw)) continue;
       const url = new URL(raw, `https://skill.invalid/${relative.split("/").map(encodeURIComponent).join("/")}`);
       if (url.origin !== "https://skill.invalid") {
         // The existing list template uses this iconfont script. Mirror only this
@@ -87,17 +116,19 @@ export async function getListPageTemplateBundle() {
         files.set(relative, { ...files.get(relative)!, content: replaced.toString("base64"), sha256: hash(replaced), bytes: replaced.length });
       } else {
         const dependency = normalizeHaldurRelativePath(decodeURIComponent(url.pathname.slice(1)));
-        if (path.posix.extname(dependency).toLowerCase() === ".html" && dependency !== entry) return fail("首版不复制额外的 HTML 入口。", 400);
         await collect(dependency);
       }
     }
   }
-  try { await collect(entry); } catch (error) {
+  try { await collect(entry); for (const resource of resourcePaths) await collect(normalizeHaldurRelativePath(resource)); } catch (error) {
     if (error instanceof KnowledgeGatewayError) throw error;
-    return fail("无法完整读取列表页模板及资源，请检查 Skill 内容。", 503);
+    return fail("无法完整读取所选 HTML 模板及资源，请检查 Skill 内容。", 503);
   }
   const after = await haldurDesignSkillService.getSnapshot();
   if (before.revision !== after.revision || after.recoveryRequired) return fail("Skill 在复制过程中已改变，请重试。");
-  warnings.add("文档说明链接不作为运行依赖复制；成果仅使用本地演示数据，不连接真实业务接口。");
-  return { templateId: "list-page", entry, sourceRevision: before.revision, sourceEntrySha256: entrySha256, files: [...files.values()], totalBytes: total, warnings: [...warnings] };
+  warnings.add("文档说明链接不作为运行依赖复制；动态生成的资源路径需通过 resource_paths 补充。成果不连接真实业务接口。");
+  return { templateId: "skill-html", templatePath: entry, entry, sourceRevision: before.revision, sourceEntrySha256: entrySha256, files: [...files.values()], totalBytes: total, warnings: [...warnings] };
 }
+
+// Compatibility endpoint for existing callers; new Agent calls select a current Skill path.
+export const getListPageTemplateBundle = () => getHtmlTemplateBundle(listPage);

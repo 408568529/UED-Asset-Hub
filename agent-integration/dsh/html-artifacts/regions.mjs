@@ -11,6 +11,10 @@ export function regions(text) {
     const start = text.indexOf(from), end = start < 0 ? -1 : text.indexOf(to, start + from.length);
     if (start >= 0 && end > start && text.indexOf(from, start + 1) < 0) result.push({ name, start, end, chars: end - start });
   }
+  for (const [name, pattern] of [['document.title', /<title\b[^>]*>[\s\S]*?<\/title\s*>/gi], ['document.heading', /<h1\b[^>]*>[\s\S]*?<\/h1\s*>/gi]]) {
+    const matches = [...text.matchAll(pattern)];
+    if (matches.length === 1) { const start = matches[0].index; result.push({name,start,end:start+matches[0][0].length,chars:matches[0][0].length}); }
+  }
   return result;
 }
 export function excerpt(text, input = {}) {

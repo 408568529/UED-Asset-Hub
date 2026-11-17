@@ -34,6 +34,15 @@ try{
  await assert.rejects(store.create(owner,'list-page','dup',bundle));
  await assert.rejects(store.inspect(owner,created.artifact_id,{anchor:'not found'}));
  const duplicate=await store.create(owner,'duplicate','第二份',bundle);await assert.rejects(store.patch(owner,duplicate.artifact_id,duplicate.version_id,[{path:entry,sha256:digest(body),old_text:'<',new_text:'bad'}]));
+ const rootHtml=Buffer.from('<!doctype html><html><head><title>新模板</title></head><body><h1>New</h1><script type="module">const value=1;</script></body></html>');
+ const generic=await store.create(owner,'new-template','新模板',{...bundle,templateId:'skill-html',templatePath:'index.html',entry:'index.html',files:[{path:'index.html',content:rootHtml.toString('base64'),sha256:digest(rootHtml),bytes:rootHtml.length,source:'fixture'}]});
+ assert.equal((await store.inspect(owner,generic.artifact_id,{region:'document.title'})).content,'<title>新模板</title>');
+ assert.equal(generic.template_id,'skill-html');assert.equal(generic.entry,'index.html');assert.equal(generic.files.length,1);
+ assert.equal((await store.inspect(owner,generic.artifact_id,{offset:0})).content,rootHtml.toString());
+ let selected;const selectedTool=toolDefinitions(store,async(path,resources)=>{selected={path,resources};return {...bundle,templateId:'skill-html'};},async()=>({items:[{path:'new.html'}]}));
+ assert.equal((await selectedTool[0].execute({}, {agent:{id:owner}})).items[0].path,'new.html');
+ await selectedTool.find(x=>x.name==='html_from_template').execute({artifact_id:'selection-check',title:'选择测试',template_path:'new.html',resource_paths:['data.json']},{agent:{id:owner}});
+ assert.deepEqual(selected,{path:'new.html',resources:['data.json']});
  const badBundle={...bundle,files:[{...bundle.files[0],path:'../evil.html'}]};await assert.rejects(store.create(owner,'escape','拒绝越界',badBundle));
  const originalVersion=await store.version(created.artifact_id,created.version_id,owner);
  const oldBytes=await store.bytes(originalVersion,entry);assert.equal(oldBytes.toString(),html);
@@ -52,6 +61,6 @@ try{
  // Immutable versions fail closed on file tampering and symlink substitution.
  const target=path.join(originalVersion.dir,'files',...entry.split('/'));
  await fs.writeFile(target,'tampered');await assert.rejects(store.bytes(originalVersion,entry));await fs.unlink(target);await fs.writeFile(path.join(temp,'outside.html'),'outside');await fs.symlink(path.join(temp,'outside.html'),target);await assert.rejects(store.bytes(originalVersion,entry));await fs.unlink(target);await fs.writeFile(target,body);
- const tools=toolDefinitions(store,async()=>bundle);assert.deepEqual(tools.map(t=>t.name),['html_from_template','html_inspect','html_patch','html_present']);await assert.rejects(tools[0].execute({artifact_id:'no-agent',title:'bad'},{}));
+ const tools=toolDefinitions(store,async()=>bundle);assert.deepEqual(tools.map(t=>t.name),['html_templates','html_from_template','html_inspect','html_patch','html_present']);await assert.rejects(tools[0].execute({artifact_id:'no-agent',title:'bad'},{}));
  console.log(JSON.stringify({result:'PASS_HTML_ARTIFACTS',checks:['bounded excerpts','exact patches','stale/concurrent rejection','failed edit preserves last good','old versions and restart','relative CSS','version scoped expiring grants','cross-session and origin rejection','traversal/tamper/symlink rejection','no source mutation'],zip,zipFixture:zip?path.join(temp,'artifact.zip'):null,fixtureRoot:temp}));
 }finally{if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}if(!process.argv[2])await fs.rm(temp,{recursive:true,force:true});}

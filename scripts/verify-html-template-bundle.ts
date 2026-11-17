@@ -21,11 +21,11 @@ try {
   await fs.writeFile(path.join(root, entry), body);
   await fs.writeFile(path.join(root, theme), "h1{color:green}");
   globalThis.fetch = async input => { assert.equal(String(input), cdn); return new Response("/* synthetic iconfont */", { status: 200 }); };
-  const { getListPageTemplateBundle } = await import("@/services/htmlTemplateBundleService");
+  const { getListPageTemplateBundle, getHtmlTemplateBundle, listHtmlTemplates } = await import("@/services/htmlTemplateBundleService");
   const { GET } = await import("@/app/api/knowledge-gateway/html-template/list-page/route");
   const before = await fs.readFile(path.join(root, entry));
   const bundle = await getListPageTemplateBundle();
-  assert.equal(bundle.templateId, "list-page"); assert.equal(bundle.entry, entry); assert.equal(bundle.files.length, 3);
+  assert.equal(bundle.templateId, "skill-html"); assert.equal(bundle.entry, entry); assert.equal(bundle.files.length, 3);
   assert.equal(bundle.sourceEntrySha256, createHash("sha256").update(before).digest("hex"));
   const copied = Buffer.from(bundle.files.find(file => file.path === entry)!.content, "base64").toString("utf8");
   assert.ok(copied.includes('../5、基础样式/theme/index.css')); assert.ok(copied.includes('../__resources/font_123_fixture.js')); assert.equal(copied.includes(cdn), false);
@@ -34,6 +34,19 @@ try {
   assert.equal((await GET(new Request("http://localhost/copy"))).status, 401);
   const response = await GET(new Request("http://localhost/copy", { headers: { Authorization: "Bearer synthetic-html-copy-only" } }));
   assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "no-store"); assert.equal(JSON.stringify(await response.json()).includes(temp), false);
+  const discovered = await listHtmlTemplates(); assert.equal(discovered.total, 1);
+  const other = "新版本/业务录入/index.htm";
+  await fs.mkdir(path.dirname(path.join(root, other)), { recursive: true });
+  await fs.writeFile(path.join(root, other), '<!doctype html><html><head><style>body{background:url("./pixel.svg")}</style></head><body><h1>业务录入</h1><iframe src="child.html"></iframe><script>const markup=`<img src="${runtimeLogo}">`;</script></body></html>');
+  await fs.writeFile(path.join(root, "新版本/业务录入/child.html"), '<!doctype html><html><body>Child</body></html>');
+  await fs.writeFile(path.join(root, "新版本/业务录入/pixel.svg"), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+  await fs.writeFile(path.join(root, "新版本/业务录入/data.json"), '{"fixture":true}');
+  const page = await listHtmlTemplates({q:"业务录入",limit:1}); assert.equal(page.total, 2); assert.equal(page.nextOffset, 1); assert.equal((await listHtmlTemplates({q:"业务录入",offset:1})).items.length, 1);
+  const generic = await getHtmlTemplateBundle(other, ["新版本/业务录入/data.json"]); assert.equal(generic.entry, other); assert.equal(generic.files.length, 4);
+  assert.ok(generic.files.some(file=>file.path.endsWith("child.html"))); assert.equal(generic.files.some(file=>file.path.includes("runtimeLogo")), false);
+  await fs.rename(path.join(root, other), path.join(root, "新版本/业务录入/renamed.html"));
+  await assert.rejects(getHtmlTemplateBundle(other)); assert.ok((await listHtmlTemplates({q:"renamed"})).items.some(file=>file.path.endsWith("renamed.html")));
+  await assert.rejects(getHtmlTemplateBundle("../outside.html")); await assert.rejects(getHtmlTemplateBundle(entry,["../outside.css"]));
   await fs.writeFile(path.join(root, entry), body.replace(cdn, "https://example.com/evil.js")); await assert.rejects(getListPageTemplateBundle());
   await fs.writeFile(path.join(root, entry), body.replace('../5、基础样式/theme/index.css', '../../../../outside.css')); await assert.rejects(getListPageTemplateBundle());
   await fs.writeFile(path.join(root, entry), body); await fs.rename(path.join(root, theme), path.join(temp, "theme.css")); await fs.symlink(path.join(temp, "theme.css"), path.join(root, theme)); await assert.rejects(getListPageTemplateBundle()); await fs.unlink(path.join(root, theme)); await fs.copyFile(path.join(temp, "theme.css"), path.join(root, theme));
@@ -41,7 +54,7 @@ try {
   await assert.rejects(getListPageTemplateBundle());
   assert.equal(await fs.stat(process.env.DATA_DIR).then(() => true, () => false), false);
   assert.equal(await fs.stat(process.env.HALDUR_DESIGN_SKILL_RUNTIME_ROOT).then(() => true, () => false), false);
-  console.log(JSON.stringify({ result: "PASS_HTML_TEMPLATE_BUNDLE", checks: ["source hashes and copied resources", "relative CSS and mirrored iconfont", "no Skill writes", "gateway auth", "no source-root leakage", "outside/external/symlink rejection", "revision consistency", "no data initialization"] }));
+  console.log(JSON.stringify({ result: "PASS_HTML_TEMPLATE_BUNDLE", checks: ["dynamic discovery and new/renamed templates", "HTM and nested HTML", "inline CSS resources and explicit dynamic resources", "script-string markup ignored", "source hashes and copied resources", "relative CSS and mirrored iconfont", "no Skill writes", "gateway auth", "no source-root leakage", "outside/external/symlink rejection", "revision consistency", "no data initialization"] }));
 } finally { globalThis.fetch = originalFetch; await fs.rm(temp, { recursive: true, force: true }); }
 
 }
