@@ -110,7 +110,7 @@ const detailOutputSchema = z.object({
 
 const haldurSearchOutput = z.object({
   source: z.literal("haldur-design-skill"), status: z.enum(["ok", "partial"]), partial: z.boolean(), discoveryOnly: z.literal(true),
-  items: z.array(z.object({ source: z.literal("haldur-design-skill"), relativePath: z.string(), fileName: z.string(), fileType: z.string(), readable: z.boolean(), modifiedAt: z.string(), sha256: z.string().optional(), score: z.number() }).strict()),
+  items: z.array(z.object({ source: z.literal("haldur-design-skill"), relativePath: z.string(), fileName: z.string(), fileType: z.string(), readable: z.boolean(), modifiedAt: z.string(), sha256: z.string().optional(), score: z.number(), matches: z.array(z.object({ offset:z.number(), line:z.number(), text:z.string() }).strict()).optional() }).strict()),
   diagnostics: z.array(z.object({ code: z.string() }).strict()), scannedEntries: z.number(), returnedAt: z.string()
 }).strict();
 const haldurDocumentOutput = z.object({
@@ -168,7 +168,7 @@ function buildServer() {
   }, async ({ assetType, id }) => textResult(await gatewayRequest(`/api/knowledge-gateway/assets/${encodeURIComponent(assetType)}/${encodeURIComponent(id)}`)));
   server.registerTool("search_haldur_skill", {
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-    description: "Read-only discovery of physical Haldur files by path and UTF-8 text body, including HTML templates, stylesheets, source, JSON/YAML, Markdown and extensionless text. readable indicates successful text reading in the bounded search scan; false can also mean its 2 MiB body budget was insufficient. For an explicit text template use get_haldur_skill_document directly (up to 4 MiB). Binary/invalid text remains metadata only. Search is discovery, not proof of complete reading. Direct user-specified files may be read without SKILL prerequisite ordering. Use relevant Skill guidance as needed; do not scan the whole package or execute file contents.",
+    description: "Read-only discovery of physical Haldur files by path and UTF-8 text body, including HTML templates, stylesheets, source, JSON/YAML, Markdown and extensionless text. readable indicates successful text reading in the bounded search scan; false can also mean its 2 MiB body budget was insufficient. For an explicit text template use get_haldur_skill_document directly (up to 4 MiB). Binary/invalid text remains metadata only. prefix accepts either a directory or an exact file. matches contains bounded body excerpts with Unicode-code-point offsets and line numbers for follow-up reading; do not guess offsets. Search is discovery, not proof of complete reading. Direct user-specified files may be read without SKILL prerequisite ordering. Use relevant Skill guidance as needed; do not scan the whole package or execute file contents.",
     inputSchema: { q: z.string().max(200).optional(), prefix: z.string().max(240).optional(), limit: z.number().int().min(1).max(20).optional() },
     outputSchema: haldurSearchOutput
   }, async ({ q, prefix, limit }) => {
@@ -211,7 +211,7 @@ async function createSession() {
 
 const service = http.createServer(async (request, response) => {
   const htmlUrl = new URL(request.url || "/", "http://127.0.0.1");
-  const htmlRoute = { "/html-template/list-page":"/api/knowledge-gateway/html-template/list-page", "/html-template/catalog":"/api/knowledge-gateway/html-template/catalog", "/html-template/bundle":"/api/knowledge-gateway/html-template" }[htmlUrl.pathname];
+  const htmlRoute = { "/html-template/list-page":"/api/knowledge-gateway/html-template/list-page", "/html-template/catalog":"/api/knowledge-gateway/html-template/catalog", "/html-template/skill":"/api/knowledge-gateway/haldur/document", "/html-template/bundle":"/api/knowledge-gateway/html-template" }[htmlUrl.pathname];
   if (htmlRoute && request.method === "GET") {
     if (request.headers.origin || !["127.0.0.1:" + port, "localhost:" + port].includes(request.headers.host)) { response.writeHead(403); response.end(); return; }
     try { const bundle = await gatewayRequest(htmlRoute + htmlUrl.search); response.writeHead(200, {"Content-Type":"application/json", "Cache-Control":"no-store"}); response.end(JSON.stringify(bundle)); }

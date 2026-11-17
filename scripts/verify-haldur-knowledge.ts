@@ -103,6 +103,9 @@ async function main() {
   await fs.writeFile(path.join(root, "boundary.html"), largeTemplate + "x");
   await assert.rejects(service.get({ path: "boundary.html" }));
   assert.ok((await service.search({ q: "SKILL.md" })).items.some(item => item.relativePath === "SKILL.md"));
+  const exact = await service.search({q:"SKILL.md",prefix:"SKILL.md"});assert.equal(exact.items.length,1);assert.equal(exact.items[0].relativePath,"SKILL.md");
+  const hit = await service.search({q:"评审",prefix:"examples/评审.md"});assert.ok(hit.items[0].matches.length);assert.equal(hit.items[0].matches[0].line,1);
+  await assert.rejects(service.search({prefix:"missing-folder"}),error=>error instanceof Error&&error.message.includes("prefix"));
   const first = await service.get({ path: "long.md" });
   assert.equal(first.contentStatus, "segment"); assert.equal(first.nextOffset, 8000);
   await assert.rejects(service.get({ path: "long.md", offset: 8000 }));

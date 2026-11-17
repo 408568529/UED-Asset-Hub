@@ -9,7 +9,11 @@ const maxBytes = 4 * 1024 * 1024;
 const pageSize = 8000;
 const source = "haldur-design-skill";
 const readableFormats: Record<string, string> = { ".md": "markdown", ".scss": "scss", ".css": "css", ".html": "html", ".htm": "html" };
-const fail = (code: string, status = 400): never => { throw new KnowledgeGatewayError(code, status, `Haldur 文档请求未完成：${code}。`); };
+const messages: Record<string, string> = {
+  "invalid-prefix": "prefix 应为 Skill 内的文件或目录路径；不确定路径时省略 prefix，使用 q 检索。",
+  "prefix-not-found": "prefix 指向的文件或目录不存在；可省略 prefix 从 Skill 根目录检索。",
+};
+const fail = (code: string, status = 400): never => { throw new KnowledgeGatewayError(code, status, messages[code] ?? `Haldur 文档请求未完成：${code}。`); };
 function safePath(value: string, allowRoot = false) {
   try {
     const normalized = normalizeHaldurRelativePath(value, { allowRoot });
@@ -100,15 +104,37 @@ export const haldurKnowledgeService = {
     const root = await rootPath();
     const started = Date.now();
     const diagnostics: Array<{ code: string }> = [];
-    const items: Array<{ source: string; relativePath: string; fileName: string; fileType: string; readable: boolean; modifiedAt: string; sha256?: string; score: number }> = [];
+    const items: Array<{ source: string; relativePath: string; fileName: string; fileType: string; readable: boolean; modifiedAt: string; sha256?: string; score: number; matches: Array<{ offset: number; line: number; text: string }> }> = [];
     let visited = 0, bytes = 0, stopped = false;
     const tokens = (input.q ?? "").trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    async function consider(relative: string, current: Awaited<ReturnType<typeof inspect>>) {
+      const extension = path.extname(relative).toLowerCase();
+      let body = "", original = "", sha256: string | undefined;
+      const budget = Math.min(maxBytes, 2 * 1024 * 1024 - bytes);
+      try {
+        const document = await readDocument(root, relative, budget);
+        bytes += document.size; original = document.content; body = original.toLocaleLowerCase(); sha256 = document.sha256;
+      } catch {
+        bytes += current.stat.size <= budget ? current.stat.size : 0;
+        diagnostics.push({ code: "body-unreadable-or-over-budget" });
+      }
+      const lowerPath = relative.toLocaleLowerCase();
+      const score = tokens.reduce((sum, token) => sum + (lowerPath.includes(token) ? 10 : 0) + (body.includes(token) ? 1 : 0), 0);
+      const matches: Array<{ offset: number; line: number; text: string }> = [];
+      for (const token of tokens) {
+        const index = body.indexOf(token); if (index < 0 || matches.length === 3) continue;
+        const start = Math.max(0, index - 120), end = Math.min(original.length, index + token.length + 160);
+        if (matches.some(match => match.offset === Array.from(original.slice(0, start)).length)) continue;
+        matches.push({ offset: Array.from(original.slice(0, start)).length, line: original.slice(0, index).split("\n").length, text: original.slice(start, end) });
+      }
+      if (!tokens.length || score) items.push({ source, relativePath: relative, fileName: path.posix.basename(relative), fileType: extension.slice(1), readable: !!sha256, modifiedAt: current.stat.mtime.toISOString(), sha256, score, matches });
+    }
     async function walk(directory: string) {
       const checked = await inspect(root, directory);
+      if (checked.stat.isFile()) { visited++; await consider(directory, checked); return; }
       if (!checked.stat.isDirectory()) return fail("invalid-prefix");
       const entries = await fs.opendir(checked.target);
       async function* orderedEntries() {
-        // The entry remains discoverable even when a large package exhausts the scan budget.
         if (!directory) yield { name: "SKILL.md" };
         for await (const entry of entries) { if (directory || entry.name !== "SKILL.md") yield entry; }
       }
@@ -121,26 +147,15 @@ export const haldurKnowledgeService = {
         try {
           const current = await inspect(root, relative);
           if (current.stat.isDirectory()) { await walk(relative); if (stopped) break; continue; }
-          const extension = path.extname(relative).toLowerCase();
-          let body = "", sha256: string | undefined;
-          {
-            const budget = Math.min(maxBytes, 2 * 1024 * 1024 - bytes);
-            try {
-              const document = await readDocument(root, relative, budget);
-              bytes += document.size;
-              body = document.content.toLocaleLowerCase(); sha256 = document.sha256;
-            } catch {
-              bytes += current.stat.size <= budget ? current.stat.size : 0;
-              diagnostics.push({ code: "body-unreadable-or-over-budget" });
-            }
-          }
-          const lowerPath = relative.toLocaleLowerCase();
-          const score = tokens.reduce((sum, token) => sum + (lowerPath.includes(token) ? 10 : 0) + (body.includes(token) ? 1 : 0), 0);
-          if (!tokens.length || score) items.push({ source, relativePath: relative, fileName: entry.name.normalize("NFC"), fileType: extension.slice(1), readable: !!sha256, modifiedAt: current.stat.mtime.toISOString(), sha256, score });
+          await consider(relative, current);
         } catch { diagnostics.push({ code: "entry-unreadable-or-unsafe" }); }
       }
     }
-    try { await walk(prefix); } catch { return fail("search-unavailable", 503); }
+    try { await walk(prefix); } catch (error) {
+      if (error instanceof KnowledgeGatewayError) throw error;
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return fail("prefix-not-found", 404);
+      return fail("search-unavailable", 503);
+    }
     if (stopped) diagnostics.push({ code: "scan-budget-reached" });
     const partial = diagnostics.length > 0 || items.length > limit;
     return { source, status: partial ? "partial" : "ok", partial, discoveryOnly: true, items: items.sort((a, b) => b.score - a.score || a.relativePath.localeCompare(b.relativePath)).slice(0, limit), diagnostics, scannedEntries: visited, returnedAt: new Date().toISOString() };

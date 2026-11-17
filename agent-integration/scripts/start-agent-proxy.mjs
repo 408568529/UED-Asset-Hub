@@ -421,7 +421,7 @@ proxy.on("proxyRes", (proxyResponse, request, response) => {
     });
     return;
   }
-  if (!contentType.includes("text/html")) {
+  if (!contentType.includes("text/html") || requestPath.startsWith("/html-artifacts/")) {
     response.writeHead(proxyResponse.statusCode || 502, copyProxyHeaders());
     proxyResponse.pipe(response);
     return;

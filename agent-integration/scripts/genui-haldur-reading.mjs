@@ -6,17 +6,18 @@ import { fileURLToPath } from 'node:url';
 export const officialServerSha256 = '594ae015e9e042fc8a5916522c32c9aea33342f6faa3c1446dbc8f54a171bb04';
 const digest = value => createHash('sha256').update(value).digest('hex');
 const marker = 'import { isHaldurRead, registerHaldurReadingPolicy } from "./ued-haldur-reading-policy.mjs";\n';
+const legacyHaldurPrompt = 'For the existing Haldur tools only, use at most 6 discovery calls and 64 document pages per user turn. Read SKILL.md first; finish its ordered prerequisites and each document through nextOffset with unchanged sha256. Other sources retain two discovery calls per source, four reads per source and six reads per turn.';
 const replacements = [
   ['\t\tconst call = connectedRead(exec);', '\t\tif (isHaldurRead(exec.name)) return;\n\t\tconst call = connectedRead(exec);'],
   ['function registerDiscoveryBudget(ctx) {', 'function registerDiscoveryBudget(ctx) {\n\tregisterHaldurReadingPolicy(ctx);'],
-  ['Use at most two discovery calls per connected source, four reads from one source, and six connected reads in one user turn.', 'For the existing Haldur tools only, use at most 6 discovery calls and 64 document pages per user turn. Read SKILL.md first; finish its ordered prerequisites and each document through nextOffset with unchanged sha256. Other sources retain two discovery calls per source, four reads per source and six reads per turn.'],
+  ['Use at most two discovery calls per connected source, four reads from one source, and six connected reads in one user turn.', 'Use applicable native skills and read referenced Haldur resources as needed. Haldur reads have no extra per-turn call quota or forced reading sequence; per-file limits, path boundaries and snapshot hashes still apply. Use search hits and exact source locations instead of scanning entire large templates into context. Other connected sources retain their existing limits.'],
   ['then answer or create the useful interactive surface now.', 'then report the missing evidence. Do not create or update a source-dependent design using invented fallback styles.'],
 ];
 export function patchGenuiHaldurReading(source) {
   if (source.startsWith(marker)) {
-    const restored = replacements.reduce((text, [before, after]) => text.replace(after, before), source.slice(marker.length));
+    const restored = replacements.reduce((text, [before, after]) => text.replace(after, before), source.slice(marker.length).replace(legacyHaldurPrompt, replacements[2][1]));
     if (digest(restored) !== officialServerSha256) throw new Error('Installed reading patch identity mismatch.');
-    return source;
+    source = restored;
   }
   if (digest(source) !== officialServerSha256) throw new Error('Only pinned GenUI 0.15.1 server bytes may be patched.');
   for (const [before, after] of replacements) {
@@ -45,3 +46,4 @@ export async function installGenuiHaldurReadingPatch(dshHome) {
   return { compatibility: 'ued-haldur-reading-v1', applied: updated !== source, serverSha256: digest(updated) };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) console.log(JSON.stringify(await installGenuiHaldurReadingPatch(process.argv[2])));
+

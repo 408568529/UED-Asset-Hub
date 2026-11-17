@@ -195,6 +195,8 @@ foreach ($relative in @(
   'agent-integration/dsh/html-artifacts/store.mjs',
   'agent-integration/dsh/html-artifacts/regions.mjs',
   'agent-integration/dsh/html-artifacts/http.mjs',
+  'agent-integration/dsh/html-artifacts/browser-check.mjs',
+  'agent-integration/dsh/html-artifacts/native-skill.mjs',
   'agent-integration/dsh/html-artifacts-client/package.json',
   'agent-integration/dsh/html-artifacts-client/index.mjs',
   'agent-integration/dsh/html-artifacts-client/client.js',

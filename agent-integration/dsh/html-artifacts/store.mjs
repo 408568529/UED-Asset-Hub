@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomUUID, randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 import { Script } from 'node:vm';
-import { regions, excerpt } from './regions.mjs';
+import { regions, excerpt, find as findText } from './regions.mjs';
 export const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const locks = new Map();
 const ID = /^[a-z0-9][a-z0-9-]{2,79}$/;
@@ -39,7 +39,7 @@ async function locked(key, action) {
   await previous.catch(() => {});
   try { return await action(); } finally { release(); if (locks.get(key) === tail) locks.delete(key); }
 }
-async function jsonFile(file) { const stat = await fs.lstat(file); if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 256 * 1024) throw Error('成果记录不可用。'); return JSON.parse(await fs.readFile(file, 'utf8')); }
+async function jsonFile(file,limit=256*1024) { const stat = await fs.lstat(file); if (!stat.isFile() || stat.isSymbolicLink() || stat.size > limit) throw Error('成果记录不可用。'); return JSON.parse(await fs.readFile(file, 'utf8')); }
 async function atomic(file, value) {
   const temp = file + '.' + randomUUID() + '.tmp';
   await fs.writeFile(temp, JSON.stringify(value, null, 2), { flag: 'wx', mode: 0o600 }); await fs.rename(temp, file);
@@ -115,14 +115,14 @@ export class HtmlArtifacts {
       return this.receipt(manifest);
     } catch (error) { await fs.rm(dir, { recursive: true, force: true }); throw error; }
   }
-  receipt(manifest) { return { artifact_id: manifest.id, version_id: manifest.version, title: manifest.title, entry: manifest.entry, files: manifest.files, parent_version: manifest.parent, status: 'ready', template_id: manifest.provenance?.templateId ?? 'list-page', template_path: manifest.provenance?.templatePath ?? manifest.entry }; }
+  receipt(manifest) { return { artifact_id: manifest.id, version_id: manifest.version, title: manifest.title, entry: manifest.entry, files: manifest.files, parent_version: manifest.parent, status: 'saved', template_id: manifest.provenance?.templateId ?? 'list-page', template_path: manifest.provenance?.templatePath ?? manifest.entry }; }
   async create(owner, requested, displayTitle, bundle) {
     const id = scopedId(owner, requested);
     return locked(this.directory(id), async () => {
       await safeDirectory(this.root);
       const dir = this.directory(id); await fs.mkdir(dir).catch(error => { if (error.code === 'EEXIST') throw Error('同名成果已存在，请读取并修改已有成果。'); throw error; });
       try {
-        if (!['list-page','skill-html'].includes(bundle.templateId) || !Array.isArray(bundle.files) || bundle.files.length > 47) throw Error('模板包无效。');
+        if (!['list-page','skill-html','generated-html'].includes(bundle.templateId) || !Array.isArray(bundle.files) || bundle.files.length > 47) throw Error('模板包无效。');
         const files = new Map(); const caseNames = new Set();
         for (const spec of bundle.files) {
           relativePath(spec.path); const key = spec.path.toLocaleLowerCase('en-US');
@@ -148,6 +148,42 @@ export class HtmlArtifacts {
     if (input.anchor === undefined && input.region === undefined && input.offset === undefined) return summary;
     return { ...summary, ...excerpt(text, input) };
   }
+  async find(owner, requested, input) {
+    const value=await this.version(scopedId(owner,requested),input.version_id,owner), relative=input.path??value.manifest.entry;
+    const bytes=await this.bytes(value,relative);
+    if(!textExtensions.has(path.posix.extname(relative).toLowerCase()))throw Error('定位仅适用于成果文本文件。');
+    return {...this.receipt(value.manifest),path:relative,sha256:digest(bytes),...findText(new TextDecoder('utf-8',{fatal:true}).decode(bytes),input)};
+  }
+  async write(owner, requested, baseVersion, input) {
+    const id=scopedId(owner,requested);
+    return locked(this.directory(id),async()=>{
+      const value=await this.version(id,baseVersion,owner),relative=relativePath(input.path);
+      if(value.record.current!==baseVersion)throw Error('成果已有新版本，请重新读取。');
+      if(!textExtensions.has(path.posix.extname(relative).toLowerCase()) || typeof input.content!=='string' || Buffer.byteLength(input.content)>maxFile)throw Error('仅允许编写有界的 HTML/CSS/JS/JSON/文本成果文件。');
+      const previous=value.manifest.files.find(file=>file.path===relative);
+      if(previous ? input.sha256!==previous.sha256 : input.sha256!==undefined)throw Error('覆盖前请读取当前文件并提供 sha256；新增文件应省略 sha256。');
+      const files=new Map();for(const file of value.manifest.files)files.set(file.path,await this.bytes(value,file.path));
+      files.set(relative,Buffer.from(input.content));return this.publish(value.record,files,value.manifest.entry,value.manifest.provenance,baseVersion);
+    });
+  }
+  async validation(value) {
+    try {
+      const dir=path.join(this.root,'_checks',value.manifest.id,value.manifest.version);await safeDirectory(dir);
+      const report=await jsonFile(path.join(dir,'report.json'),1024*1024);
+      if(report.version!==value.manifest.version || report.manifestHash!==digest(JSON.stringify(value.manifest)))return null;
+      return report;
+    }catch(error){if(error.code==='ENOENT')return null;throw error;}
+  }
+  async saveValidation(value, result) {
+    const dir=path.join(this.root,'_checks',value.manifest.id,value.manifest.version);await safeDirectory(dir,true);
+    const report={...result,version:value.manifest.version,manifestHash:digest(JSON.stringify(value.manifest)),checkedAt:new Date().toISOString()};
+    await atomic(path.join(dir,'report.json'),report);return report;
+  }
+  async present(owner, requested, versionId) {
+    const value=await this.version(scopedId(owner,requested),versionId,owner),report=await this.validation(value);
+    if(report?.status!=='passed')throw Error('成果尚未通过页面运行与关键交互检查。请调用 html_check，修复失败项或明确尚未实现的需求后再交付。');
+    return {...this.receipt(value.manifest),status:'verified',validation:{status:report.status,requirements:report.requirements.map(x=>({name:x.name,status:x.status})),checkedAt:report.checkedAt}};
+  }
   async patch(owner, requested, baseVersion, changes) {
     const id = scopedId(owner, requested);
     return locked(this.directory(id), async () => {
@@ -159,8 +195,8 @@ export class HtmlArtifacts {
         const relative = relativePath(change.path), spec = value.manifest.files.find(file => file.path === relative);
         if (!spec || spec.sha256 !== change.sha256 || !textExtensions.has(path.posix.extname(relative).toLowerCase())) throw Error('修改文件或校验值不匹配，请重新局部读取。');
         if (typeof change.old_text !== 'string' || !change.old_text || change.old_text.length > 32000 || typeof change.new_text !== 'string' || change.new_text.length > 32000) throw Error('替换内容必须是有界的准确原文。');
-        const text = new TextDecoder('utf-8', { fatal: true }).decode(files.get(relative)); const at = text.indexOf(change.old_text);
-        if (at < 0 || text.indexOf(change.old_text, at + 1) >= 0) throw Error('替换锚点不唯一或不存在，原版本保持不变。');
+        const text = new TextDecoder('utf-8', { fatal: true }).decode(files.get(relative)); const at = change.offset ?? text.indexOf(change.old_text);
+        if (!Number.isInteger(at) || at < 0 || text.slice(at,at+change.old_text.length)!==change.old_text || (change.offset===undefined && text.indexOf(change.old_text,at+1)>=0)) throw Error('原文不存在或有多处匹配；请用 html_find 获取 UTF-16 offset，并携带相同 sha256 精确修改。原版本保持不变。');
         files.set(relative, Buffer.from(text.slice(0, at) + change.new_text + text.slice(at + change.old_text.length)));
       }
       return this.publish(value.record, files, value.manifest.entry, value.manifest.provenance, baseVersion);

@@ -34,7 +34,7 @@ export function createHtmlHttp({ store, resolveSession, publicOrigin, archiveMod
         const agent = resolveSession(value.session_id);
         if (!agent || String(agent.id) !== value.session_id) return json(res, 403, { error: '会话尚未就绪，请重新打开会话。' });
         const version = await store.version(value.artifact_id, value.version_id, String(agent.id));
-        return json(res, 200, { ...store.receipt(version.manifest), ...urls(version.manifest, store.grant(version.manifest.id, version.manifest.version)) });
+        return json(res, 200, { ...store.receipt(version.manifest), validation: await store.validation(version), ...urls(version.manifest, store.grant(version.manifest.id, version.manifest.version)) });
       }
       if (!['GET','HEAD'].includes(req.method) || parts.length < 5 || parts[0] !== 'html-artifacts' || !['files','app','download'].includes(parts[1])) return json(res, 404, { error:'成果地址不存在。' });
       const [, kind, id, versionId, grant, ...rest] = parts;

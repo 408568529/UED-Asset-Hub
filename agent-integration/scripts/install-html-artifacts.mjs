@@ -2,7 +2,7 @@ import { access, copyFile, lstat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 export const htmlRuntimePackages = {
-  'html-artifacts': ['package.json','index.mjs','store.mjs','regions.mjs','http.mjs'],
+  'html-artifacts': ['package.json','index.mjs','store.mjs','regions.mjs','http.mjs','browser-check.mjs','native-skill.mjs'],
   'html-artifacts-client': ['package.json','index.mjs','client.js']
 };
 export async function installHtmlArtifacts({ projectDir, runtimePaths, ensureRuntimeSubdirectory, publicOrigin }) {
