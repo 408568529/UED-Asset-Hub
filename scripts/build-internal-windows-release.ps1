@@ -190,6 +190,14 @@ foreach ($relative in $closure) { Copy-RegularFile (Join-Path $sourceRoot $relat
 foreach ($relative in @(
   'scripts/internal-release-contract.mjs', 'scripts/internal-release-preflight.mjs', 'scripts/host-security-preflight.mjs', 'scripts/start-internal-release.ps1', 'scripts/start-current-internal-release.ps1', 'scripts/install-internal-dsh-runtime.ps1', 'scripts/verify-dsh-runtime-source.mjs', 'scripts/Internal-Release.Common.psm1',
   'agent-integration/dsh/genui-client-bootstrap/package.json', 'agent-integration/dsh/genui-client-bootstrap/index.mjs',
+  'agent-integration/dsh/html-artifacts/package.json',
+  'agent-integration/dsh/html-artifacts/index.mjs',
+  'agent-integration/dsh/html-artifacts/store.mjs',
+  'agent-integration/dsh/html-artifacts/regions.mjs',
+  'agent-integration/dsh/html-artifacts/http.mjs',
+  'agent-integration/dsh/html-artifacts-client/package.json',
+  'agent-integration/dsh/html-artifacts-client/index.mjs',
+  'agent-integration/dsh/html-artifacts-client/client.js',
   'agent-integration/scripts/dsh-source-validator.mjs', 'agent-integration/dsh/version.json', 'agent-integration/dsh/genui-plugin.json', 'agent-integration/scripts/genui-client-load-liveness.mjs', 'agent-integration/dsh/packages/dsh-plugin-genui-0.15.1.tgz', 'agent-integration/dsh/asset-hub-agent.overlay.yml', 'agent-integration/dsh/agent-presets/asset-hub-restricted/agent.cordis.yml',
   'agent-integration/dsh/agent-presets/asset-hub-restricted/preset.yml', 'agent-integration/dsh/agent-presets/asset-hub-genui-restricted/agent.cordis.yml', 'agent-integration/dsh/agent-presets/asset-hub-genui-restricted/preset.yml', 'service/windows/internal-runtime-config.example.psd1', 'INTERNAL-RELEASE-README.md'
 )) { Copy-RegularFile (Join-Path $sourceRoot $relative) (Join-Path $payloadRoot ($relative.Replace('/', '\'))) }

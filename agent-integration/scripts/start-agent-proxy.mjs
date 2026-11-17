@@ -451,12 +451,17 @@ const server = http.createServer(async (request, response) => {
     response.end(JSON.stringify({ ok }));
     return;
   }
+  if (url.pathname === "/html-artifacts/host-control/access" && (request.headers.origin !== process.env.PUBLIC_ORIGIN || request.headers["sec-fetch-site"] !== "same-origin")) {
+    response.writeHead(403, {"Content-Type":"application/json"}); response.end(JSON.stringify({error:"HTML artifact access requires the same-origin Harness host."})); return;
+  }
+  const htmlCapabilityRoute = ["GET", "HEAD"].includes(request.method) && /^\/html-artifacts\/(?:files|app|download)\/[a-z0-9-]+\/v-[0-9a-f-]+\/[a-zA-Z0-9_.-]+(?:\/|$)/.test(url.pathname);
   const sessionAuthorized = hasAdminSession(request);
   const previewGrantPresent = url.searchParams.has(previewGrantQuery);
   const previewGrantValid = hasValidPreviewGrant(request, url, sessionSecret);
   const previewGrantAuthorized = !sessionAuthorized && previewGrantValid;
   const publicAuthorized = allowsPublicAgentRequest(request, url);
-  if (!sessionAuthorized && !previewGrantAuthorized && !publicAuthorized) return unauthorized(response);
+  // HTML bearer URLs are validated again by the HTML runtime for this exact version.
+  if (!sessionAuthorized && !previewGrantAuthorized && !publicAuthorized && !htmlCapabilityRoute) return unauthorized(response);
   if (previewGrantPresent) {
     request.__uedPreviewGrantPresent = true;
     url.searchParams.delete(previewGrantQuery);

@@ -8,6 +8,8 @@
     default: asset-hub-genui-restricted
     includeUserRoot: true
 - insert:
+    - id: html-artifacts-client
+      name: '@ued/html-artifacts-client'
     - id: genui-client-bootstrap
       name: '@ued/asset-hub-genui-client-bootstrap'
     - id: directory-picker-browse

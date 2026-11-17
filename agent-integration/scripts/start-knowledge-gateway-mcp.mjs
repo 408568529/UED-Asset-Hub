@@ -210,6 +210,12 @@ async function createSession() {
 }
 
 const service = http.createServer(async (request, response) => {
+  if (request.url === "/html-template/list-page" && request.method === "GET") {
+    if (request.headers.origin || !["127.0.0.1:" + port, "localhost:" + port].includes(request.headers.host)) { response.writeHead(403); response.end(); return; }
+    try { const bundle = await gatewayRequest("/api/knowledge-gateway/html-template/list-page"); response.writeHead(200, {"Content-Type":"application/json", "Cache-Control":"no-store"}); response.end(JSON.stringify(bundle)); }
+    catch { response.writeHead(503, {"Content-Type":"application/json"}); response.end(JSON.stringify({error:"Complete list template bundle is unavailable."})); }
+    return;
+  }
   if (request.url?.split("?")[0] !== "/mcp" || request.method !== "POST") {
     response.writeHead(405, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed." }, id: null }));

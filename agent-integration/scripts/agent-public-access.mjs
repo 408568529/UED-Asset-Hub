@@ -26,7 +26,8 @@ export function allowsPublicAgentRequest(request, url, environment = process.env
   if (origin && origin !== environment.PUBLIC_ORIGIN && !publicDocument) return false;
   if (request.method === 'POST') {
     return (url.pathname.startsWith('/api/') && guestRpc.has(url.pathname.slice(5)))
-      || url.pathname === '/genui/host-control/preview-access';
+      || url.pathname === '/genui/host-control/preview-access'
+      || url.pathname === '/html-artifacts/host-control/access';
   }
   if (request.method !== 'GET' && request.method !== 'HEAD') return false;
   return url.pathname === '/' || url.pathname === '/index.html'

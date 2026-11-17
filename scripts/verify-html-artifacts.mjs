@@ -1,0 +1,57 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import { once } from 'node:events';
+import { HtmlArtifacts, digest } from '../agent-integration/dsh/html-artifacts/store.mjs';
+import { createHtmlHttp } from '../agent-integration/dsh/html-artifacts/http.mjs';
+import { toolDefinitions } from '../agent-integration/dsh/html-artifacts/index.mjs';
+const temp=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'ued-html-unit-')));
+const owner='session-one',other='session-two',entry='2、典型页面/列表页-preview.html';
+const html='<!doctype html><html><head><link rel="stylesheet" href="../5、基础样式/theme/index.css"></head><body><h1>Original</h1><script>const rows=[1];\nconst defaults=[2];\nconst columns=defaults.slice();</script></body></html>';
+const body=Buffer.from(html),css=Buffer.from('h1 {color:green}');
+const bundle={templateId:'list-page',entry,sourceRevision:'synthetic',sourceEntrySha256:digest(body),files:[{path:entry,content:body.toString('base64'),sha256:digest(body),bytes:body.length,source:'fixture'},{path:'5、基础样式/theme/index.css',content:css.toString('base64'),sha256:digest(css),bytes:css.length,source:'fixture'}],warnings:[]};
+let server;
+try{
+ const store=new HtmlArtifacts(path.join(temp,'artifacts'));await store.init();
+ const created=await store.create(owner,'list-page','测试成果',bundle);
+ assert.equal(body.toString(),html);
+ const initial=await store.inspect(owner,created.artifact_id);
+ assert.equal(initial.content,undefined);assert.ok(initial.regions.some(x=>x.name==='list.rows'));
+ const region=await store.inspect(owner,created.artifact_id,{region:'list.rows'});assert.equal(region.content,'const rows=[1];');
+ const edited=await store.patch(owner,created.artifact_id,created.version_id,[{path:entry,sha256:region.sha256,old_text:'const rows=[1];',new_text:'const rows=[3,4];'}]);
+ assert.notEqual(edited.version_id,created.version_id);
+ assert.equal((await store.inspect(owner,created.artifact_id,{version_id:created.version_id,region:'list.rows'})).content,'const rows=[1];');
+ await assert.rejects(store.patch(owner,created.artifact_id,created.version_id,[{path:entry,sha256:region.sha256,old_text:'Original',new_text:'stale'}]));
+ const latest=await store.inspect(owner,created.artifact_id);
+ for(const change of [{path:'../escape',sha256:latest.sha256,old_text:'Original',new_text:'bad'},{path:entry,sha256:'bad',old_text:'Original',new_text:'bad'},{path:entry,sha256:latest.sha256,old_text:'missing',new_text:'bad'},{path:entry,sha256:latest.sha256,old_text:'<html>',new_text:'<invalid>'},{path:entry,sha256:latest.sha256,old_text:'const rows=[3,4];',new_text:'const rows=;'}]) await assert.rejects(store.patch(owner,created.artifact_id,edited.version_id,[change]));
+ assert.equal((await store.inspect(owner,created.artifact_id)).version_id,edited.version_id);
+ const raced=await Promise.allSettled(['First','Second'].map(value=>store.patch(owner,created.artifact_id,edited.version_id,[{path:entry,sha256:latest.sha256,old_text:'Original',new_text:value}])));
+ assert.equal(raced.filter(x=>x.status==='fulfilled').length,1);
+ await assert.rejects(store.record(created.artifact_id,other));
+ await assert.rejects(store.inspect(other,created.artifact_id));
+ await assert.rejects(store.create(owner,'list-page','dup',bundle));
+ await assert.rejects(store.inspect(owner,created.artifact_id,{anchor:'not found'}));
+ const duplicate=await store.create(owner,'duplicate','第二份',bundle);await assert.rejects(store.patch(owner,duplicate.artifact_id,duplicate.version_id,[{path:entry,sha256:digest(body),old_text:'<',new_text:'bad'}]));
+ const badBundle={...bundle,files:[{...bundle.files[0],path:'../evil.html'}]};await assert.rejects(store.create(owner,'escape','拒绝越界',badBundle));
+ const originalVersion=await store.version(created.artifact_id,created.version_id,owner);
+ const oldBytes=await store.bytes(originalVersion,entry);assert.equal(oldBytes.toString(),html);
+ const restart=new HtmlArtifacts(store.root);await restart.init();const grant=store.grant(created.artifact_id,created.version_id);assert.equal(restart.accepts(created.artifact_id,created.version_id,grant),true);assert.equal(store.accepts(created.artifact_id,edited.version_id,grant),false);assert.equal(store.accepts(created.artifact_id,created.version_id,grant+'x'),false);assert.equal(store.accepts(created.artifact_id,created.version_id,store.grant(created.artifact_id,created.version_id,Date.now()-31*60000)),false);
+ let handler;server=http.createServer((req,res)=>handler(req,res));server.listen(0,'127.0.0.1');await once(server,'listening');const origin='http://127.0.0.1:'+server.address().port;
+ handler=createHtmlHttp({store,resolveSession:id=>[owner,other].includes(id)?{id}:undefined,publicOrigin:origin,archiveModule:process.argv[2]});
+ async function access(session=owner,requestOrigin=origin){return fetch(origin+'/html-artifacts/host-control/access',{method:'POST',headers:{origin:requestOrigin,'sec-fetch-site':'same-origin','content-type':'application/json'},body:JSON.stringify({session_id:session,artifact_id:created.artifact_id,version_id:created.version_id})});}
+ assert.equal((await access(owner,'null')).status,403);assert.notEqual((await access(other)).status,200);
+ const response=await access();assert.equal(response.status,200);const links=await response.json();
+ const preview=await fetch(origin+links.preview_url);assert.equal(preview.status,200);assert.equal(await preview.text(),html);assert.match(preview.headers.get('content-security-policy'),/sandbox allow-scripts/);assert.doesNotMatch(preview.headers.get('content-security-policy'),/allow-same-origin/);
+ const cssUrl=new URL('../5、基础样式/theme/index.css',origin+links.preview_url);assert.equal(await(await fetch(cssUrl)).text(),css.toString());
+ const wrapper=await fetch(origin+links.app_url);assert.equal(wrapper.status,200);assert.match(await wrapper.text(),/sandbox="allow-scripts/);
+ assert.equal((await fetch(origin+links.preview_url.replace(new URL(links.preview_url,origin).pathname.split('/')[5],'invalid'))).status,403);
+ assert.notEqual((await fetch(origin+links.preview_url.replace(encodeURIComponent('列表页-preview.html'),'..%2F..%2F.preview-key'))).status,200);
+ let zip=false;if(process.argv[2]){const download=await fetch(origin+links.download_url);assert.equal(download.status,200);assert.equal(download.headers.get('content-type'),'application/zip');const bytes=Buffer.from(await download.arrayBuffer());assert.equal(bytes.subarray(0,2).toString(),'PK');assert.equal(bytes.includes(Buffer.from(owner)),false);await fs.writeFile(path.join(temp,'artifact.zip'),bytes);zip=true;}
+ // Immutable versions fail closed on file tampering and symlink substitution.
+ const target=path.join(originalVersion.dir,'files',...entry.split('/'));
+ await fs.writeFile(target,'tampered');await assert.rejects(store.bytes(originalVersion,entry));await fs.unlink(target);await fs.writeFile(path.join(temp,'outside.html'),'outside');await fs.symlink(path.join(temp,'outside.html'),target);await assert.rejects(store.bytes(originalVersion,entry));await fs.unlink(target);await fs.writeFile(target,body);
+ const tools=toolDefinitions(store,async()=>bundle);assert.deepEqual(tools.map(t=>t.name),['html_from_template','html_inspect','html_patch','html_present']);await assert.rejects(tools[0].execute({artifact_id:'no-agent',title:'bad'},{}));
+ console.log(JSON.stringify({result:'PASS_HTML_ARTIFACTS',checks:['bounded excerpts','exact patches','stale/concurrent rejection','failed edit preserves last good','old versions and restart','relative CSS','version scoped expiring grants','cross-session and origin rejection','traversal/tamper/symlink rejection','no source mutation'],zip,zipFixture:zip?path.join(temp,'artifact.zip'):null,fixtureRoot:temp}));
+}finally{if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}if(!process.argv[2])await fs.rm(temp,{recursive:true,force:true});}

@@ -21,6 +21,7 @@ import { resolveHostSecurityConfig } from "./host-security-config.mjs";
 import { createRuntimeDiagnosticsState } from "./runtime-diagnostics-state.mjs";
 import { createBoundedNdjsonWriter } from "./bounded-ndjson-writer.mjs";
 import { probeDshSessionList, probeKnowledgeGatewayMcp } from "../agent-integration/scripts/runtime-readiness.mjs";
+import { installHtmlArtifacts } from "../agent-integration/scripts/install-html-artifacts.mjs";
 import { installGenuiHaldurReadingPatch } from "../agent-integration/scripts/genui-haldur-reading.mjs";
 import { resolveHostPorts } from "./runtime-ports.mjs";
 import { acceptsLocalDistributionRequest } from "./local-distribution-config.mjs";
@@ -101,6 +102,7 @@ export function createEdgeServer({ host, port: publicPort, internalPort, proxyPo
   const sockets = new Set();
   const belongsToAgentRuntime = (request, requestUrl) => {
     if (requestUrl.pathname.startsWith("/agent-runtime/")) return true;
+    if (requestUrl.pathname === "/html-artifacts" || requestUrl.pathname.startsWith("/html-artifacts/")) return true;
     if (requestUrl.pathname === "/.well-known/dsh-genui" || requestUrl.pathname === "/genui" || requestUrl.pathname.startsWith("/genui/")) return true;
     if (requestUrl.pathname === "/api/respond" || /^\/api\/[^/]+\.[^/]+$/.test(requestUrl.pathname)) return true;
     try { return Boolean(request.headers.referer && new URL(request.headers.referer).pathname.startsWith("/agent-runtime/")); } catch { return false; }
@@ -159,6 +161,7 @@ export async function installAgentPresets(runtimePaths) {
   const bootstrapSource = path.join(projectDir, "agent-integration", "dsh", "genui-client-bootstrap");
   const bootstrapDestination = await ensureRuntimeSubdirectory({ dataRoot: runtimePaths.dataRoot, agentRoot: runtimePaths.agentRoot, relativePath: "dsh-home/profiles/web/node_modules/@ued/asset-hub-genui-client-bootstrap" });
   for (const file of ["package.json", "index.mjs"]) await copyFile(path.join(bootstrapSource, file), path.join(bootstrapDestination, file));
+  await installHtmlArtifacts({ projectDir, runtimePaths, ensureRuntimeSubdirectory, publicOrigin: process.env.PUBLIC_ORIGIN });
   for (const preset of ["asset-hub-restricted", "asset-hub-genui-restricted"]) {
     const source = path.join(projectDir, "agent-integration", "dsh", "agent-presets", preset);
     const destination = await ensureRuntimeSubdirectory({ dataRoot: runtimePaths.dataRoot, agentRoot: runtimePaths.agentRoot, relativePath: `dsh-home/.agent-presets/${preset}` });
