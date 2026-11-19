@@ -23,7 +23,9 @@ foreach ($directory in Get-ChildItem -LiteralPath $releasesRoot -Directory) {
 }
 if ($matches.Count -ne 1) { throw 'ReleaseVersion must identify exactly one installed release.' }
 $candidate = $matches[0]
-if (-not $candidate.Manifest.source.commit.StartsWith($candidate.Manifest.releaseVersion.Split('-')[-1], [System.StringComparison]::OrdinalIgnoreCase)) { throw 'Installed release directory identity does not match its manifest.' }
+$directoryName = Split-Path -Leaf $candidate.Root
+$releasePrefix = $candidate.Manifest.releaseVersion + '-'
+if (-not $directoryName.StartsWith($releasePrefix, [System.StringComparison]::OrdinalIgnoreCase) -or $directoryName.Substring($releasePrefix.Length) -notmatch '^[a-f0-9]{12}$') { throw 'Installed release directory identity does not match its manifest.' }
 Assert-UedReleaseTree $candidate.Root
 $configFullPath = [System.IO.Path]::GetFullPath($ConfigPath)
 Assert-NoReparseAncestor $configFullPath

@@ -131,7 +131,7 @@ function Expand-UedInternalArchive([string]$ZipPath, [string]$Destination) {
 
 function Set-UedRuntimeEnvironment([string]$ConfigPath) {
   $config = Import-PowerShellDataFile -LiteralPath ([System.IO.Path]::GetFullPath($ConfigPath))
-  $allowed = @('DATA_DIR', 'TRAINING_MEDIA_DIR', 'AGENT_RUNTIME_DIR', 'ASSET_HUB_RUNTIME_DIR', 'DSH_SOURCE_DIR', 'DSH_RUNTIME_SOURCE_DIR', 'HALDUR_DESIGN_SKILL_ROOT', 'HALDUR_DESIGN_SKILL_RUNTIME_ROOT', 'DSH_PORT', 'AGENT_PROXY_PORT', 'HOST_PORT', 'HOST_INTERNAL_PORT', 'KNOWLEDGE_GATEWAY_MCP_PORT')
+  $allowed = @('MICRO_STANDARD_ROOT', 'DATA_DIR', 'TRAINING_MEDIA_DIR', 'AGENT_RUNTIME_DIR', 'ASSET_HUB_RUNTIME_DIR', 'DSH_SOURCE_DIR', 'DSH_RUNTIME_SOURCE_DIR', 'HALDUR_DESIGN_SKILL_ROOT', 'HALDUR_DESIGN_SKILL_RUNTIME_ROOT', 'DSH_PORT', 'AGENT_PROXY_PORT', 'HOST_PORT', 'HOST_INTERNAL_PORT', 'KNOWLEDGE_GATEWAY_MCP_PORT')
   foreach ($name in $config.Keys) {
     if ($name -notin $allowed) { Stop-InternalRelease "unsupported runtime config key: $name" }
     [Environment]::SetEnvironmentVariable($name, [string]$config[$name], 'Process')
