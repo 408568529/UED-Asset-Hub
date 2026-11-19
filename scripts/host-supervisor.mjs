@@ -23,6 +23,7 @@ import { createBoundedNdjsonWriter } from "./bounded-ndjson-writer.mjs";
 import { probeDshSessionList, probeKnowledgeGatewayMcp } from "../agent-integration/scripts/runtime-readiness.mjs";
 import { installHtmlArtifacts } from "../agent-integration/scripts/install-html-artifacts.mjs";
 import { installGenuiHaldurReadingPatch } from "../agent-integration/scripts/genui-haldur-reading.mjs";
+import { installGenuiClientLoadPatch } from "../agent-integration/scripts/genui-client-load-liveness.mjs";
 import { resolveHostPorts } from "./runtime-ports.mjs";
 import { acceptsLocalDistributionRequest } from "./local-distribution-config.mjs";
 
@@ -157,6 +158,7 @@ async function windowsPipeSecurityAdapterSpecification() {
 }
 
 export async function installAgentPresets(runtimePaths) {
+  await installGenuiClientLoadPatch(path.join(runtimePaths.agentRoot, "dsh-home"));
   await installGenuiHaldurReadingPatch(path.join(runtimePaths.agentRoot, "dsh-home"));
   const bootstrapSource = path.join(projectDir, "agent-integration", "dsh", "genui-client-bootstrap");
   const bootstrapDestination = await ensureRuntimeSubdirectory({ dataRoot: runtimePaths.dataRoot, agentRoot: runtimePaths.agentRoot, relativePath: "dsh-home/profiles/web/node_modules/@ued/asset-hub-genui-client-bootstrap" });
