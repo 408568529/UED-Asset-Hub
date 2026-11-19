@@ -116,6 +116,20 @@ export class HtmlArtifacts {
     } catch (error) { await fs.rm(dir, { recursive: true, force: true }); throw error; }
   }
   receipt(manifest) { return { artifact_id: manifest.id, version_id: manifest.version, title: manifest.title, entry: manifest.entry, files: manifest.files, parent_version: manifest.parent, status: 'saved', template_id: manifest.provenance?.templateId ?? 'list-page', template_path: manifest.provenance?.templatePath ?? manifest.entry }; }
+  async list(owner) {
+    await safeDirectory(this.root);
+    const artifacts = [];
+    for (const entry of await fs.readdir(this.root, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !ID.test(entry.name)) continue;
+      try {
+        const value = await this.version(entry.name, undefined, owner);
+        const baseline = value.manifest.provenance?.sources?.find(file => file.path === value.manifest.entry)?.sha256;
+        const current = value.manifest.files.find(file => file.path === value.manifest.entry)?.sha256;
+        artifacts.push({ artifact_id: value.manifest.id, version_id: value.manifest.version, title: value.manifest.title, entry: value.manifest.entry, delivery_status: baseline && baseline === current ? 'not_delivered' : 'draft' });
+      } catch {}
+    }
+    return { artifacts: artifacts.slice(-20) };
+  }
   async create(owner, requested, displayTitle, bundle) {
     const id = scopedId(owner, requested);
     return locked(this.directory(id), async () => {
@@ -179,10 +193,16 @@ export class HtmlArtifacts {
     const report={...result,version:value.manifest.version,manifestHash:digest(JSON.stringify(value.manifest)),checkedAt:new Date().toISOString()};
     await atomic(path.join(dir,'report.json'),report);return report;
   }
-  async present(owner, requested, versionId) {
-    const value=await this.version(scopedId(owner,requested),versionId,owner),report=await this.validation(value);
-    if(report?.status!=='passed')throw Error('成果尚未通过页面运行与关键交互检查。请调用 html_check，修复失败项或明确尚未实现的需求后再交付。');
-    return {...this.receipt(value.manifest),status:'verified',validation:{status:report.status,requirements:report.requirements.map(x=>({name:x.name,status:x.status})),checkedAt:report.checkedAt}};
+  async present(owner, requested, versionId, mode = 'preview', unfinishedInteractions = []) {
+    const value=await this.version(scopedId(owner,requested),versionId,owner);
+    const baseline=value.manifest.provenance?.sources?.find(file=>file.path===value.manifest.entry)?.sha256;
+    const current=value.manifest.files.find(file=>file.path===value.manifest.entry)?.sha256;
+    if(baseline && baseline===current)return {...this.receipt(value.manifest),status:'not_delivered',delivery_status:'not_delivered',message:'当前仍是未修改的模板副本，尚未形成可交付预览。可用 html_resume 找到此副本并继续。'};
+    if(!['preview','verified'].includes(mode) || !Array.isArray(unfinishedInteractions) || unfinishedInteractions.length>20 || unfinishedInteractions.some(item=>typeof item!=='string'||item.length>200))throw Error('预览交付说明无效。');
+    const report=await this.validation(value);
+    if(mode==='verified' && (report?.status!=='passed' || unfinishedInteractions.length))throw Error('完整交付需要通过当前版本的页面与交互检查，并清空未完成项。');
+    const deliveryStatus=mode==='verified'?'verified':'preview';
+    return {...this.receipt(value.manifest),status:deliveryStatus,delivery_status:deliveryStatus,unfinished_interactions:unfinishedInteractions,validation:{status:report?.status??'not_run',requirements:(report?.requirements??[]).map(x=>({name:x.name,status:x.status})),checkedAt:report?.checkedAt??null}};
   }
   async patch(owner, requested, baseVersion, changes) {
     const id = scopedId(owner, requested);
