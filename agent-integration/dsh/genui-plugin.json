@@ -10,11 +10,12 @@
   "installation": "dsh plugin --profile web add <verified-local-tarball> --save-exact, then remove the package from global profile bundles so only the explicit restricted preset mounts it",
   "delivery": "The private Windows release carries this verified npm tarball. The installer verifies its SHA-256, retains it under the isolated AGENT_RUNTIME_DIR plugin package cache, then uses the official DSH Plugin Manager to install it into the web profile. The plugin tarball is locally bundled; Plugin Manager dependency resolution and supply-chain checks may still access the configured npm registry. GenUI is mounted by the default asset-hub-genui-restricted preset; the knowledge-only asset-hub-restricted preset remains available without GenUI.",
   "clientCompatibility": {
-    "id": "ued-visible-readiness-v2",
+    "id": "ued-pinned-preview-reopen-v2.1",
     "installer": "agent-integration/scripts/genui-client-load-liveness.mjs",
     "officialClientSha256": "93bde01047b1932bb1daaf8811dae61b66ccb6a7e9a72b3b686577d10015ef37",
-    "patchedClientSha256": "2cc6256717f1265494a125914e063082c5061a395cf44596fa720243e5cfd6eb",
-    "reason": "Retain MessagePort navigation checks; start the bounded readiness deadline only while the preview is in view and the document is visible, because Chrome suspends offscreen requestAnimationFrame.",
-    "previousPatchedClientSha256": "492c56a31ec65867aa4e48f95ebad1f9af2198c7301ca68f069f7aee387136fe"
+    "patchedClientSha256": "1ed405e57d2a4337af4b92d005ab4747ad4408d055cb656ccf057501c498b871",
+    "reason": "Retain MessagePort navigation checks; start the bounded readiness deadline only while the preview is in view and the document is visible, because Chrome suspends offscreen requestAnimationFrame. After a dead document is detected, close its bridge and remount only the server-owned preview with a fresh nonce through the existing reopen path.",
+    "previousPatchedClientSha256": "492c56a31ec65867aa4e48f95ebad1f9af2198c7301ca68f069f7aee387136fe",
+    "readinessPatchedClientSha256": "2cc6256717f1265494a125914e063082c5061a395cf44596fa720243e5cfd6eb"
   }
 }
