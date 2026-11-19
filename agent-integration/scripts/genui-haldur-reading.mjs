@@ -12,7 +12,6 @@ const replacements = [
   ['function registerDiscoveryBudget(ctx) {', 'function registerDiscoveryBudget(ctx) {\n\tregisterHaldurReadingPolicy(ctx);'],
   ['Use at most two discovery calls per connected source, four reads from one source, and six connected reads in one user turn.', 'Use applicable native skills and read referenced Haldur resources as needed. Haldur reads have no extra per-turn call quota or forced reading sequence; per-file limits, path boundaries and snapshot hashes still apply. Use search hits and exact source locations instead of scanning entire large templates into context. Other connected sources retain their existing limits.'],
   ['then answer or create the useful interactive surface now.', 'then report the missing evidence. Do not create or update a source-dependent design using invented fallback styles.'],
-  [String.raw`\b(?:action|formAction|target)\s*=`, String.raw`\s(?:action|formAction|target)\s*=`],
 ];
 export function patchGenuiHaldurReading(source) {
   if (source.startsWith(marker)) {

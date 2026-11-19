@@ -5,11 +5,9 @@ import { fileURLToPath } from "node:url";
 
 export const officialClientSha256 = "93bde01047b1932bb1daaf8811dae61b66ccb6a7e9a72b3b686577d10015ef37";
 export const previousPatchedClientSha256 = "492c56a31ec65867aa4e48f95ebad1f9af2198c7301ca68f069f7aee387136fe";
-export const readinessPatchedClientSha256 = "2cc6256717f1265494a125914e063082c5061a395cf44596fa720243e5cfd6eb";
-export const patchedClientSha256 = "1ed405e57d2a4337af4b92d005ab4747ad4408d055cb656ccf057501c498b871";
+export const patchedClientSha256 = "2cc6256717f1265494a125914e063082c5061a395cf44596fa720243e5cfd6eb";
 export const originalLoadHandler = "\t\tconst loaded = () => {\n\t\t\tif (!trustedPreviewStarted) return;\n\t\t\tconnection?.close();\n\t\t\tfailNavigatedPreview();\n\t\t};";
-export const previousCompatibleLoadHandler = "\t\tconst loaded = () => {\n\t\t\tif (!trustedPreviewStarted || !connection) return;\n\t\t\tconst current = connection;\n\t\t\tvoid current.verifyCurrentDocument().then((alive) => {\n\t\t\t\tif (!active || alive) return;\n\t\t\t\tcurrent.close();\n\t\t\t\tfailNavigatedPreview();\n\t\t\t});\n\t\t};";
-export const compatibleLoadHandler = "\t\tconst loaded = () => {\n\t\t\tif (!trustedPreviewStarted || !connection) return;\n\t\t\tconst current = connection;\n\t\t\tvoid current.verifyCurrentDocument().then((alive) => {\n\t\t\t\tif (!active || alive) return;\n\t\t\t\tcurrent.close();\n\t\t\t\tfailNavigatedPreview();\n\t\t\t\tsetFrameState(\"loading\");\n\t\t\t\tsetFrameKey((value) => value + 1);\n\t\t\t});\n\t\t};";
+export const compatibleLoadHandler = "\t\tconst loaded = () => {\n\t\t\tif (!trustedPreviewStarted || !connection) return;\n\t\t\tconst current = connection;\n\t\t\tvoid current.verifyCurrentDocument().then((alive) => {\n\t\t\t\tif (!active || alive) return;\n\t\t\t\tcurrent.close();\n\t\t\t\tfailNavigatedPreview();\n\t\t\t});\n\t\t};";
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 export const originalReadinessTimeout = 'const timeout = window.setTimeout(() => setFrameState((state) => state === "loading" ? "failed" : state), 8e3);';
 export const compatibleReadinessTimeout = `let timeout;
@@ -37,16 +35,15 @@ export const compatibleReadinessCleanup = '\t\t\twindow.clearTimeout(timeout);\n
 export function patchGenuiClientLoad(source) {
   const hash = digest(source);
   if (hash === patchedClientSha256) return source;
-  if (![officialClientSha256, previousPatchedClientSha256, readinessPatchedClientSha256].includes(hash)) throw new Error("Pinned GenUI client identity does not match the approved compatibility patch.");
+  if (![officialClientSha256, previousPatchedClientSha256].includes(hash)) throw new Error("Pinned GenUI client identity does not match the approved compatibility patch.");
   let result = source;
-  const loadHandler = hash === officialClientSha256 ? originalLoadHandler : previousCompatibleLoadHandler;
-  if (result.split(loadHandler).length !== 2) throw new Error("Pinned GenUI load handler does not match.");
-  result = result.replace(loadHandler, compatibleLoadHandler);
-  if (hash !== readinessPatchedClientSha256) {
-    for (const [original, replacement] of [[originalReadinessTimeout, compatibleReadinessTimeout], [originalReadinessCleanup, compatibleReadinessCleanup]]) {
-      if (result.split(original).length !== 2) throw new Error("Pinned GenUI readiness handler does not match.");
-      result = result.replace(original, replacement);
-    }
+  if (hash === officialClientSha256) {
+    if (result.split(originalLoadHandler).length !== 2) throw new Error("Pinned GenUI load handler does not match.");
+    result = result.replace(originalLoadHandler, compatibleLoadHandler);
+  }
+  for (const [original, replacement] of [[originalReadinessTimeout, compatibleReadinessTimeout], [originalReadinessCleanup, compatibleReadinessCleanup]]) {
+    if (result.split(original).length !== 2) throw new Error("Pinned GenUI readiness handler does not match.");
+    result = result.replace(original, replacement);
   }
   if (digest(result) !== patchedClientSha256) throw new Error("GenUI compatibility patch integrity failed.");
   return result;
@@ -67,7 +64,7 @@ export async function installGenuiClientLoadPatch(dshHome) {
     await writeFile(temporary, updated, { flag: "wx", mode: 0o600 });
     await rename(temporary, target);
   }
-  return { packageVersion: manifest.version, compatibility: "ued-pinned-preview-reopen-v2.1", officialClientSha256, patchedClientSha256, applied: updated !== source };
+  return { packageVersion: manifest.version, compatibility: "ued-visible-readiness-v2", officialClientSha256, patchedClientSha256, applied: updated !== source };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

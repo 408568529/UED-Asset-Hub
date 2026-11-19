@@ -11,14 +11,6 @@ export const productionLayout = Object.freeze({ root: "D:\\UED-Asset-Hub", data:
 export function isProduction(environment = process.env) { return environment.NODE_ENV === "production"; }
 export function validateProductionSessionSecurity(environment = process.env) {
   if (!isProduction(environment)) return { ok: true };
-  if (environment.UED_LAN_HTTP_MODE === "true") {
-    if (environment.ADMIN_SESSION_SECURE !== "false") return { ok: false, field: "ADMIN_SESSION_SECURE" };
-    if (environment.HOST_BIND_HOST !== "0.0.0.0") return { ok: false, field: "HOST_BIND_HOST" };
-    let origin;
-    try { origin = new URL(environment.PUBLIC_ORIGIN || ""); } catch { return { ok: false, field: "PUBLIC_ORIGIN" }; }
-    if (origin.protocol !== "http:" || !origin.hostname || origin.username || origin.password) return { ok: false, field: "PUBLIC_ORIGIN" };
-    return { ok: true };
-  }
   if (environment.ADMIN_SESSION_SECURE !== "true") return { ok: false, field: "ADMIN_SESSION_SECURE" };
   let origin;
   try { origin = new URL(environment.PUBLIC_ORIGIN || ""); } catch { return { ok: false, field: "PUBLIC_ORIGIN" }; }

@@ -6,7 +6,7 @@ import path from "node:path";
 export const inject = ["webServer", "clientModules"];
 const clientId = "dsh-plugin-genui";
 const clientPath = "/plugins/ued-genui-client/client.js";
-const acceptedHash = "1ed405e57d2a4337af4b92d005ab4747ad4408d055cb656ccf057501c498b871";
+const acceptedHash = "2cc6256717f1265494a125914e063082c5061a395cf44596fa720243e5cfd6eb";
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 export function addGenuiClient(graph, manifest, bytes) {

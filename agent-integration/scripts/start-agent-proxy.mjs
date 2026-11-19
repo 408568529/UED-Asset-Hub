@@ -93,20 +93,8 @@ const themeCss = `
 }
 `;
 
-const browserUuidScript = `  if (!window.crypto.randomUUID) {
-    window.crypto.randomUUID = () => {
-      const bytes = window.crypto.getRandomValues(new Uint8Array(16));
-      bytes[6] = (bytes[6] & 15) | 64;
-      bytes[8] = (bytes[8] & 63) | 128;
-      const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
-      return hex.slice(0, 8) + "-" + hex.slice(8, 12) + "-" + hex.slice(12, 16) + "-" + hex.slice(16, 20) + "-" + hex.slice(20);
-    };
-  }
-`;
-
 const brandScript = `
 (() => {
-  ${browserUuidScript}
   document.title = "悠鼎 Agent";
   const base = window.__UED_AGENT_BASE__ || "";
   const mapUrl = (value) => {
@@ -386,19 +374,8 @@ proxy.on("proxyRes", (proxyResponse, request, response) => {
   const contentType = String(proxyResponse.headers["content-type"] || "");
   const requestPath = new URL(request.url || "/", target).pathname;
   const previewDocument = requestPath.startsWith("/genui/preview/");
-  const uuidRuntime = requestPath === "/genui/bridge.js" || requestPath === "/genui/standalone.js";
-  const noStore = previewDocument || uuidRuntime || request.__uedPreviewGrantPresent === true;
+  const noStore = previewDocument || request.__uedPreviewGrantPresent === true;
   const copyProxyHeaders = (bodyLength) => copyHeaders(proxyResponse.headers, bodyLength, { noStore, noReferrer: previewDocument });
-  if (uuidRuntime && proxyResponse.statusCode === 200 && /javascript/.test(contentType)) {
-    const chunks = [];
-    proxyResponse.on("data", (chunk) => chunks.push(chunk));
-    proxyResponse.on("end", () => {
-      const body = Buffer.concat([Buffer.from(browserUuidScript), ...chunks]);
-      response.writeHead(200, copyProxyHeaders(body.length));
-      response.end(body);
-    });
-    return;
-  }
   if (contentType.includes("text/html") && requestPath.startsWith("/genui/preview/")) {
     const match = requestPath.match(/^\/genui\/preview\/([^/]+)\/([^/]+)$/);
     if (proxyResponse.statusCode !== 200 || !match) {

@@ -8,7 +8,6 @@ import { KnowledgeGatewayError } from "@/types/knowledgeGateway";
 const listPage = "2、典型页面/列表页-preview.html";
 const maxFile = 4 * 1024 * 1024;
 const maxBundle = 16 * 1024 * 1024;
-const maxBusinessConfig = 32 * 1024;
 const extensions = new Set([".html", ".htm", ".css", ".js", ".mjs", ".json", ".txt", ".ico", ".avif", ".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif", ".woff", ".woff2", ".ttf", ".otf"]);
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const fail = (message: string, status = 409): never => { throw new KnowledgeGatewayError("html-template-unavailable", status, message); };
@@ -42,26 +41,6 @@ function htmlReferences(text: string) {
 }
 function jsReferences(text: string) { return [...text.matchAll(/(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\bfetch\s*\(\s*|\bnew\s+URL\s*\(\s*)["'](\.{1,2}\/[^"']+)["']/g)].map(match => match[1]); }
 function cssReferences(text: string) { return [...text.matchAll(/(?:url\(\s*["']?|@import\s+["'])([^\s"')]+)["']?\s*\)?/gi)].map(match => match[1]); }
-
-function businessConfig(text: string) {
-  const start = [...text.matchAll(/^[ \t]*(?:(?:\/\/)|(?:<!--))\s*@business:config:start\s*(?:-->)?[^\r\n]*(?:\r?\n|$)/gm)];
-  const end = [...text.matchAll(/^[ \t]*(?:(?:\/\/)|(?:<!--))\s*@business:config:end\s*(?:-->)?[^\r\n]*(?:\r?\n|$)/gm)];
-  if (start.length !== 1 || end.length !== 1 || start[0].index === undefined || end[0].index === undefined) return null;
-  const startOffset = start[0].index + start[0][0].length;
-  const endOffset = end[0].index;
-  if (endOffset <= startOffset) return null;
-  const content = text.slice(startOffset, endOffset);
-  const bytes = Buffer.from(content);
-  return {
-    path: "",
-    startOffset,
-    endOffset,
-    sha256: hash(bytes),
-    bytes: bytes.length,
-    editable: bytes.length <= maxBusinessConfig,
-    content: bytes.length <= maxBusinessConfig ? content : undefined,
-  };
-}
 
 // User-selected paths remain relative to the current physical Skill, which is read-only.
 export async function getHtmlTemplateBundle(templatePath: string, resourcePaths: string[] = []) {
@@ -148,10 +127,7 @@ export async function getHtmlTemplateBundle(templatePath: string, resourcePaths:
   const after = await haldurDesignSkillService.getSnapshot();
   if (before.revision !== after.revision || after.recoveryRequired) return fail("Skill 在复制过程中已改变，请重试。");
   warnings.add("文档说明链接不作为运行依赖复制；动态生成的资源路径需通过 resource_paths 补充。成果不连接真实业务接口。");
-  const entryFile = files.get(entry)!;
-  const config = businessConfig(Buffer.from(entryFile.content, "base64").toString("utf8"));
-  if (config) config.path = entry;
-  return { templateId: "skill-html", templatePath: entry, entry, sourceRevision: before.revision, sourceEntrySha256: entrySha256, businessConfig: config, files: [...files.values()], totalBytes: total, warnings: [...warnings] };
+  return { templateId: "skill-html", templatePath: entry, entry, sourceRevision: before.revision, sourceEntrySha256: entrySha256, files: [...files.values()], totalBytes: total, warnings: [...warnings] };
 }
 
 // Compatibility endpoint for existing callers; new Agent calls select a current Skill path.
