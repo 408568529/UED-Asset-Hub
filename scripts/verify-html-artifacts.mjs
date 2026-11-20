@@ -50,13 +50,13 @@ try{
  assert.equal((await store.inspect(owner,repeated.artifact_id,{anchor:'same',occurrence:2})).status,'matched');
  const targeted=await store.patch(owner,repeated.artifact_id,repeated.version_id,[{path:'index.html',sha256:found.sha256,old_text:'same',new_text:'second',offset:found.matches[1].offset}]);
  assert.ok((await store.inspect(owner,repeated.artifact_id,{offset:0})).content.includes('<p>same</p><p>second</p>'));
- await assert.rejects(store.present(owner,repeated.artifact_id,targeted.version_id),/html_check/);
- const vv=await store.version(repeated.artifact_id,targeted.version_id,owner);await store.saveValidation(vv,{status:'passed',runtime:{status:'passed'},requirements:[{name:'fixture browser evidence',status:'passed'}]});assert.equal((await store.present(owner,repeated.artifact_id)).status,'verified');
+ assert.equal((await store.present(owner,repeated.artifact_id,targeted.version_id,'preview',['fixture'])).status,'preview'); await assert.rejects(store.present(owner,repeated.artifact_id,targeted.version_id,'verified'),/完整交付/);
+ const vv=await store.version(repeated.artifact_id,targeted.version_id,owner);await store.saveValidation(vv,{status:'passed',runtime:{status:'passed'},requirements:[{name:'fixture browser evidence',status:'passed'}]});assert.equal((await store.present(owner,repeated.artifact_id,undefined,'verified')).status,'verified');
  const written=await store.write(owner,repeated.artifact_id,targeted.version_id,{path:'extra.js',content:'window.fixture=1;'});
- await assert.rejects(store.present(owner,repeated.artifact_id,written.version_id),/html_check/);
+ await assert.rejects(store.present(owner,repeated.artifact_id,written.version_id,'verified'),/完整交付/);
  await assert.rejects(store.write(owner,repeated.artifact_id,written.version_id,{path:'index.html',content:'overwrite without read'}));
  await assert.rejects(store.write(owner,repeated.artifact_id,written.version_id,{path:'../escape.html',content:'escape'}));
- assert.equal((await store.present(owner,repeated.artifact_id,targeted.version_id)).status,'verified');
+ assert.equal((await store.present(owner,repeated.artifact_id,targeted.version_id,'verified')).status,'verified');
  const badBundle={...bundle,files:[{...bundle.files[0],path:'../evil.html'}]};await assert.rejects(store.create(owner,'escape','拒绝越界',badBundle));
  const originalVersion=await store.version(created.artifact_id,created.version_id,owner);
  const oldBytes=await store.bytes(originalVersion,entry);assert.equal(oldBytes.toString(),html);
@@ -79,7 +79,7 @@ try{
  // Immutable versions fail closed on file tampering and symlink substitution.
  const target=path.join(originalVersion.dir,'files',...entry.split('/'));
  await fs.writeFile(target,'tampered');await assert.rejects(store.bytes(originalVersion,entry));await fs.unlink(target);await fs.writeFile(path.join(temp,'outside.html'),'outside');await fs.symlink(path.join(temp,'outside.html'),target);await assert.rejects(store.bytes(originalVersion,entry));await fs.unlink(target);await fs.writeFile(target,body);
- const tools=toolDefinitions(store,async()=>bundle);assert.deepEqual(tools.map(t=>t.name),['html_templates','html_from_template','html_create','html_inspect','html_find','html_patch','html_write','html_check','html_present']);await assert.rejects(tools[0].execute({artifact_id:'no-agent',title:'bad'},{}));
+ const tools=toolDefinitions(store,async()=>bundle);assert.deepEqual(tools.map(t=>t.name),['html_templates','html_from_template','html_resume','html_create','html_inspect','html_find','html_patch','html_write','html_check','html_present']);await assert.rejects(tools[0].execute({artifact_id:'no-agent',title:'bad'},{}));
  const schemaObjects=schema=>{if(!schema||typeof schema!=='object')return;if(schema.type==='object')assert.equal(typeof schema.additionalProperties,'boolean','Pinned Harness requires explicit additionalProperties on nested objects');for(const value of Object.values(schema))schemaObjects(value);};for(const tool of tools)schemaObjects(tool.parameters);
  console.log(JSON.stringify({result:'PASS_HTML_ARTIFACTS',checks:['bounded excerpts','exact patches','stale/concurrent rejection','failed edit preserves last good','old versions and restart','relative CSS','version scoped expiring grants','cross-session and origin rejection','traversal/tamper/symlink rejection','no source mutation'],zip,zipFixture:zip?path.join(temp,'artifact.zip'):null,fixtureRoot:temp}));
 }finally{if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}if(!process.argv[2])await fs.rm(temp,{recursive:true,force:true});}
